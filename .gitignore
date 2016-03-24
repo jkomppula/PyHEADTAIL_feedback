@@ -106,3 +106,13 @@ dist
 *.pyc
 *.pyo
 *.tmp*
+
+settings.py
+
+;;extensions to ignore
+*.log
+*.pot
+*.pyc
+
+;;directories to ignore
+.idea/
