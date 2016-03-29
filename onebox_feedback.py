@@ -4,21 +4,20 @@ import scipy.integrate as integrate
 import scipy.special as special
 import itertools
 
+from transfer_functions import matrixGeneratorFactory
+
 #TODO: check slicer get_slices vs extract_slices
 
 class IdealBunchFeedback(object):
     # The simplest possible feedback which correct a mean xp value of the bunch.
     def __init__(self,gain):
         self.gain = gain    # fraction of offset is corrected each
-        self.counter=0  # number of track calls
 
     def track(self,bunch):
 
         # change xp value
         bunch.xp -= self.gain*bunch.mean_xp()
         bunch.yp -= self.gain*bunch.mean_yp()
-
-        self.counter +=1
 
 
 class IdealSliceFeedback(object):
@@ -40,22 +39,27 @@ class IdealSliceFeedback(object):
             bunch.yp[p_id] -= self.gain*slice_set.mean_yp[s_id]
 
 
-class MatrixSliceFeedback(object):
-    def __init__(self,gain,slicer,FBmatrix):
-        self.FBmatrix = FBmatrix
+class GeneralOneboxFeedback(object):
+    def __init__(self,gain,slicer,transfer_function):
         self.slicer = slicer
         self.gain = gain
-        self.counter=0
+        self.transfer_function = transfer_function
         self.mode, self.n_slices, _, _=slicer.config
+        self.transfer_matrix = None
+        self.matrixGenerator = matrixGeneratorFactory(self.transfer_function)
 
     def track(self,bunch):
         slice_set = bunch.get_slices(self.slicer, statistics=['mean_xp', 'mean_yp','mean_z'])
 
+        # in first function call or when slice spacing changes FBmatrix is calculated. FB matrix describes singal spread between slices
+        if self.transfer_matrix is None or self.mode != 'uniform_bin':
+            self.transfer_matrix = self.matrixGenerator(slice_set.z_bins,slice_set.mean_z)
+
         signal_xp = np.array([s for s in slice_set.mean_xp])
         signal_yp = np.array([s for s in slice_set.mean_yp])
 
-        correction_xp = self.gain*np.dot(self.FBmatrix,signal_xp)
-        correction_yp = self.gain*np.dot(self.FBmatrix,signal_yp)
+        correction_xp = self.gain*np.dot(self.transfer_matrix,signal_xp)
+        correction_yp = self.gain*np.dot(self.transfer_matrix,signal_yp)
 
         p_idx = slice_set.particles_within_cuts
         s_idx = slice_set.slice_index_of_particle.take(p_idx)
@@ -63,6 +67,14 @@ class MatrixSliceFeedback(object):
         for p_id, s_id in itertools.izip(p_idx,s_idx):
             bunch.xp[p_id] -= correction_xp[s_id]
             bunch.yp[p_id] -= correction_yp[s_id]
+
+    def print_matrix(self):
+        for row in self.transfer_matrix:
+            print "[",
+            for element in row:
+                print "{:6.3f}".format(element),
+            print "]"
+
 
 
 class PhaseLinFeedback(object):

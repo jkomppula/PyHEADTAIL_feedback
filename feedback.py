@@ -4,6 +4,8 @@ import scipy.integrate as integrate
 import scipy.special as special
 import itertools
 from collections import deque
+from transfer_functions import matrixGenerator
+
 
 
 class PickUp(object):
@@ -100,24 +102,3 @@ class Kicker(object):
     def print_matrix(self,index):
         print 'Baa'
 
-
-
-
-
-
-
-def matrixGeneratorGenerator(function,norm_range):
-    norm_coeff = integrate.quad(function, norm_range[0], norm_range[1])
-
-    def generator(bin_set, bin_midpoints=None):
-        if bin_midpoints is None:
-            bin_midpoints = [(i+j)/2 for i, j in zip(bin_set, bin_set[1:])]
-
-        matrix = np.identity(len(bin_midpoints))
-
-        for i, midpoint in enumerate(bin_midpoints):
-                for j in range(len(bin_midpoints)):
-                    matrix[i][j]=integrate.quad(function,(bin_set[j]-midpoint),(bin_set[j+1]-midpoint))/norm_coeff
-
-        return matrix
-    return generator
