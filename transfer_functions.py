@@ -5,13 +5,15 @@ import scipy.special as special
 import sys
 import itertools
 
-def matrixGeneratorFactory(function,norm_range = None):
+def matrixGeneratorFactory(function,norm_range = None,scaling = None):
     if norm_range is None:
-        norm_range = [-3, 3]
-    norm_coeff, _ = integrate.quad(function, norm_range[0], norm_range[1], limit=1000)
-
-    print 'Norm coeff: ' + str(norm_coeff) + ' range: ' + str(norm_range[0]) + ' - ' + str(norm_range[1])
-
+        norm_range = [-100, 100]
+    if scaling is None:
+        scaling = 1
+    data = integrate.quad(function, scaling*norm_range[0], scaling*norm_range[1])
+    #, limit=100000, epsrel=1.49e-14
+    print 'Norm coeff: ' + str(data) + ' range: ' + str(norm_range[0]) + ' - ' + str(norm_range[1]) + ':' + str(function(norm_range[0])) + ' - ' + str(function(norm_range[1]))
+    norm_coeff = data[0]
 
     def generator(bin_set, bin_midpoints=None):
         if bin_midpoints is None:
@@ -21,28 +23,50 @@ def matrixGeneratorFactory(function,norm_range = None):
 
         for i, midpoint in enumerate(bin_midpoints):
                 for j in range(len(bin_midpoints)):
-                    print 'Range: ' + str((bin_set[j]-midpoint)) + ' - ' + str((bin_set[j+1]-midpoint))
-
-                    temp, _ = integrate.quad(function,(bin_set[j]-midpoint),(bin_set[j+1]-midpoint))
+                    temp, _ = integrate.quad(function,scaling*(bin_set[j]-midpoint),scaling*(bin_set[j+1]-midpoint))
                     matrix[i][j] = temp/norm_coeff
         return matrix
 
     return generator
 
+class transfer_function(object):
+    def __init__(self,distribution,norm_range,scaling):
+        self.distribution = distribution
+        self.norm_range = norm_range
+        self.scaling = scaling
+        self.matrixGenerator = matrixGeneratorFactory(self.distribution,self.norm_range,self.scaling)
 
-def phase_linearized_lowpass(f_cutoff):
-    def f(dz):
+    def matrix(self,slice_set,midpoints):
+        return self.matrixGenerator(slice_set,midpoints)
 
-        scaling = f_cutoff/c
+class phase_linearized_lowpass(transfer_function):
+    def __init__(self, f_cutoff):
 
-        if dz == 0:
-            return sys.float_info.max
-        elif abs(scaling*dz)>10:
+        self.scaling = f_cutoff/c
+        self.norm_range_coeff = 10
+        self.norm_range = [-1.0 * self.norm_range_coeff / self.scaling, self.norm_range_coeff / self.scaling]
+
+        super(self.__class__, self).__init__(self.f,self.norm_range,self.scaling)
+
+    def f(self,x):
+        if x == 0:
             return 0
         else:
-            return special.k0(abs(scaling*dz))
-    return f
+            return special.k0(abs(x))
 
+
+class ideal_slice(object):
+
+    def matrix(self,slice_set,*arg):
+        matrix = np.identity(slice_set.n_slices())
+        return matrix
+
+class ideal_bunch(object):
+
+    def matrix(self,slice_set,*arg):
+        matrix = np.identity(slice_set.n_slices())
+        matrix.fill(1.0/slice_set.n_slices())
+        return matrix
 
 def lowpass(f_cutoff):
     def f(dz):
