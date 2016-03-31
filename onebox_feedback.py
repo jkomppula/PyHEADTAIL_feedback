@@ -49,7 +49,7 @@ class OneboxFeedback(object):
 
         # in first function call or when slice spacing changes FBmatrix is calculated. FB matrix describes singal spread between slices
         if self.transfer_matrix is None or self.mode != 'uniform_bin':
-            self.transfer_matrix = self.transfer_function.matrix(slice_set.z_bins,slice_set.mean_z)
+            self.transfer_matrix = self.transfer_function.matrix(slice_set)
 
         if self.charge_weighted is None:
             signal_xp = np.array([s for s in slice_set.mean_xp])

@@ -5,6 +5,9 @@ import scipy.special as special
 import sys
 import itertools
 
+
+
+
 def matrixGeneratorFactory(function,norm_range = None,scaling = None):
     if norm_range is None:
         norm_range = [-100, 100]
@@ -36,8 +39,8 @@ class transfer_function(object):
         self.scaling = scaling
         self.matrixGenerator = matrixGeneratorFactory(self.distribution,self.norm_range,self.scaling)
 
-    def matrix(self,slice_set,midpoints):
-        return self.matrixGenerator(slice_set,midpoints)
+    def matrix(self,slice_set):
+        return self.matrixGenerator(slice_set.z_bins,slice_set.mean_z)
 
 class phase_linearized_lowpass(transfer_function):
     def __init__(self, f_cutoff):
@@ -58,14 +61,14 @@ class phase_linearized_lowpass(transfer_function):
 class ideal_slice(object):
 
     def matrix(self,slice_set,*arg):
-        matrix = np.identity(slice_set.n_slices())
+        matrix = np.identity(slice_set.n_slices)
         return matrix
 
 class ideal_bunch(object):
 
     def matrix(self,slice_set,*arg):
-        matrix = np.identity(slice_set.n_slices())
-        matrix.fill(1.0/slice_set.n_slices())
+        matrix = np.identity(slice_set.n_slices)
+        matrix.fill(1.0/slice_set.n_slices)
         return matrix
 
 def lowpass(f_cutoff):
