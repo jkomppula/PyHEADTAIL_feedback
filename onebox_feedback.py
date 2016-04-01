@@ -36,20 +36,15 @@ class IdealSliceFeedback(object):
 
 
 class OneboxFeedback(object):
-    def __init__(self,gain,slicer,transfer_function,charge_weighted = None):
+    def __init__(self,gain,slicer,signal_processors,charge_weighted = None):
         self.slicer = slicer
         self.gain = gain
-        self.transfer_function = transfer_function
+        self.signal_processors = signal_processors
         self.mode, self.n_slices, _, _=slicer.config
-        self.transfer_matrix = None
         self.charge_weighted = charge_weighted
 
     def track(self,bunch):
         slice_set = bunch.get_slices(self.slicer, statistics=['mean_xp', 'mean_yp','mean_z'])
-
-        # in first function call or when slice spacing changes FBmatrix is calculated. FB matrix describes singal spread between slices
-        if self.transfer_matrix is None or self.mode != 'uniform_bin':
-            self.transfer_matrix = self.transfer_function.matrix(slice_set)
 
         if self.charge_weighted is None:
             signal_xp = np.array([s for s in slice_set.mean_xp])
@@ -59,8 +54,12 @@ class OneboxFeedback(object):
             signal_xp=np.array([offset*weight for offset, weight in itertools.izip(slice_set.mean_xp, slice_set.n_macroparticles_per_slice)])*self.n_slices/n_macroparticles
             signal_yp=np.array([offset*weight for offset, weight in itertools.izip(slice_set.mean_yp, slice_set.n_macroparticles_per_slice)])*self.n_slices/n_macroparticles
 
-        correction_xp = self.gain*np.dot(self.transfer_matrix,signal_xp)
-        correction_yp = self.gain*np.dot(self.transfer_matrix,signal_yp)
+        for signal_processor in self.signal_processors:
+            signal_processor(signal_xp,bunch,slice_set)
+            signal_processor(signal_yp,bunch,slice_set)
+
+        correction_xp = self.gain*signal_xp
+        correction_yp = self.gain*signal_xp
 
         p_idx = slice_set.particles_within_cuts
         s_idx = slice_set.slice_index_of_particle.take(p_idx)
