@@ -42,6 +42,10 @@ class MatrixGenerator(object):
         return matrix
 
 class LinearProcessor(object):
+    """ General class for linear signal processing. The emitted signal is a dot product of
+    a transfer matrix and the incoming signal. The transfer matrix is produced from response function and
+    (possible non uniform) z_bin_set by using MatrixGenerator class"""
+
     def __init__(self,response_function,norm_range,scaling):
         self.response_function = response_function
         self.norm_range = norm_range
@@ -63,6 +67,7 @@ class LinearProcessor(object):
         return np.dot(self.matrix,signal)
 
     def check_bin_set(self,z_bin_set):
+        """Check if bin_set has been changed more than given limit"""
         changed = False
 
         for old, new in itertools.izip(self.z_bin_set,z_bin_set):
@@ -108,15 +113,13 @@ class PhaseLinearizedLowpass(LinearProcessor):
         else:
             return special.k0(abs(x))
 
-
+# TODO: Check vector sum of complex numbers
 class Register(object):
     def __init__(self,length,phase_shift,avg_length=1):
         self.length = length
         self.phase_shift = phase_shift
         self.avg_length = avg_length
-
         self.register = deque()
-
 
     def process(self,signal,slice_set):
 
