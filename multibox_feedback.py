@@ -1,104 +1,71 @@
 import numpy as np
-from scipy.constants import c, e
-import scipy.integrate as integrate
-import scipy.special as special
 import itertools
-from collections import deque
-from transfer_functions import matrixGenerator
-
-
+import math
 
 class PickUp(object):
-    # The simplest possible feedback which correct a mean xp value of the bunch.
-    def __init__(self,gain,register_length,slicer,transfer_function):
-        self.gain = gain    # fraction of offset is corrected each
+    def __init__(self,slicer,signal_processors_x,signal_processors_y,phase_shift):
         self.slicer = slicer
-        self.x_register = deque()
-        self.y_register = deque()
-        self.register_length = register_length
-
         self.mode, self.n_slices, _, _=slicer.config
 
-        self.transfer_function = transfer_function
-        self.transfer_matrix = []
+        self.signal_processors_x = signal_processors_x
+        self.signal_processors_y = signal_processors_y
+        self.phase_shift = phase_shift
 
-    def track(self,bunch):
-        slice_set = bunch.get_slices(self.slicer, statistics=['mean_x', 'mean_y','mean_z'])
-
-        if len(self.transfer_matrix) == 0:
-            self.matrix_generator = matrixGeneratorGenerator(self.transfer_function,slice_set)
-
-        if len(self.transfer_matrix) == 0 or self.mode != 'uniform_bin':
-            self.tranfer_matrix = self.matrix_generator(slice_set.z_bins,slice_set.mean_z)
-
-        raw_signal_x=np.array([offset for offset in slice_set.mean_x])
-        raw_signal_y=np.array([offset for offset in slice_set.mean_y])
-
-        real_signal_x=np.dot(self.tranfer_matrix,raw_signal_x)
-        real_signal_y=np.dot(self.tranfer_matrix,raw_signal_y)
-
-        self.x_register.append(real_signal_x)
-        self.y_register.append(real_signal_y)
-
-        if len(self.x_register) > self.register_length:
-            self.x_register.popleft()
-
-        if len(self.y_register) > self.register_length:
-            self.y_register.popleft()
-
-
-class Kicker(object):
-    def __init__(self,gain,slicer):
-        self.gain=gain
-        self.slicer = slicer
-        self.pickups = []
-        self.pickup_turns = []
-        self.transfer_functions = []
-        self.matrix_generators = []
-
-        self.mode, self.n_slices, _, _=slicer.config
-        self.n_pickups = 0
-        self.transfer_matrices = []
-
-    def add_pickup(self,pickup,turns,transfer_function):
-        self.pickups.append(pickup)
-        self.pickup_turns.append(turns)
-        self.transfer_functions.append(transfer_function)
-        self.n_pickups += 1
-
+        self.signal_x = []
+        self.signal_y = []
 
     def track(self,bunch):
         slice_set = bunch.get_slices(self.slicer, statistics=['mean_xp', 'mean_yp','mean_z'])
 
-        if len(self.matrix_generators) == 0:
-            for transfer_function in self.transfer_functions:
-                self.matrix_generators.append(matrixGeneratorGenerator(transfer_function,slice_set))
+        self.signal_x = np.array([s for s in slice_set.mean_x])
+        self.signal_y = np.array([s for s in slice_set.mean_y])
 
-        if len(self.transfer_matrices) == 0 or self.mode != 'uniform_bin':
-            self.transfer_matrices= []
+        for signal_processor in self.signal_processors_x:
+            self.signal_x = signal_processor.process(self.signal_x,slice_set)
 
-            for matrix_generator in self.matrix_generators:
-                self.transfer_matrices.append(matrix_generator(slice_set.z_bins,slice_set.mean_z))
+        for signal_processor in self.signal_processors_y:
+            self.signal_y = signal_processor.process(self.signal_y,slice_set)
 
+class Kicker(object):
+    def __init__(self,gain,phase_shift,slicer,pickups,signal_processors_x,signal_processors_y,pickup_signal_processors_x=None,pickup_signal_processors_y=None):
+        self.gain=gain
+        self.phase_shift = phase_shift
+        self.pickups=pickups
+        self.signal_processors_x = signal_processors_x
+        self.signal_processors_y = signal_processors_y
+        self.pickup_signal_processors_x = pickup_signal_processors_x
+        self.pickup_signal_processors_y = pickup_signal_processors_y
+        self.slicer = slicer
+        self.mode, self.n_slices, _, _=slicer.config
 
-        xp_correction = np.zeros(self.n_slices)
-        yp_correction = np.zeros(self.n_slices)
-        for pickup, turns, matrix in zip(self.pickups,self.pickup_turns,self.transfer_matrices):
-            x_avg_signal = np.sum(pickup.x_register[:turns],axis=0)/turns/
-            y_avg_signal = np.sum(pickup.y_register[:turns],axis=0)/turns
-            xp_correction = np.sum(xp_correction, np.dot(matrix,x_avg_signal)/self.n_pickups)
-            yp_correction = np.sum(yp_correction, np.dot(matrix,y_avg_signal)/self.n_pickups)
+    def track(self,bunch):
+        slice_set = bunch.get_slices(self.slicer, statistics=['mean_xp', 'mean_yp','mean_z'])
 
+        signal_x = None
+        signal_y = None
+
+        for index, pickup in enumerate(self.pickups):
+            if signal_x is None:
+                signal_x = np.zeros(len(pickup.signal_x))
+            if signal_y is None:
+                signal_y = np.zeros(len(pickup.signal_y))
+
+            signal_x += math.cos(pickup.phase_shift-self.phase_shift)*pickup.signal_x/len(self.pickups)
+            signal_y += math.cos(pickup.phase_shift-self.phase_shift)*pickup.signal_y/len(self.pickups)
+
+        for signal_processor in self.signal_processors_x:
+            signal_x = signal_processor.process(signal_x,slice_set)
+
+        for signal_processor in self.signal_processors_y:
+            signal_y = signal_processor.process(signal_y,slice_set)
+
+        correction_xp = self.gain*signal_x
+        correction_yp = self.gain*signal_y
 
         p_idx = slice_set.particles_within_cuts
         s_idx = slice_set.slice_index_of_particle.take(p_idx)
 
-        # change xp and yp values of each macroparticle. The change corresponds correction signal values for each slice
-        # in register
         for p_id, s_id in itertools.izip(p_idx,s_idx):
-            bunch.xp[p_id] -= xp_correction[s_id]
-            bunch.yp[p_id] -= yp_correction[s_id]
-
-    def print_matrix(self,index):
-        print 'Baa'
+            bunch.xp[p_id] -= correction_xp[s_id]
+            bunch.yp[p_id] -= correction_yp[s_id]
 

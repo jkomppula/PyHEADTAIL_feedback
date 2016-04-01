@@ -2,11 +2,10 @@ import numpy as np
 from scipy.constants import c, e
 import scipy.integrate as integrate
 import scipy.special as special
+from collections import deque
 import sys
 import itertools
-
-
-
+import math
 
 class MatrixGenerator(object):
     def __init__(self,function,norm_range = None,scaling = None):
@@ -57,6 +56,7 @@ class LinearProcessor(object):
     def process(self,signal,slice_set):
 
         if self.check_bin_set(slice_set.z_bins):
+            #print 'Matrix recalculated'
             self.z_bin_set = slice_set.z_bins
             self.matrix = self.matrix_generator.generate(slice_set.z_bins,slice_set.mean_z)
 
@@ -67,6 +67,8 @@ class LinearProcessor(object):
 
         for old, new in itertools.izip(self.z_bin_set,z_bin_set):
             if old != new:
+            #if new/old<1.0001 and new/old>0.9999:
+                #print str(old) + ' != ' + str(new) + ': ',
                 changed = True
                 break
 
@@ -80,14 +82,24 @@ class LinearProcessor(object):
             print "]"
 
 
+class IdealSlice(object):
+    def process(self,signal,slice_set):
+        return signal
+
+
+class IdealBunch(LinearProcessor):
+    def __init__(self):
+        super(self.__class__, self).__init__(self.response_function,norm_range=None,scaling=None)
+
+    def response_function(self,x):
+        return 1
+
 
 class PhaseLinearizedLowpass(LinearProcessor):
     def __init__(self, f_cutoff):
-
         self.scaling = f_cutoff/c
         self.norm_range_coeff = 10
         self.norm_range = [-1.0 * self.norm_range_coeff / self.scaling, self.norm_range_coeff / self.scaling]
-
         super(self.__class__, self).__init__(self.f,self.norm_range,self.scaling)
 
     def f(self,x):
@@ -96,23 +108,34 @@ class PhaseLinearizedLowpass(LinearProcessor):
         else:
             return special.k0(abs(x))
 
-class Register:
-    def __init__(self,size,phase_shift):
-        self.size = size
+
+class Register(object):
+    def __init__(self,length,phase_shift,avg_length=1):
+        self.length = length
+        self.phase_shift = phase_shift
+        self.avg_length = avg_length
+
+        self.register = deque()
+
 
     def process(self,signal,slice_set):
-        return signal
 
-class IdealSlice(object):
-    def process(self,signal,slice_set):
-        return signal
+        self.register.append(signal)
 
-class IdealBunch(LinearProcessor):
-    def __init__(self):
-        super(self.__class__, self).__init__(self.response_function,norm_range=None,scaling=None)
+        if len(self.register) > self.length:
+            self.register.popleft()
 
-    def response_function(self,x):
-        return 1
+        if(self.avg_length>1):
+
+            output = np.zeros(len(self.register[0]))
+
+            for index, value in enumerate(self.register[:self.avg_length]):
+                output += math.cos((self.length-index)*self.phase_shift)*value/self.avg_length
+
+            return output
+        else:
+            return math.cos(self.length*self.phase_shift)*self.register[0]
+
 
 # def lowpass(f_cutoff):
 #     def f(dz):
