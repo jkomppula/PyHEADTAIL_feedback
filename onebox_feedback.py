@@ -46,20 +46,15 @@ class OneboxFeedback(object):
     def track(self,bunch):
         slice_set = bunch.get_slices(self.slicer, statistics=['mean_xp', 'mean_yp','mean_z'])
 
-        if self.charge_weighted is None:
-            signal_xp = np.array([s for s in slice_set.mean_xp])
-            signal_yp = np.array([s for s in slice_set.mean_yp])
-        else:
-            n_macroparticles = np.sum(slice_set.n_macroparticles_per_slice)
-            signal_xp=np.array([offset*weight for offset, weight in itertools.izip(slice_set.mean_xp, slice_set.n_macroparticles_per_slice)])*self.n_slices/n_macroparticles
-            signal_yp=np.array([offset*weight for offset, weight in itertools.izip(slice_set.mean_yp, slice_set.n_macroparticles_per_slice)])*self.n_slices/n_macroparticles
+        signal_xp = np.array([s for s in slice_set.mean_xp])
+        signal_yp = np.array([s for s in slice_set.mean_yp])
 
         for signal_processor in self.signal_processors:
-            signal_processor(signal_xp,bunch,slice_set)
-            signal_processor(signal_yp,bunch,slice_set)
+            signal_xp = signal_processor.process(signal_xp,slice_set)
+            signal_yp = signal_processor.process(signal_yp,slice_set)
 
         correction_xp = self.gain*signal_xp
-        correction_yp = self.gain*signal_xp
+        correction_yp = self.gain*signal_yp
 
         p_idx = slice_set.particles_within_cuts
         s_idx = slice_set.slice_index_of_particle.take(p_idx)
@@ -67,13 +62,6 @@ class OneboxFeedback(object):
         for p_id, s_id in itertools.izip(p_idx,s_idx):
             bunch.xp[p_id] -= correction_xp[s_id]
             bunch.yp[p_id] -= correction_yp[s_id]
-
-    def print_matrix(self):
-        for row in self.transfer_matrix:
-            print "[",
-            for element in row:
-                print "{:6.3f}".format(element),
-            print "]"
 
 class PhaseLinFeedback(OneboxFeedback):
     def __init__(self,gain,slicer,f_cutoff,charge_weighted = None):

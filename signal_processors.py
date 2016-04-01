@@ -8,41 +8,80 @@ import itertools
 
 
 
-def matrixGeneratorFactory(function,norm_range = None,scaling = None):
-    if norm_range is None:
-        norm_range = [-100, 100]
-    if scaling is None:
-        scaling = 1
-    data = integrate.quad(function, scaling*norm_range[0], scaling*norm_range[1])
-    #, limit=100000, epsrel=1.49e-14
-    print 'Norm coeff: ' + str(data) + ' range: ' + str(norm_range[0]) + ' - ' + str(norm_range[1]) + ':' + str(function(norm_range[0])) + ' - ' + str(function(norm_range[1]))
-    norm_coeff = data[0]
+class MatrixGenerator(object):
+    def __init__(self,function,norm_range = None,scaling = None):
+        self.function = function
+        self.norm_range = norm_range
+        self.scaling = scaling
 
-    def generator(bin_set, bin_midpoints=None):
+        if self.scaling is None:
+            self.scaling = 1
+
+        if self.norm_range is None:
+            self.norm_coeff = 0
+        else:
+            data = integrate.quad(self.function, self.scaling*self.norm_range[0], self.scaling*self.norm_range[1])
+            #, limit=100000, epsrel=1.49e-14
+            print 'Norm coeff: ' + str(data) + ' range: ' + str(norm_range[0]) + ' - ' + str(norm_range[1]) + ':' + str(function(norm_range[0])) + ' - ' + str(function(norm_range[1]))
+            self.norm_coeff = data[0]
+
+    def generate(self,bin_set, bin_midpoints=None):
+
         if bin_midpoints is None:
             bin_midpoints = [(i+j)/2 for i, j in zip(bin_set, bin_set[1:])]
+
+        if self.norm_coeff == 0:
+            self.norm_coeff=bin_set[-1]-bin_set[0]
+            #print str(bin_set[-1]) + ' - ' + str(bin_set[1]) + ' = ' + str(self.norm_coeff)
 
         matrix = np.identity(len(bin_midpoints))
 
         for i, midpoint in enumerate(bin_midpoints):
                 for j in range(len(bin_midpoints)):
-                    temp, _ = integrate.quad(function,scaling*(bin_set[j]-midpoint),scaling*(bin_set[j+1]-midpoint))
-                    matrix[i][j] = temp/norm_coeff
+                    temp, _ = integrate.quad(self.function,self.scaling*(bin_set[j]-midpoint),self.scaling*(bin_set[j+1]-midpoint))
+                    matrix[i][j] = temp/self.norm_coeff
         return matrix
 
-    return generator
-
-class transfer_function(object):
-    def __init__(self,distribution,norm_range,scaling):
-        self.distribution = distribution
+class LinearProcessor(object):
+    def __init__(self,response_function,norm_range,scaling):
+        self.response_function = response_function
         self.norm_range = norm_range
         self.scaling = scaling
-        self.matrixGenerator = matrixGeneratorFactory(self.distribution,self.norm_range,self.scaling)
 
-    def matrix(self,slice_set):
-        return self.matrixGenerator(slice_set.z_bins,slice_set.mean_z)
+        self.matrix_generator = MatrixGenerator(self.response_function,self.norm_range,self.scaling)
 
-class phase_linearized_lowpass(transfer_function):
+        self.z_bin_set = [sys.float_info.max]
+
+        self.matrix = None
+
+    def process(self,signal,slice_set):
+
+        if self.check_bin_set(slice_set.z_bins):
+            self.z_bin_set = slice_set.z_bins
+            self.matrix = self.matrix_generator.generate(slice_set.z_bins,slice_set.mean_z)
+
+        return np.dot(self.matrix,signal)
+
+    def check_bin_set(self,z_bin_set):
+        changed = False
+
+        for old, new in itertools.izip(self.z_bin_set,z_bin_set):
+            if old != new:
+                changed = True
+                break
+
+        return changed
+
+    def print_matrix(self):
+        for row in self.matrix:
+            print "[",
+            for element in row:
+                print "{:6.3f}".format(element),
+            print "]"
+
+
+
+class PhaseLinearizedLowpass(LinearProcessor):
     def __init__(self, f_cutoff):
 
         self.scaling = f_cutoff/c
@@ -57,24 +96,33 @@ class phase_linearized_lowpass(transfer_function):
         else:
             return special.k0(abs(x))
 
+class Register:
+    def __init__(self,size,phase_shift):
+        self.size = size
 
-class ideal_slice(object):
+    def process(self,signal,slice_set):
+        return signal
 
-    def matrix(self,slice_set,*arg):
-        matrix = np.identity(slice_set.n_slices)
-        return matrix
+class IdealSlice(object):
+    def process(self,signal,slice_set):
+        return signal
 
-class ideal_bunch(object):
+class IdealBunch(LinearProcessor):
+    def __init__(self):
+        super(self.__class__, self).__init__(self.response_function,norm_range=None,scaling=None)
 
-    def matrix(self,slice_set,*arg):
-        matrix = np.identity(slice_set.n_slices)
-        matrix.fill(1.0/slice_set.n_slices)
-        return matrix
+    def response_function(self,x):
+        return 1
 
-def lowpass(f_cutoff):
-    def f(dz):
-        if dz < 0:
-            return 0
-        else:
-            return np.exp(-1.*dz*f_cutoff/c)
-    return f
+# def lowpass(f_cutoff):
+#     def f(dz):
+#         if dz < 0:
+#             return 0
+#         else:
+#             return np.exp(-1.*dz*f_cutoff/c)
+#     return f
+
+class ChargeWeighting:
+    def process(self,signal,slice_set):
+        n_macroparticles = np.sum(slice_set.n_macroparticles_per_slice)
+        return np.array([signal*weight for signal, weight in itertools.izip(signal, slice_set.n_macroparticles_per_slice)])*slice_set.n_slices/n_macroparticles
