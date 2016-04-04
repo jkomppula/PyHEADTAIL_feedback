@@ -99,7 +99,7 @@ class Kicker(object):
 
     def __init__(self,gain,phase_shift,slicer,pickups,signal_processors_x,signal_processors_y,signal_mixer_x,signal_mixer_y):
         self.gain=gain
-        self.phase_shift = phase_shift
+        self.phase_shift = phase_shift  #phase shift of the kicker
         self.pickups=pickups    # list of pick ups
         self.signal_processors_x = signal_processors_x
         self.signal_processors_y = signal_processors_y
@@ -110,11 +110,14 @@ class Kicker(object):
         self.mode, self.n_slices, _, _=slicer.config
 
     def track(self,bunch):
+
         slice_set = bunch.get_slices(self.slicer, statistics=['mean_xp', 'mean_yp','mean_z'])
 
+        #Form signals from pickups with signal mixers
         signal_x = self.signal_mixer_x.mix(self.phase_shift,self.pickups)
         signal_y = self.signal_mixer_x.mix(self.phase_shift,self.pickups)
 
+        #Process signals to correction signal
         for signal_processor in self.signal_processors_x:
             signal_x = signal_processor.process(signal_x,slice_set)
 
@@ -124,6 +127,7 @@ class Kicker(object):
         correction_xp = self.gain*signal_x
         correction_yp = self.gain*signal_y
 
+        #Make correction
         p_idx = slice_set.particles_within_cuts
         s_idx = slice_set.slice_index_of_particle.take(p_idx)
 

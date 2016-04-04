@@ -5,7 +5,7 @@ import math
 
 
 # TODO: Check vector sum of complex numbers
-class AverageMixer(object):
+class Averager(object):
     """The simplest possible signal mixer of pick ups, which calculates a phase weighted average of
     the pick up signals"""
     def __init__(self,channel):
@@ -19,6 +19,6 @@ class AverageMixer(object):
                 signal = np.zeros(len(pickup.signal_x))
 
             if self.channel == 'x':
-                signal += math.cos(pickup.phase_shift-kicker_phase_shift)*pickup.signal_x/len(pickups)
+                signal += pickup.signal_x/len(pickups)
             elif self.channel == 'y':
-                signal += math.cos(pickup.phase_shift-kicker_phase_shift)*pickup.signal_y/len(pickups)
+                signal += pickup.signal_y/len(pickups)
