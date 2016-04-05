@@ -7,6 +7,7 @@ import sys
 import itertools
 import math
 
+# TODO: include this to LinearProcessor class
 class MatrixGenerator(object):
     def __init__(self,function,scaling = None, norm_type = None, norm_range = None):
         self.function = function
@@ -61,7 +62,7 @@ class LinearProcessor(object):
 
         self.matrix = None
 
-    def process(self,signal,slice_set):
+    def process(self,signal,slice_set, *args):
 
         if self.check_bin_set(slice_set.z_bins):
             #print 'Matrix recalculated'
@@ -92,7 +93,7 @@ class LinearProcessor(object):
 
 
 class IdealSlice(object):
-    def process(self,signal,slice_set):
+    def process(self,signal, *args):
         return signal
 
 
@@ -108,7 +109,7 @@ class IdealBunch(LinearProcessor):
         return 1
 
 
-class PhaseLinearizedLowpass(LinearProcessor,):
+class PhaseLinearizedLowpass(LinearProcessor):
     def __init__(self, f_cutoff, norm_type = 'BunchLengthInteg', norm_range = None):
         self.norm_type = norm_type
         self.norm_range = norm_range
@@ -123,17 +124,17 @@ class PhaseLinearizedLowpass(LinearProcessor,):
         else:
             return special.k0(abs(x))
 
-# TODO: Check vector sum of complex numbers
+# TODO: Initiliaze register
 class Register(object):
     """Holds signal values . Returns xxx. Phase shift is taken into account by """
-    def __init__(self,length,turn_phase_shift, avg_length=1, position_phase_shift = 0):
+    def __init__(self,length,phase_shift_per_turn, avg_length=1, position_phase_angle = 0):
         self.length = length
-        self.turn_phase_shift = turn_phase_shift
-        self.position_phase_shift = position_phase_shift
+        self.phase_shift_per_turn = phase_shift_per_turn
+        self.position_phase_angle = position_phase_angle
         self.avg_length = avg_length
         self.register = deque()
 
-    def process(self,signal,slice_set):
+    def process(self,signal, *args):
 
         self.register.append(signal)
 
@@ -149,10 +150,32 @@ class Register(object):
                 to = self.avg_length
 
             for i in range(to):
-                output += 2.0*math.cos(((1-len(self.register))+i)*self.turn_phase_shift+self.position_phase_shift)*self.register[i]/self.avg_length
+                output += 2.0*math.cos(((1-len(self.register))+i)*self.phase_shift_per_turn+self.position_phase_angle)*self.register[i]/self.avg_length
             return output
         else:
-            return math.cos((1-len(self.register))*self.turn_phase_shift+self.position_phase_shift)*self.register[0]
+            return math.cos((1-len(self.register))*self.phase_shift_per_turn+self.position_phase_angle)*self.register[0]
+
+    def read_signal(self,reader_phase_angle):
+        #print 'Reader angle: ' + str(reader_phase_angle) + ' Register angle: ' + str(self.position_phase_angle)
+
+        delta_Phi = self.position_phase_angle - reader_phase_angle
+
+        if delta_Phi > 0:
+            delta_Phi -= 2*pi
+
+        if(self.avg_length>1):
+
+            output = np.zeros(len(self.register[0]))
+            if len(self.register) < self.avg_length:
+                to = len(self.register)
+            else:
+                to = self.avg_length
+
+            for i in range(to):
+                output += 2.0*math.cos(((1-len(self.register))+i)*self.phase_shift_per_turn+delta_Phi)*self.register[i]/self.avg_length
+            return output
+        else:
+            return math.cos((1-len(self.register))*self.phase_shift_per_turn+delta_Phi)*self.register[0]
 
 
 # def lowpass(f_cutoff):
