@@ -7,14 +7,17 @@ import sys
 import itertools
 import math
 
-#TODO: add noise generator
+# TODO: add noise generator
+# TODO: add realistic pickup
+# TODO: add phase shifter
+# TODO: alternative implementation by using convolution?
 
 class LinearProcessor(object):
     """ General class for linear signal processing. The signal is processed by calculating a dot product of a transfer matrix and a signal. The transfer matrix is produced
     from response function and (possible non uniform) z_bin_set by using generate_matrix function.
     """
 
-    def __init__(self,response_function, scaling=None, norm_type=None, norm_range=None):
+    def __init__(self,response_function, scaling=1., norm_type=None, norm_range=None):
         """ General constructor to create a LinearProcessor.
 
         :param response_function: Impulse response function of the processor
@@ -27,8 +30,6 @@ class LinearProcessor(object):
 
         self.response_function = response_function
         self.scaling = scaling
-        if self.scaling is None:
-            self.scaling = 1
         self.norm_type = norm_type
         self.norm_range = norm_range
 
@@ -48,12 +49,10 @@ class LinearProcessor(object):
     def check_bin_set(self,z_bin_set):
         """Checks if bin_set has been changed."""
         changed = False
-
         for old, new in itertools.izip(self.z_bin_set,z_bin_set):
             if old != new:
                 changed = True
                 break
-
         return changed
 
     def print_matrix(self):
@@ -149,6 +148,11 @@ class Bypass(object):
 
 # To
 class Weighter(object):
+    """ A general class for signal weighing. A seed for the weight is a property of slices (weight_property).
+        The weight is calculated by giving the seed to weight_function() as a parameter. A parameter
+        weight_normalization determines which part of the weight is normalized to be one.
+    """
+
     def __init__(self, weight_property, weight_function, weight_normalization):
         self.weight_property = weight_property
         self.weight_function = weight_function
@@ -203,12 +207,13 @@ class Weighter(object):
             norm_coeff = float(np.sum(weight))
         elif self.weight_normalization == 'average_weight':
             norm_coeff = float(np.sum(weight))/float(len(weight))
-        elif self.weight_normalization == 'maximum_value':
-            norm_coeff = float(min(weight))
-        elif self.weight_normalization == 'minimum_value':
+        elif self.weight_normalization == 'maximum_weight':
             norm_coeff = float(max(weight))
+        elif self.weight_normalization == 'minimum_weight':
+            norm_coeff = float(min(weight))
 
         return signal*weight/norm_coeff
+
 
 class ChargeWeighter(Weighter):
     def __init__(self):
@@ -217,56 +222,89 @@ class ChargeWeighter(Weighter):
         return weight
 
 
+class FermiDiracInverseWeighter(Weighter):
+    def __init__(self,bunch_length,bunch_decay_length,maximum_weight = 10):
+        self.bunch_length = bunch_length
+        self.bunch_decay_length = bunch_decay_length
+        self.maximum_weight=maximum_weight
+        super(self.__class__, self).__init__('bin_midpoint', self.weight_function, 'minimum_weight')
+
+    def weight_function(self,weight):
+        weight = np.exp((np.absolute(weight)-self.bunch_length/2.)/float(self.bunch_decay_length))+ 1.
+        weight = np.clip(weight,1.,self.maximum_weight)
+        return weight
+
+
+
+
 # TODO: Initiliaze register
-# TODO: Do a general register object with a changeable sum calculator
+# TODO: Rethink weighing
 class Register(object):
-    """Holds signal values . Returns xxx. Phase shift is taken into account by """
-    def __init__(self,length,phase_shift_per_turn, avg_length=1, position_phase_angle = 0):
-        self.length = length
+    """ A general class for a signal register. A signal is stored to the register, when the function process() is
+        called. Depending on the avg_length parameter, a return value of the process() function is and an averaged
+        value of the stored signals.
+        A effect of a betatron shift between turns and between the register and the reader is taken into
+        account by calculating a weight for the register value with phase_weight_function(). Total phase differences are
+        calculated with delta_phi_calculator. The register can be also ridden without changing it by calling read_signal.
+        In this case a relative betatron phase angle of the reader must be given as a parameter.
+
+
+    """
+    def __init__(self,phase_weight_function, delta_phi_calculator, phase_shift_per_turn,delay, avg_length, position_phase_angle):
+        self.phase_weight_function = phase_weight_function
+        self.delta_phi_calculator = delta_phi_calculator
         self.phase_shift_per_turn = phase_shift_per_turn
+        self.delay = delay
         self.position_phase_angle = position_phase_angle
         self.avg_length = avg_length
+
+        self.max_reg_length = self.delay+self.avg_length
         self.register = deque()
 
     def process(self,signal, *args):
 
         self.register.append(signal)
 
-        if len(self.register) > self.length:
+        if len(self.register) > self.max_reg_length:
             self.register.popleft()
 
-        if(self.avg_length>1):
-
-            output = np.zeros(len(self.register[0]))
-            if len(self.register) < self.avg_length:
-                to = len(self.register)
-            else:
-                to = self.avg_length
-
-            for i in range(to):
-                output += 2.0*math.cos(((1-len(self.register))+i)*self.phase_shift_per_turn+self.position_phase_angle)*self.register[i]/self.avg_length
-            return output
-        else:
-            return math.cos((1-len(self.register))*self.phase_shift_per_turn+self.position_phase_angle)*self.register[0]
+        return self.read_signal(None)
 
     def read_signal(self,reader_phase_angle):
-        #print 'Reader angle: ' + str(reader_phase_angle) + ' Register angle: ' + str(self.position_phase_angle)
 
-        delta_Phi = self.position_phase_angle - reader_phase_angle
+        if reader_phase_angle is None:
+            delta_Phi = 0
+        else:
+            delta_Phi = self.delta_phi_calculator(self.position_phase_angle,reader_phase_angle)
 
-        if delta_Phi > 0:
-            delta_Phi -= 2*pi
+        turns_to_read = min(self.avg_length,len(self.register))
 
-        if(self.avg_length>1):
-
+        if(turns_to_read>1):
             output = np.zeros(len(self.register[0]))
-            if len(self.register) < self.avg_length:
-                to = len(self.register)
-            else:
-                to = self.avg_length
-
-            for i in range(to):
-                output += 2.0*math.cos(((1-len(self.register))+i)*self.phase_shift_per_turn+delta_Phi)*self.register[i]/self.avg_length
+            for i in range(turns_to_read):
+                n_delay = 1-len(self.register)+i
+                output += self.phase_weight_function(n_delay,self.phase_shift_per_turn,delta_Phi)*self.register[i]/float(turns_to_read)
             return output
         else:
-            return math.cos((1-len(self.register))*self.phase_shift_per_turn+delta_Phi)*self.register[0]
+            return self.phase_weight_function((1-len(self.register)),self.phase_shift_per_turn,delta_Phi)*self.register[0]
+
+
+class CosineSumRegister(Register):
+    def __init__(self,phase_shift_per_turn,delay, avg_length=1, position_phase_angle = 0):
+        self.phase_shift_per_turn = phase_shift_per_turn
+        self.delay = delay
+        self.avg_length = avg_length
+        self.position_phase_angle = position_phase_angle
+        super(self.__class__, self).__init__(self.phase_weight_function, self.delta_phi_calculator, self.phase_shift_per_turn,delay, self.avg_length, self.position_phase_angle)
+
+    def phase_weight_function(self,delay,phase_shift_per_turn,delta_phi):
+        # delta_phi is betatron phase angle between reader and register
+        return 2.*math.cos(delay*phase_shift_per_turn+delta_phi)
+
+    def delta_phi_calculator(self,register_phase_angle,reader_phase_angle):
+        delta_phi = register_phase_angle - reader_phase_angle
+
+        if delta_phi > 0:
+            delta_phi -= 2*pi
+
+        return delta_phi
