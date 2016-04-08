@@ -1,28 +1,24 @@
 import numpy as np
 import itertools
 import math
+from scipy.constants import pi
 
-
-
-# TODO: Check vector sum of complex numbers
 class Averager(object):
     """The simplest possible signal mixer of pick ups, which calculates a phase weighted average of
     the pick up signals"""
-    def __init__(self,channel,location_phase_angle):
-        self.channel = channel
-        self.location_phase_angle = location_phase_angle
 
-    def mix(self,pickups):
+    def __init__(self, x_xp_conv_coeff):
+        self.x_xp_conv_coeff = x_xp_conv_coeff
+
+    def mix(self,registers,reader_phase_angle):
+
         signal = None
 
-        for index, pickup in enumerate(pickups):
+
+        for index, register in enumerate(registers):
             if signal is None:
-                temp = pickup.sig_x(1)
-                signal = np.zeros(len(temp))
-
-            if self.channel == 'x':
-                signal += pickup.sig_x(self.location_phase_angle)/len(pickups)
-            elif self.channel == 'y':
-                signal += pickup.sig_y(self.location_phase_angle)/len(pickups)
-
-        return  signal
+                signal = register.read_signal(reader_phase_angle+pi/2)
+            else:
+                signal += register.read_signal(reader_phase_angle+pi/2)
+            signal = self.x_xp_conv_coeff*signal/float(len(registers))
+        return signal

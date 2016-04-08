@@ -1,8 +1,6 @@
 import numpy as np
 import itertools
 
-#TODO: check slicer get_slices vs extract_slices
-
 class IdealBunchFeedback(object):
     """The simplest possible feedback which correct a mean xp value of the bunch."""
     def __init__(self,gain):
@@ -65,11 +63,9 @@ class OneboxFeedback(object):
             bunch.xp[p_id] -= correction_xp[s_id]
             bunch.yp[p_id] -= correction_yp[s_id]
 
-#TODO: add phase angle to process arguments
 class PickUp(object):
     def __init__(self,slicer,signal_processors_x,signal_processors_y):
-        """Takes x/y values of slices and pass them through signal processors. The signal processors handle all
-        necessary operations including registers/averaging, phase shifting, etc"""
+        """Takes x and y values of slices and pass them through signal processor chains"""
         self.slicer = slicer
 
         self.signal_processors_x = signal_processors_x
@@ -90,34 +86,37 @@ class PickUp(object):
         for signal_processor in self.signal_processors_y:
             self.signal_y = signal_processor.process(self.signal_y,slice_set)
 
-    def sig_x(self,reader_phase_shift):
-        return self.signal_processors_x[-1].read_signal(reader_phase_shift)
-    def sig_y(self,reader_phase_shift):
-        return self.signal_processors_y[-1].read_signal(reader_phase_shift)
+
 
 # TODO: Add pi/2 phase shift correction between pick up and kicker
 class Kicker(object):
     """Combines signals from different pick ups by using signal_mixer object. After this the signals pass through
     signal processor chains, which produce final correction signals"""
 
-    def __init__(self,gain,slicer,pickups,signal_processors_x,signal_processors_y,signal_mixer_x,signal_mixer_y):
+    def __init__(self,phase_angle_x,phase_angle_y,gain,slicer,registers_x,registers_y,signal_processors_x,signal_processors_y,signal_mixer_x,signal_mixer_y):
+
+        self.phase_angle_x = phase_angle_x
+        self.phase_angle_y = phase_angle_y
+
         self.gain=gain
-        self.pickups=pickups    # list of pick ups
+        self.slicer = slicer
+
+        self.registers_x = registers_x
+        self.registers_y = registers_y
+
         self.signal_processors_x = signal_processors_x
         self.signal_processors_y = signal_processors_y
+
         self.signal_mixer_x = signal_mixer_x
         self.signal_mixer_y = signal_mixer_y
-
-        self.slicer = slicer
-        self.mode, self.n_slices, _, _=slicer.config
 
     def track(self,bunch):
 
         slice_set = bunch.get_slices(self.slicer, statistics=['mean_xp', 'mean_yp','mean_z'])
 
         #Form signals from pickups with signal mixers
-        signal_x = self.signal_mixer_x.mix(self.pickups)
-        signal_y = self.signal_mixer_y.mix(self.pickups)
+        signal_x = self.signal_mixer_x.mix(self.registers_x,self.phase_angle_x)
+        signal_y = self.signal_mixer_y.mix(self.registers_y,self.phase_angle_y)
 
         #Process signals to correction signal
         for signal_processor in self.signal_processors_x:
@@ -135,7 +134,7 @@ class Kicker(object):
 
         #TODO: x -> xp
         for p_id, s_id in itertools.izip(p_idx,s_idx):
-            bunch.x[p_id] -= correction_xp[s_id]
-            bunch.y[p_id] -= correction_yp[s_id]
+            bunch.xp[p_id] -= correction_xp[s_id]
+            bunch.yp[p_id] -= correction_yp[s_id]
 
 

@@ -90,13 +90,11 @@ class LinearProcessor(object):
                     matrix[i][j] = temp/self.norm_coeff
         return matrix
 
+
 class Averager(LinearProcessor):
     """An ideal bunch feedback corresponds to an uniform matrix in the linear signal processor"""
     def __init__(self,norm_type = 'MatrixSum', norm_range = None):
-        self.norm_type = norm_type
-        self.norm_range = norm_range
-        self.scaling = 1
-        super(self.__class__, self).__init__(self.response_function, self.scaling, self.norm_type, self.norm_range)
+        super(self.__class__, self).__init__(self.response_function, 1, norm_type, norm_range)
 
     def response_function(self,x):
         return 1
@@ -104,12 +102,10 @@ class Averager(LinearProcessor):
 
 class PhaseLinearizedLowpass(LinearProcessor):
     def __init__(self, f_cutoff, norm_type = 'MatrixSum', norm_range = None):
-        self.norm_type = norm_type
-        self.norm_range = norm_range
-        self.scaling = f_cutoff/c
+        scaling = f_cutoff/c
         self.norm_range_coeff = 10
-        self.norm_range = [-1.0 * self.norm_range_coeff / self.scaling, self.norm_range_coeff / self.scaling]
-        super(self.__class__, self).__init__(self.f, self.scaling, self.norm_type, self.norm_range)
+        self.norm_range = [-1.0 * self.norm_range_coeff / scaling, self.norm_range_coeff / scaling]
+        super(self.__class__, self).__init__(self.f, scaling, norm_type, norm_range)
 
     def f(self,x):
         if x == 0:
@@ -138,15 +134,6 @@ class Bypass(object):
         return signal
 
 
-# def lowpass(f_cutoff):
-#     def f(dz):
-#         if dz < 0:
-#             return 0
-#         else:
-#             return np.exp(-1.*dz*f_cutoff/c)
-#     return f
-
-# To
 class Weighter(object):
     """ A general class for signal weighing. A seed for the weight is a property of slices (weight_property).
         The weight is calculated by giving the seed to weight_function() as a parameter. A parameter
@@ -218,6 +205,7 @@ class Weighter(object):
 class ChargeWeighter(Weighter):
     def __init__(self):
         super(self.__class__, self).__init__('charge', self.weight_function, 'average_weight')
+
     def weight_function(self,weight):
         return weight
 
@@ -247,16 +235,16 @@ class Register(object):
         account by calculating a weight for the register value with phase_weight_function(). Total phase differences are
         calculated with delta_phi_calculator. The register can be also ridden without changing it by calling read_signal.
         In this case a relative betatron phase angle of the reader must be given as a parameter.
-
-
     """
-    def __init__(self,phase_weight_function, delta_phi_calculator, phase_shift_per_turn,delay, avg_length, position_phase_angle):
+
+    def __init__(self,phase_weight_function, delta_phi_calculator, phase_shift_per_turn,delay, avg_length, position_phase_angle, n_slices):
         self.phase_weight_function = phase_weight_function
         self.delta_phi_calculator = delta_phi_calculator
         self.phase_shift_per_turn = phase_shift_per_turn
         self.delay = delay
         self.position_phase_angle = position_phase_angle
         self.avg_length = avg_length
+        self.n_slices = n_slices
 
         self.max_reg_length = self.delay+self.avg_length
         self.register = deque()
@@ -271,6 +259,10 @@ class Register(object):
         return self.read_signal(None)
 
     def read_signal(self,reader_phase_angle):
+
+        if len(self.register) == 0:
+            if self.n_slices is not None:
+                self.register.append(np.zeros(self.n_slices))
 
         if reader_phase_angle is None:
             delta_Phi = 0
@@ -290,12 +282,8 @@ class Register(object):
 
 
 class CosineSumRegister(Register):
-    def __init__(self,phase_shift_per_turn,delay, avg_length=1, position_phase_angle = 0):
-        self.phase_shift_per_turn = phase_shift_per_turn
-        self.delay = delay
-        self.avg_length = avg_length
-        self.position_phase_angle = position_phase_angle
-        super(self.__class__, self).__init__(self.phase_weight_function, self.delta_phi_calculator, self.phase_shift_per_turn,delay, self.avg_length, self.position_phase_angle)
+    def __init__(self,phase_shift_per_turn,delay, avg_length=1, position_phase_angle = 0, n_slices = None):
+        super(self.__class__, self).__init__(self.phase_weight_function, self.delta_phi_calculator, phase_shift_per_turn,delay, avg_length, position_phase_angle, n_slices)
 
     def phase_weight_function(self,delay,phase_shift_per_turn,delta_phi):
         # delta_phi is betatron phase angle between reader and register
