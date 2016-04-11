@@ -14,11 +14,12 @@ class Averager(object):
 
         signal = None
 
-
         for index, register in enumerate(registers):
             if signal is None:
-                signal = register.read_signal(reader_phase_angle+pi/2)
+                #signal = register.read_signal(reader_phase_angle+0.)
+                signal = register.read_signal(reader_phase_angle+pi/2.)
             else:
-                signal += register.read_signal(reader_phase_angle+pi/2)
+                #signal += register.read_signal(reader_phase_angle+0.)
+                signal += register.read_signal(reader_phase_angle+pi/2.)
             signal = self.x_xp_conv_coeff*signal/float(len(registers))
         return signal

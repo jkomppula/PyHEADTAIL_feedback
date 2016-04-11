@@ -12,6 +12,71 @@ import math
 # TODO: add phase shifter
 # TODO: alternative implementation by using convolution?
 
+
+class GenericProcessor(object):
+    def __init__(self):
+        a=1
+
+
+class NoiseGenerator(GenericProcessor):
+    def __init__(self,RMS_noise_level,reference_level = 'absolute_signal', distribution = 'normal'):
+
+        self.RMS_noise_level = RMS_noise_level
+        self.reference_level = reference_level
+        self.distribution = distribution
+
+        super(self.__class__, self).__init__()
+
+    def process(self,signal,slice_set):
+
+        randoms = np.zeros(len(signal))
+
+        if self.distribution == "normal" or self.distribution is None:
+            randoms = np.random.randn(len(signal))
+        elif self.distribution == "uniform":
+            randoms = 1./0.577263*(-1.+2.*np.random.rand(len(signal)))
+
+
+
+        if self.reference_level == 'absolute':
+            signal = signal + self.RMS_noise_level*randoms
+        elif self.reference_level == 'maximum':
+            signal = self.RMS_noise_level*np.max(signal)*randoms*signal
+        elif self.reference_level == 'relative':
+            signal = self.RMS_noise_level*randoms*signal
+
+
+        return signal
+
+
+class PickUp(GenericProcessor):
+
+    def __init__(self,RMS_noise_level,f_cutoff):
+        self.RMS_noise_level = RMS_noise_level
+        self.f_cutoff = f_cutoff
+
+        self.noise_generator = NoiseGenerator(self.RMS_noise_level)
+        self.filter = LowpassFilter(self.f_cutoff)
+        self.charge_weighter = ChargeWeighter()
+
+
+    def process(self,signal,slice_set):
+        signal = self.charge_weighter.process(signal,slice_set)
+
+        plate_1 = 1.*self.noise_generator.process(signal,slice_set)
+        plate_1 = self.filter.process(plate_1,slice_set)
+        plate_1 += 1.
+
+        plate_2 = -1.*self.noise_generator.process(signal,slice_set)
+        plate_2 = self.filter.process(plate_2,slice_set)
+        plate_2 += 1
+
+        return (plate_1-plate_2)/(plate_1+plate_2)
+
+
+
+
+
 class LinearProcessor(object):
     """ General class for linear signal processing. The signal is processed by calculating a dot product of a transfer matrix and a signal. The transfer matrix is produced
     from response function and (possible non uniform) z_bin_set by using generate_matrix function.
@@ -64,7 +129,7 @@ class LinearProcessor(object):
 
     def generate_matrix(self,bin_set, bin_midpoints=None):
         if bin_midpoints is None:
-            bin_midpoints = [(i+j)/2 for i, j in zip(bin_set, bin_set[1:])]
+            bin_midpoints = [(i+j)/2. for i, j in zip(bin_set, bin_set[1:])]
 
         # TODO: Rethink these
         if self.norm_type == 'BunchLength':
@@ -140,7 +205,7 @@ class Weighter(object):
         weight_normalization determines which part of the weight is normalized to be one.
     """
 
-    def __init__(self, weight_property, weight_function, weight_normalization):
+    def __init__(self, weight_property, weight_function, weight_normalization = None):
         self.weight_property = weight_property
         self.weight_function = weight_function
         self.weight_normalization = weight_normalization
@@ -185,12 +250,14 @@ class Weighter(object):
         elif self.weight_property == 'bin_midpoint':
             bin_set = slice_set.z_bins
             weight = [(i+j)/2 for i, j in zip(bin_set, bin_set[1:])]
+        elif self.weight_property == 'signal':
+            weight = np.array(signal)
 
         weight = self.weight_function(weight)
 
-        norm_coeff = 1.
-
-        if self.weight_normalization == 'total_weight':
+        if self.weight_normalization is None:
+            norm_coeff =1
+        elif self.weight_normalization == 'total_weight':
             norm_coeff = float(np.sum(weight))
         elif self.weight_normalization == 'average_weight':
             norm_coeff = float(np.sum(weight))/float(len(weight))
@@ -208,7 +275,6 @@ class ChargeWeighter(Weighter):
 
     def weight_function(self,weight):
         return weight
-
 
 class FermiDiracInverseWeighter(Weighter):
     def __init__(self,bunch_length,bunch_decay_length,maximum_weight = 10):
@@ -292,7 +358,10 @@ class CosineSumRegister(Register):
     def delta_phi_calculator(self,register_phase_angle,reader_phase_angle):
         delta_phi = register_phase_angle - reader_phase_angle
 
-        if delta_phi > 0:
-            delta_phi -= 2*pi
+
+        #if delta_phi > 0:
+        if delta_phi > pi/2.:
+            #print "done"
+            delta_phi = register_phase_angle - reader_phase_angle - 1. * self.phase_shift_per_turn
 
         return delta_phi

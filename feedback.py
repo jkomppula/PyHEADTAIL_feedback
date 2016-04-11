@@ -134,6 +134,9 @@ class Kicker(object):
 
         #TODO: x -> xp
         for p_id, s_id in itertools.izip(p_idx,s_idx):
+            #bunch.x[p_id] -= correction_xp[s_id]
+            #bunch.y[p_id] -= correction_yp[s_id]
+
             bunch.xp[p_id] -= correction_xp[s_id]
             bunch.yp[p_id] -= correction_yp[s_id]
 
