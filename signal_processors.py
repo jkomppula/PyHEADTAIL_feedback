@@ -1,25 +1,65 @@
 import numpy as np
-from scipy.constants import c, e, pi
+from scipy.constants import c, pi
 import scipy.integrate as integrate
 import scipy.special as special
 from collections import deque
-import sys
-import copy
-import itertools
-import math
+import sys, itertools, math
 
-# TODO: add noise generator
-# TODO: add realistic pickup
 # TODO: add phase shifter
-# TODO: alternative implementation by using convolution?
+# TODO: alternative implementation by using convolution or FFT?
 
 
-class GenericProcessor(object):
-    def __init__(self):
-        a=1
+class PickUp(object):
+    """ Models a realistic two plates pickup system, which has a finite noise level and bandwidth."""
+
+    def __init__(self,RMS_noise_level,f_cutoff):
+        self.RMS_noise_level = RMS_noise_level
+        self.f_cutoff = f_cutoff
+        self.noise_generator = NoiseGenerator(self.RMS_noise_level)
+        self.filter = LowpassFilter(self.f_cutoff)
+        self.charge_weighter = ChargeWeighter()
+
+    def process(self,signal,slice_set):
+        """ The pickup model assumes that signals from the plates vary to opposite polarities from the reference signal
+            level. The reference signal level has been chosen to be 1 in order to avoid normalization at the end.
+            The signals of both plates pass separately ChargeWeighter, NoiseGenerator and LowpassFilter in order to
+            simulate realistic levels of signal, noise and frequency response. The output signal is calculated by
+            using the ratio of a difference and sum of the signals.
+
+            If the cut off frequency of the LowpassFilter is higher than 'sampling rate', a signal passes this without
+            changes. In other cases a step response is faster than by using only a LowpassFilter. The algorithm induces
+            also a high noise level to outside the bunch and an artificial signal to trailing edge.
+
+            TODO: Find a solution to an infinite long decay of signals
+        """
+        #reference_level = np.max(signal)
+        reference_level = 1
+
+        signal_1 = (reference_level + np.array(signal))
+        signal_2 = (reference_level - np.array(signal))
+        signal_1 = self.charge_weighter.process(signal_1,slice_set)
+        signal_2 = self.charge_weighter.process(signal_2,slice_set)
+
+        signal_1 = self.noise_generator.process(signal_1,slice_set)
+        signal_1 = self.filter.process(signal_1,slice_set)
+
+        signal_2 = self.noise_generator.process(signal_2,slice_set)
+        signal_2 = self.filter.process(signal_2,slice_set)
+
+        #print 'End: '
+        #for s1,s2 in itertools.izip(signal_1,signal_2):
+        #    print "{:10.20f}".format(s1) + ' ' + "{:10.20f}".format(s2)
+
+        return reference_level*(signal_1-signal_2)/(signal_1+signal_2)
 
 
-class NoiseGenerator(GenericProcessor):
+class NoiseGenerator(object):
+    """ Adds noise to a signal. The noise level is given as RMS value of an absolute level (reference_level = 'absolute'),
+        a relative RMS level to the maximum signal (reference_level = 'maximum') or a relative RMS level to local
+        signal values (reference_level = 'local'). Options for the noise distribution are a Gaussian normal distribution
+        (distribution = 'normal') and an uniform distribution (distribution = 'uniform')
+    """
+
     def __init__(self,RMS_noise_level,reference_level = 'absolute', distribution = 'normal'):
 
         self.RMS_noise_level = RMS_noise_level
@@ -27,8 +67,6 @@ class NoiseGenerator(GenericProcessor):
         self.distribution = distribution
 
         super(self.__class__, self).__init__()
-
-
 
     def process(self,signal,slice_set):
 
@@ -39,44 +77,15 @@ class NoiseGenerator(GenericProcessor):
         elif self.distribution == 'uniform':
             randoms = 1./0.577263*(-1.+2.*np.random.rand(len(signal)))
 
-
         if self.reference_level == 'absolute':
-            signal = signal + self.RMS_noise_level*randoms
+            signal += self.RMS_noise_level*randoms
         elif self.reference_level == 'maximum':
-            signal = signal + self.RMS_noise_level*np.max(signal)*randoms
-        elif self.reference_level == 'relative':
-            signal = signal*(1. + self.RMS_noise_level*randoms)
+            signal += self.RMS_noise_level*np.max(signal)*randoms
+        elif self.reference_level == 'local':
+            signal += signal*self.RMS_noise_level*randoms
 
 
         return signal
-
-
-class PickUp(GenericProcessor):
-
-    def __init__(self,RMS_noise_level,f_cutoff):
-        self.RMS_noise_level = RMS_noise_level
-        self.f_cutoff = f_cutoff
-        self.noise_generator = NoiseGenerator(self.RMS_noise_level)
-        self.filter = LowpassFilter(self.f_cutoff)
-        self.charge_weighter = ChargeWeighter()
-
-    def process(self,signal,slice_set):
-
-        signal_1 = (1 + np.array(signal))
-        signal_1 = self.charge_weighter.process(signal_1,slice_set)
-        signal_1 = self.noise_generator.process(signal_1,slice_set)
-        signal_1 = self.filter.process(signal_1,slice_set)
-
-
-        signal_2 = (1 - np.array(signal))
-        signal_2 = self.charge_weighter.process(signal_2,slice_set)
-        signal_2 = self.noise_generator.process(signal_2,slice_set)
-        signal_2 = self.filter.process(signal_2,slice_set)
-
-        return (signal_1-signal_2)/(signal_1+signal_2)
-
-
-
 
 
 class LinearProcessor(object):
@@ -290,10 +299,6 @@ class FermiDiracInverseWeighter(Weighter):
         weight = np.clip(weight,1.,self.maximum_weight)
         return weight
 
-
-
-
-# TODO: Initiliaze register
 # TODO: Rethink weighing
 class Register(object):
     """ A general class for a signal register. A signal is stored to the register, when the function process() is
@@ -358,6 +363,9 @@ class CosineSumRegister(Register):
         return 2.*math.cos(delay*phase_shift_per_turn+delta_phi)
 
     def delta_phi_calculator(self,register_phase_angle,reader_phase_angle):
+
+
+
         delta_phi = register_phase_angle - reader_phase_angle
 
 
