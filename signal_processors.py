@@ -4,6 +4,7 @@ import scipy.integrate as integrate
 import scipy.special as special
 from collections import deque
 import sys
+import copy
 import itertools
 import math
 
@@ -19,7 +20,7 @@ class GenericProcessor(object):
 
 
 class NoiseGenerator(GenericProcessor):
-    def __init__(self,RMS_noise_level,reference_level = 'absolute_signal', distribution = 'normal'):
+    def __init__(self,RMS_noise_level,reference_level = 'absolute', distribution = 'normal'):
 
         self.RMS_noise_level = RMS_noise_level
         self.reference_level = reference_level
@@ -27,23 +28,24 @@ class NoiseGenerator(GenericProcessor):
 
         super(self.__class__, self).__init__()
 
+
+
     def process(self,signal,slice_set):
 
         randoms = np.zeros(len(signal))
 
-        if self.distribution == "normal" or self.distribution is None:
+        if self.distribution == 'normal' or self.distribution is None:
             randoms = np.random.randn(len(signal))
-        elif self.distribution == "uniform":
+        elif self.distribution == 'uniform':
             randoms = 1./0.577263*(-1.+2.*np.random.rand(len(signal)))
-
 
 
         if self.reference_level == 'absolute':
             signal = signal + self.RMS_noise_level*randoms
         elif self.reference_level == 'maximum':
-            signal = self.RMS_noise_level*np.max(signal)*randoms*signal
+            signal = signal + self.RMS_noise_level*np.max(signal)*randoms
         elif self.reference_level == 'relative':
-            signal = self.RMS_noise_level*randoms*signal
+            signal = signal*(1. + self.RMS_noise_level*randoms)
 
 
         return signal
@@ -54,24 +56,24 @@ class PickUp(GenericProcessor):
     def __init__(self,RMS_noise_level,f_cutoff):
         self.RMS_noise_level = RMS_noise_level
         self.f_cutoff = f_cutoff
-
         self.noise_generator = NoiseGenerator(self.RMS_noise_level)
         self.filter = LowpassFilter(self.f_cutoff)
         self.charge_weighter = ChargeWeighter()
 
-
     def process(self,signal,slice_set):
-        signal = self.charge_weighter.process(signal,slice_set)
 
-        plate_1 = 1.*self.noise_generator.process(signal,slice_set)
-        plate_1 = self.filter.process(plate_1,slice_set)
-        plate_1 += 1.
+        signal_1 = (1 + np.array(signal))
+        signal_1 = self.charge_weighter.process(signal_1,slice_set)
+        signal_1 = self.noise_generator.process(signal_1,slice_set)
+        signal_1 = self.filter.process(signal_1,slice_set)
 
-        plate_2 = -1.*self.noise_generator.process(signal,slice_set)
-        plate_2 = self.filter.process(plate_2,slice_set)
-        plate_2 += 1
 
-        return (plate_1-plate_2)/(plate_1+plate_2)
+        signal_2 = (1 - np.array(signal))
+        signal_2 = self.charge_weighter.process(signal_2,slice_set)
+        signal_2 = self.noise_generator.process(signal_2,slice_set)
+        signal_2 = self.filter.process(signal_2,slice_set)
+
+        return (signal_1-signal_2)/(signal_1+signal_2)
 
 
 
@@ -152,7 +154,7 @@ class LinearProcessor(object):
         for i, midpoint in enumerate(bin_midpoints):
                 for j in range(len(bin_midpoints)):
                     temp, _ = integrate.quad(self.response_function,self.scaling*(bin_set[j]-midpoint),self.scaling*(bin_set[j+1]-midpoint))
-                    matrix[i][j] = temp/self.norm_coeff
+                    matrix[j][i] = temp/self.norm_coeff
         return matrix
 
 
@@ -262,16 +264,16 @@ class Weighter(object):
         elif self.weight_normalization == 'average_weight':
             norm_coeff = float(np.sum(weight))/float(len(weight))
         elif self.weight_normalization == 'maximum_weight':
-            norm_coeff = float(max(weight))
+            norm_coeff = float(np.max(weight))
         elif self.weight_normalization == 'minimum_weight':
-            norm_coeff = float(min(weight))
+            norm_coeff = float(np.min(weight))
 
         return signal*weight/norm_coeff
 
 
 class ChargeWeighter(Weighter):
     def __init__(self):
-        super(self.__class__, self).__init__('charge', self.weight_function, 'average_weight')
+        super(self.__class__, self).__init__('charge', self.weight_function, 'maximum_weight')
 
     def weight_function(self,weight):
         return weight
