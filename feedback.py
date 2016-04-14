@@ -1,5 +1,6 @@
 import numpy as np
 import itertools
+import copy
 
 
 class IdealBunchFeedback(object):
@@ -49,7 +50,6 @@ class OneboxFeedback(object):
         self.processors_y = processors_y
 
     def track(self,bunch):
-
         slice_set = bunch.get_slices(self.slicer, statistics=['mean_xp', 'mean_yp','mean_z'])
 
         signal_xp = np.array([s for s in slice_set.mean_xp])
@@ -73,9 +73,6 @@ class OneboxFeedback(object):
             bunch.xp[p_id] -= correction_xp[s_id]
             bunch.yp[p_id] -= correction_yp[s_id]
 
-
-""" Something general about pickup kicker systems
-"""
 
 class PickUp(object):
     """ General class for a pickup. It takes mean_x and mean_y values of slices and pass them through signal processor

@@ -1,4 +1,3 @@
-import sys
 import itertools
 import math
 import copy
@@ -17,8 +16,9 @@ import scipy.special as special
     the input array.
 """
 
-# TODO: add delay processor
-# TODO: alternative implementation by using convolution or FFT?
+# TODO: add delay processor (ns scale)
+# TODO: similar register as used in SPS
+# TODO: alternative implementation by using convolution or FFT?0,
 
 
 class PickUp(object):
@@ -59,6 +59,9 @@ class PickUp(object):
 
         signal_2 = self.noise_generator.process(signal_2,slice_set)
         signal_2 = self.filter.process(signal_2,slice_set)
+
+#        print signal
+#        print (reference_level*(signal_1-signal_2)/(signal_1+signal_2))/signal
 
         return reference_level*(signal_1-signal_2)/(signal_1+signal_2)
 
@@ -104,7 +107,7 @@ class LinearProcessor(object):
     """
 
     def __init__(self,response_function, scaling=1., norm_type=None, norm_range=None, bin_check = False\
-                 , bin_middle = 'particles'):
+                 , bin_middle = 'bin'):
         """
         :param response_function: Impulse response function of the processor
         :param scaling: Because integration by substitution doesn't work with np.quad (see quad_problem.ipynbl), it
@@ -144,11 +147,11 @@ class LinearProcessor(object):
 
         # recalculte the matrix if necessary
         if self.recalculate_matrix:
-
+            self.recalculate_matrix = False
             if self.bin_middle == 'particles':
-                bin_midpoints = slice_set.mean_z
+                bin_midpoints = np.array(copy.copy(slice_set.mean_z))
             else:
-                bin_midpoints = [(i+j)/2. for i, j in zip(slice_set.z_bins, slice_set.z_bins[1:])]
+                bin_midpoints = np.array([(i+j)/2. for i, j in zip(slice_set.z_bins, slice_set.z_bins[1:])])
 
             self.matrix = self.generate_matrix(slice_set.z_bins,bin_midpoints)
 
@@ -208,7 +211,7 @@ class Averager(LinearProcessor):
         the input signal. This is implemented by using an uniform matrix in LinearProcessor (response_function returns
         a constant value and sums of the rows in the matrix are normalized to be one).
     """
-    def __init__(self,norm_type = 'MatrixSum', norm_range = None):
+    def __init__(self,norm_type = 'matrix_sum', norm_range = None):
         super(self.__class__, self).__init__(self.response_function, 1, norm_type, norm_range)
 
     def response_function(self,x):
@@ -222,7 +225,7 @@ class PhaseLinearizedLowpass(LinearProcessor):
     """
 
     # TODO: Add 2 pi?
-    def __init__(self, f_cutoff, norm_type = 'MatrixSum', norm_range = None):
+    def __init__(self, f_cutoff, norm_type = 'matrix_sum', norm_range = None):
         scaling = f_cutoff/c
         self.norm_range_coeff = 10
         super(self.__class__, self).__init__(self.f, scaling, norm_type, norm_range)
@@ -233,11 +236,12 @@ class PhaseLinearizedLowpass(LinearProcessor):
         else:
             return special.k0(abs(x))
 
+
 class LowpassFilter(LinearProcessor):
     """ Classical first order lowpass filter (e.g. a RC filter), whose impulse response can be described as exponential
         decay.
     """
-    def __init__(self, f_cutoff, norm_type = 'MatrixSum', norm_range = None):
+    def __init__(self, f_cutoff, norm_type = 'matrix_sum', norm_range = None):
         self.scaling = 2.*pi*f_cutoff/c
         super(self.__class__, self).__init__(self.f, self.scaling, norm_type, norm_range)
 
@@ -310,23 +314,30 @@ class Weighter(object):
         else:
             norm_coeff = 1.
 
-        self.weight = self.weight/norm_coeff
-
-
+        self.weight = self.weight / norm_coeff
 
 
 class ChargeWeighter(Weighter):
-    """ Weight input signal by charge.
+    """ weight signal with charge (macroparticles) of slices
     """
 
-    def __init__(self):
-        super(self.__class__, self).__init__('n_macroparticles_per_slice', self.weight_function, 'maximum_weight')
+    def __init__(self, normalization = 'maximum_weight'):
+        super(self.__class__, self).__init__('n_macroparticles_per_slice', self.weight_function, normalization)
 
     def weight_function(self,weight):
         return weight
 
+
 class FermiDiracInverseWeighter(Weighter):
+    """ Use an inverse of the Fermi-Dirac distribution function to increase signal strength on edge of the bunch
+    """
+
     def __init__(self,bunch_length,bunch_decay_length,maximum_weight = 10):
+        """
+        :param bunch_length: estimated width of the bunch
+        :param bunch_decay_length: slope of the function on the edge of the bunch. Smaller value, steeper slope.
+        :param maximum_weight: maximum value of the weight
+        """
         self.bunch_length = bunch_length
         self.bunch_decay_length = bunch_decay_length
         self.maximum_weight=maximum_weight
@@ -337,7 +348,6 @@ class FermiDiracInverseWeighter(Weighter):
         weight = np.clip(weight,1.,self.maximum_weight)
         return weight
 
-# TODO: Rethink weighing
 class Register(object):
     """ A general class for a signal register. A signal is stored to the register, when the function process() is
         called. Depending on the avg_length parameter, a return value of the process() function is an averaged
@@ -350,6 +360,17 @@ class Register(object):
     """
 
     def __init__(self,phase_weight_function, delta_phi_calculator, phase_shift_per_turn,delay, avg_length, position_phase_angle, n_slices):
+        """
+        :param phase_weight_function: a reference to function which weights register values with phase angle
+        :param delta_phi_calculator: a reference to function which calculates total phase angles
+        :param phase_shift_per_turn: a betatron phase sihift per turn
+        :param delay: a delay between storing to reading values  in turns
+        :param avg_length: a number of register values are averaged
+        :param position_phase_angle: a relative betatron angle from the reference point
+        :param n_slices: a length of the signal. Necessary in a multi pickup system where the register must be
+            initialized with zeros
+        """
+
         self.phase_weight_function = phase_weight_function
         self.delta_phi_calculator = delta_phi_calculator
         self.phase_shift_per_turn = phase_shift_per_turn
@@ -372,12 +393,6 @@ class Register(object):
 
     def read_signal(self,reader_phase_angle):
 
-        # Fill one element of register with zeros. This avoids errors at first turn of a multi pickup system, when there might not be values in
-        # each register.
-        if len(self.register) == 0:
-            if self.n_slices is not None:
-                self.register.append(np.zeros(self.n_slices))
-
         if reader_phase_angle is None:
             delta_Phi = 0
         else:
@@ -385,36 +400,37 @@ class Register(object):
 
         turns_to_read = min(self.avg_length,len(self.register))
 
-        if turns_to_read > 1:
+        if turns_to_read == 0:
+            return np.zeros(self.n_slices)
+        elif turns_to_read == 1:
+            return self.phase_weight_function((1-len(self.register)),self.phase_shift_per_turn,delta_Phi)*self.register[0]
+        else:
             output = np.zeros(len(self.register[0]))
             for i in range(turns_to_read):
                 n_delay = 1-len(self.register)+i
                 output += self.phase_weight_function(n_delay,self.phase_shift_per_turn,delta_Phi)*self.register[i]/float(turns_to_read)
             return output
-        else:
-            return self.phase_weight_function((1-len(self.register)),self.phase_shift_per_turn,delta_Phi)*self.register[0]
-
 
 class CosineSumRegister(Register):
-
-    # TODO: Explain this
+    """ Sum register values by multiplying the values with a cosine of the betatron phase angle from the reader.
+        If there are multiple values in different phases, the sum approaches a value equal to half of the displacement
+        in the reader's position
+    """
     def __init__(self,phase_shift_per_turn,delay, avg_length=1, position_phase_angle = 0, n_slices = None):
         super(self.__class__, self).__init__(self.phase_weight_function, self.delta_phi_calculator, phase_shift_per_turn,delay, avg_length, position_phase_angle, n_slices)
 
     def phase_weight_function(self,delay,phase_shift_per_turn,delta_phi):
-        # delta_phi is betatron phase angle between reader and register
         return 2.*math.cos(delay*phase_shift_per_turn+delta_phi)
 
     def delta_phi_calculator(self,register_phase_angle,reader_phase_angle):
-
-
+        # assumes that if register location (in phase angle) is further than reader location, there is one turn extra
+        # delay because register is not filled yet on this turn. Assumes also that x/y values are shifted to xp/xp
+        # values by adding pi/2 to the reader phase angle
 
         delta_phi = register_phase_angle - reader_phase_angle
 
-
-        #if delta_phi > 0:
         if delta_phi > pi/2.:
-            #print "done"
             delta_phi = register_phase_angle - reader_phase_angle - 1. * self.phase_shift_per_turn
 
         return delta_phi
+
