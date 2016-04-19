@@ -1,6 +1,5 @@
 import numpy as np
-import itertools
-import copy
+
 
 
 class IdealBunchFeedback(object):
@@ -25,14 +24,12 @@ class IdealSliceFeedback(object):
     def track(self,bunch):
         slice_set = bunch.get_slices(self.slicer, statistics=True)
 
-        # Read the particle index and the slice index for each macroparticle
+        # Reads a particle index and a slice index for each macroparticle
         p_idx = slice_set.particles_within_cuts
         s_idx = slice_set.slice_index_of_particle.take(p_idx)
 
-        # Correct the position of each macro particle
-        for p_id, s_id in itertools.izip(p_idx,s_idx):
-            bunch.xp[p_id] -= self.gain*slice_set.mean_xp[s_id]
-            bunch.yp[p_id] -= self.gain*slice_set.mean_yp[s_id]
+        bunch.xp[p_idx] -= self.gain * slice_set.mean_xp[s_idx]
+        bunch.yp[p_idx] -= self.gain * slice_set.mean_yp[s_idx]
 
 
 class OneboxFeedback(object):
@@ -64,14 +61,12 @@ class OneboxFeedback(object):
         correction_xp = self.gain*signal_xp
         correction_yp = self.gain*signal_yp
 
-        # Read the particle index and the slice index for each macroparticle
+        # Reads a particle index and a slice index for each macroparticle
         p_idx = slice_set.particles_within_cuts
         s_idx = slice_set.slice_index_of_particle.take(p_idx)
 
-        # Correct the position of each macro particle
-        for p_id, s_id in itertools.izip(p_idx,s_idx):
-            bunch.xp[p_id] -= correction_xp[s_id]
-            bunch.yp[p_id] -= correction_yp[s_id]
+        bunch.xp[p_idx] -= correction_xp[s_idx]
+        bunch.yp[p_idx] -= correction_yp[s_idx]
 
 
 class PickUp(object):
@@ -145,12 +140,10 @@ class Kicker(object):
         correction_xp = self.gain*signal_x
         correction_yp = self.gain*signal_y
 
-        # Read the particle index and the slice index for each macroparticle
+        # Reads a particle index and a slice index for each macroparticle
         p_idx = slice_set.particles_within_cuts
         s_idx = slice_set.slice_index_of_particle.take(p_idx)
 
-        # Correct the position of each macro particle
-        for p_id, s_id in itertools.izip(p_idx,s_idx):
-            bunch.xp[p_id] -= correction_xp[s_id]
-            bunch.yp[p_id] -= correction_yp[s_id]
+        bunch.xp[p_idx] -= correction_xp[s_idx]
+        bunch.yp[p_idx] -= correction_yp[s_idx]
 

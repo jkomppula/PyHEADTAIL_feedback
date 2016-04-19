@@ -7,6 +7,8 @@ import numpy as np
 from scipy.constants import c, pi
 import scipy.integrate as integrate
 import scipy.special as special
+import scipy.signal as signal
+
 
 """ This file contains signal processors whom can be used to process signal in the feedback module of PyHEADTAIL.
 
@@ -348,6 +350,110 @@ class FermiDiracInverseWeighter(Weighter):
         weight = np.clip(weight,1.,self.maximum_weight)
         return weight
 
+# class Register(object):
+#     """ A general class for a signal register. A signal is stored to the register, when the function process() is
+#         called. Depending on the avg_length parameter, a return value of the process() function is an averaged
+#         value of the stored signals.
+#
+#         A effect of a betatron shift between turns and between the register and the reader is taken into
+#         account by calculating a weight for the register value with phase_weight_function(). Total phase differences are
+#         calculated with delta_phi_calculator. The register can be also ridden without changing it by calling read_signal.
+#         In this case a relative betatron phase angle of the reader must be given as a parameter.
+#     """
+#
+#     def __init__(self,phase_weight_function, delta_phi_calculator, phase_shift_per_turn,delay, avg_length, position_phase_angle, n_slices):
+#         """
+#         :param phase_weight_function: a reference to function which weights register values with phase angle
+#         :param delta_phi_calculator: a reference to function which calculates total phase angles
+#         :param phase_shift_per_turn: a betatron phase sihift per turn
+#         :param delay: a delay between storing to reading values  in turns
+#         :param avg_length: a number of register values are averaged
+#         :param position_phase_angle: a relative betatron angle from the reference point
+#         :param n_slices: a length of the signal. Necessary in a multi pickup system where the register must be
+#             initialized with zeros
+#         """
+#
+#         self.phase_weight_function = phase_weight_function
+#         self.delta_phi_calculator = delta_phi_calculator
+#         self.phase_shift_per_turn = phase_shift_per_turn
+#         self.delay = delay
+#         self.position_phase_angle = position_phase_angle
+#         self.avg_length = avg_length
+#         self.n_slices = n_slices
+#
+#         self.max_reg_length = self.delay+self.avg_length
+#         self.register = deque()
+#
+#     def process(self,signal, *args):
+#
+#         self.register.append(signal)
+#
+#         if len(self.register) > self.max_reg_length:
+#             self.register.popleft()
+#
+#         return self.read_signal(None)
+#
+#     def read_signal(self,reader_phase_angle):
+#
+#         if reader_phase_angle is None:
+#             delta_Phi = 0
+#         else:
+#             delta_Phi = self.delta_phi_calculator(self.position_phase_angle,reader_phase_angle)
+#
+#         turns_to_read = min(self.avg_length,len(self.register))
+#
+#         if turns_to_read == 0:
+#             return np.zeros(self.n_slices)
+#         elif turns_to_read == 1:
+#             return self.phase_weight_function((1-len(self.register)),self.phase_shift_per_turn,delta_Phi)*self.register[0]
+#         else:
+#             output = np.zeros(len(self.register[0]))
+#             for i in range(turns_to_read):
+#                 n_delay = 1-len(self.register)+i
+#                 output += self.phase_weight_function(n_delay,self.phase_shift_per_turn,delta_Phi)*self.register[i]/float(turns_to_read)
+#             return output
+
+
+
+
+
+
+class HilbertRegister(object):
+    # TODO: signal phase angle
+    def __init__(self,delay, avg_length=1, n_slices = None):
+        self.delay = delay
+        self.avg_length = avg_length
+
+        self.register = deque()
+
+        if n_slices is not None:
+            self.register.append(np.zeros(n_slices))
+
+    def process(self, signal, *args):
+        self.register.append(signal)
+
+        if len(self.register) > self.max_reg_length:
+            self.register.popleft()
+
+        return self.read_signal(None)
+
+    def read_signal(self):
+        temp_signal = np.zeros(len(self.register[0]))
+        if len(self.register) == self.max_reg_length:
+            temp_register = []
+            for i, row in enumerate(self.register[0:self.avg_length]):
+                for j,value in enumerate(row):
+                    if i == 0:
+                        temp_register.append(np.zeros(self.avg_length))
+                    temp_register[j][i] = value
+            for i,row in  enumerate(temp_register):
+                h = signal.hilbert(row)
+
+                temp_signal[i] = np.mean(np.sqrt(np.real(h[1:-1])*np.real(h[1:-1])+np.imag(h[1:-1])*np.imag(h[1:-1])))
+
+        return temp_signal
+
+
 class Register(object):
     """ A general class for a signal register. A signal is stored to the register, when the function process() is
         called. Depending on the avg_length parameter, a return value of the process() function is an averaged
@@ -359,28 +465,36 @@ class Register(object):
         In this case a relative betatron phase angle of the reader must be given as a parameter.
     """
 
-    def __init__(self,phase_weight_function, delta_phi_calculator, phase_shift_per_turn,delay, avg_length, position_phase_angle, n_slices):
+    def __init__(self,delay, avg_length, phase_shift_per_turn, position):
         """
-        :param phase_weight_function: a reference to function which weights register values with phase angle
-        :param delta_phi_calculator: a reference to function which calculates total phase angles
-        :param phase_shift_per_turn: a betatron phase sihift per turn
+        :param phase_shift_per_turn: a betatron phase shift per turn
         :param delay: a delay between storing to reading values  in turns
         :param avg_length: a number of register values are averaged
         :param position_phase_angle: a relative betatron angle from the reference point
-        :param n_slices: a length of the signal. Necessary in a multi pickup system where the register must be
-            initialized with zeros
         """
 
-        self.phase_weight_function = phase_weight_function
-        self.delta_phi_calculator = delta_phi_calculator
         self.phase_shift_per_turn = phase_shift_per_turn
         self.delay = delay
-        self.position_phase_angle = position_phase_angle
+        self.position = position
         self.avg_length = avg_length
-        self.n_slices = n_slices
 
         self.max_reg_length = self.delay+self.avg_length
         self.register = deque()
+
+        self.reader_position = None
+
+    def __iter__(self,reader_position = None):
+        self.reader_position = reader_position
+        self.n_iter_left = len(self.register) - self.delay
+        if self.n_iter_left < 0:
+            self.n_iter_left = 0
+        return self
+
+    def __len__(self):
+        return max((len(self.register) - self.delay), 0)
+
+    def next(self):
+        pass
 
     def process(self,signal, *args):
 
@@ -389,48 +503,48 @@ class Register(object):
         if len(self.register) > self.max_reg_length:
             self.register.popleft()
 
-        return self.read_signal(None)
+        temp_signal = np.zeros(len(signal))
+        if self.len() > 0:
+            for value in self:
+                temp_signal += value/float(self.len())
+        return temp_signal
 
-    def read_signal(self,reader_phase_angle):
 
-        if reader_phase_angle is None:
-            delta_Phi = 0
+class PlainRegister(Register):
+    def __init__(self,delay, avg_length, phase_shift_per_turn, position_phase_angle):
+        super(self.__class__, self).__init__(delay, avg_length, phase_shift_per_turn, position_phase_angle)
+
+    def next(self):
+        if self.n_iter_left == 0:
+            return StopIteration
+        elif self.reader_position is None:
+            self.n_iter_left = 0
+            return self.register[len(self.register)-self.delay-1]
         else:
-            delta_Phi = self.delta_phi_calculator(self.position_phase_angle,reader_phase_angle)
+            self.n_iter_left -= 1
+            return self.register[self.n_iter_left]
 
-        turns_to_read = min(self.avg_length,len(self.register))
-
-        if turns_to_read == 0:
-            return np.zeros(self.n_slices)
-        elif turns_to_read == 1:
-            return self.phase_weight_function((1-len(self.register)),self.phase_shift_per_turn,delta_Phi)*self.register[0]
-        else:
-            output = np.zeros(len(self.register[0]))
-            for i in range(turns_to_read):
-                n_delay = 1-len(self.register)+i
-                output += self.phase_weight_function(n_delay,self.phase_shift_per_turn,delta_Phi)*self.register[i]/float(turns_to_read)
-            return output
 
 class CosineSumRegister(Register):
-    """ Sum register values by multiplying the values with a cosine of the betatron phase angle from the reader.
+    """ sums register values by multiplying the values with a cosine of the betatron phase angle from the reader.
         If there are multiple values in different phases, the sum approaches a value equal to half of the displacement
         in the reader's position
     """
-    def __init__(self,phase_shift_per_turn,delay, avg_length=1, position_phase_angle = 0, n_slices = None):
-        super(self.__class__, self).__init__(self.phase_weight_function, self.delta_phi_calculator, phase_shift_per_turn,delay, avg_length, position_phase_angle, n_slices)
+    def __init__(self,delay, avg_length, phase_shift_per_turn, position):
+        super(self.__class__, self).__init__(delay, avg_length, phase_shift_per_turn, position)
 
-    def phase_weight_function(self,delay,phase_shift_per_turn,delta_phi):
-        return 2.*math.cos(delay*phase_shift_per_turn+delta_phi)
+    def next(self):
+        if self.n_iter_left == 0:
+            return StopIteration
+        else:
+            if self.reader_position is None:
+                self.reader_position = 0
 
-    def delta_phi_calculator(self,register_phase_angle,reader_phase_angle):
-        # assumes that if register location (in phase angle) is further than reader location, there is one turn extra
-        # delay because register is not filled yet on this turn. Assumes also that x/y values are shifted to xp/xp
-        # values by adding pi/2 to the reader phase angle
+            delta_phi = self.position - self.reader_position
+            if delta_phi > pi / 2.:
+                delta_phi = self.position - self.reader_position - 1. * self.phase_shift_per_turn
 
-        delta_phi = register_phase_angle - reader_phase_angle
+            delay = len(self.register)-self.n_iter_left
 
-        if delta_phi > pi/2.:
-            delta_phi = register_phase_angle - reader_phase_angle - 1. * self.phase_shift_per_turn
-
-        return delta_phi
-
+            self.n_iter_left -= 1
+            return 2.*math.cos(delay*self.phase_shift_per_turn+delta_phi)*self.register[self.n_iter_left]
