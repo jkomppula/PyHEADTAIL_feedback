@@ -2,54 +2,57 @@ import numpy as np
 from scipy.constants import pi
 
 class Averager(object):
-    """The simplest possible signal mixer, which calculates a phase weighted average of
-    signals from different registers. Readings x/y axis are converted to xp/yp axis by adding pi/2 phase sift to
-    betatron phase angle and multiplying values with phase_conv_coeff which describes an amplitude scaling between
-    x/y and xp/yp."""
+    """The simplest possible signal mixer, which calculates an average of
+    signals from different registers. If x_to_xp is True, readings are converted from x/y axis to to xp/yp axis by
+    adding pi/2 to the position phase angle and multiplying values with phase_conv_coeff.
+    phase_conv_coeff describes an amplitude scaling between x/y and xp/yp."""
 
-    def __init__(self, phase_conv_coeff):
+    def __init__(self, phase_conv_coeff, x_to_xp = True):
         self.phase_conv_coeff = phase_conv_coeff
+        self.x_to_xp = x_to_xp
 
-    def mix(self,registers,reader_phase_angle):
+    def mix(self,registers,reader_position):
 
-        signal = None
+        total_signal = None
+        n_signals = 0
 
-        for index, register in enumerate(registers):
-            if signal is None:
-                signal = register.read_signal(reader_phase_angle+pi/2.)
-            else:
-                signal += register.read_signal(reader_phase_angle+pi/2.)
-            signal = self.phase_conv_coeff*signal/float(len(registers))
-        return signal
+        if self.x_to_xp == True:
+            reader_position += pi/2
 
-class RightAnglePickups(object):
-    def __init__(self, register_1, register_2):
-        self.register_1 = register_1
-        self.register_2 = register_2
+        for register in registers:
+            for signal in register(reader_position):
+                if total_signal is None:
+                    total_signal = np.zeros(len(signal))
 
-    def mix(self):
-        avg_length = min(self.register_1.avg_length,self.register_2.avg_length)
+                n_signals += 1
+                total_signal += signal
 
-        signal = None
-        for idx in range(avg_length):
-            val_1 = self.register_1.read_value(idx)
-            val_2 = self.register_2.read_value(idx)
+        total_signal /= float(n_signals)
 
-            if idx == 0:
-                signal = np.zeros(len(val_1))
+        if self.x_to_xp == True:
+            total_signal *= self.phase_conv_coeff
 
-            if (val_1 is not None) and (val_2 is not None):
-                signal += np.sqrt(val_1*val_1 + val_2*val_2)
-            else:
-                break
-
-        return signal
+        return total_signal
 
 
-class DoublePickup(object):
-    def __init__(self, register_1,register_2):
-        self.register_1 = register_1
-        self.register_2 = register_2
-
-    def mix(self):
-        return 1
+# class RightAnglePickups(object):
+#     # Assumes that betatron phase difference between pickups is pi/2 (+ n*2 pi). Thus, the betatron amplitude is
+#     # a quadratic sum of signals from the pickups independently of the betatron phase angle
+#
+#     def __init__(self, register_1,register_2):
+#         self.register_1 = register_1
+#         self.register_2 = register_2
+#
+#     def mix(self):
+#         total_signal = None
+#
+#         n_signals = min(len(self.register_1),len(self.register_2))
+#
+#         for signal_1, signal_2 in zip(self.register_1,self.register_2):
+#
+#             if total_signal is None:
+#                 total_signal = np.zeros(len(signal_1))
+#
+#             total_signal += np.sqrt(signal_1*signal_1+signal_2*signal_2)/float(n_signals)
+#
+#         return total_signal

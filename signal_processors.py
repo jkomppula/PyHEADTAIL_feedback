@@ -108,10 +108,8 @@ class LinearProcessor(object):
         by using generate_matrix function.
     """
 
-    def __init__(self,response_function, scaling=1., norm_type=None, norm_range=None, bin_check = False\
-                 , bin_middle = 'bin'):
+    def __init__(self, scaling=1., norm_type=None, norm_range=None, bin_check = False, bin_middle = 'bin'):
         """
-        :param response_function: Impulse response function of the processor
         :param scaling: Because integration by substitution doesn't work with np.quad (see quad_problem.ipynbl), it
             must be done by scaling integral limits. This parameter is a linear scaling coefficient of the integral
             limits. An ugly way which must be fixed.
@@ -129,7 +127,6 @@ class LinearProcessor(object):
             (bin_middle = 'bin') or an average place of macro particles (bin_middle = 'particles')
         """
 
-        self.response_function = response_function
         self.scaling = scaling
         self.norm_type = norm_type
         self.norm_range = norm_range
@@ -140,6 +137,10 @@ class LinearProcessor(object):
         self.matrix = None
 
         self.recalculate_matrix = True
+
+    def response_function(self, *args):
+        # Impulse response function of the processor
+        pass
 
     def process(self,signal,slice_set, *args):
 
@@ -214,7 +215,7 @@ class Averager(LinearProcessor):
         a constant value and sums of the rows in the matrix are normalized to be one).
     """
     def __init__(self,norm_type = 'matrix_sum', norm_range = None):
-        super(self.__class__, self).__init__(self.response_function, 1, norm_type, norm_range)
+        super(self.__class__, self).__init__(1, norm_type, norm_range)
 
     def response_function(self,x):
         return 1
@@ -230,9 +231,9 @@ class PhaseLinearizedLowpass(LinearProcessor):
     def __init__(self, f_cutoff, norm_type = 'matrix_sum', norm_range = None):
         scaling = f_cutoff/c
         self.norm_range_coeff = 10
-        super(self.__class__, self).__init__(self.f, scaling, norm_type, norm_range)
+        super(self.__class__, self).__init__(scaling, norm_type, norm_range)
 
-    def f(self,x):
+    def response_function(self,x):
         if x == 0:
             return 0
         else:
@@ -245,9 +246,9 @@ class LowpassFilter(LinearProcessor):
     """
     def __init__(self, f_cutoff, norm_type = 'matrix_sum', norm_range = None):
         self.scaling = 2.*pi*f_cutoff/c
-        super(self.__class__, self).__init__(self.f, self.scaling, norm_type, norm_range)
+        super(self.__class__, self).__init__(self.scaling, norm_type, norm_range)
 
-    def f(self,x):
+    def response_function(self,x):
         if x < 0:
             return 0
         else:
@@ -264,11 +265,10 @@ class Weighter(object):
         The weight is calculated by passing the weight seed through weight_function.
     """
 
-    def __init__(self, weight_seed, weight_function, weight_normalization = None, recalculate_weight = False):
+    def __init__(self, weight_seed, weight_normalization = None, recalculate_weight = False):
         """
         :param weight_seed: 'bin_length', 'bin_midpoint', 'signal' or a property of a slice, which can be found
             from slice_set
-        :param weight_function: a function, which calculates the weight for each slice from the weight_seed
         :param weight_normalization:
             'total_weight':  a sum of weight is equal to 1.
             'average_weight': an average weight over slices is equal to 1,
@@ -278,11 +278,13 @@ class Weighter(object):
         """
 
         self.weight_seed = weight_seed
-        self.weight_function = weight_function
         self.weight_normalization = weight_normalization
         self.recalculate_weight = recalculate_weight
 
         self.weight = None
+
+    def weight_function(self, *args):
+        pass
 
     def process(self,signal,slice_set):
 
@@ -324,7 +326,7 @@ class ChargeWeighter(Weighter):
     """
 
     def __init__(self, normalization = 'maximum_weight'):
-        super(self.__class__, self).__init__('n_macroparticles_per_slice', self.weight_function, normalization)
+        super(self.__class__, self).__init__('n_macroparticles_per_slice', normalization)
 
     def weight_function(self,weight):
         return weight
@@ -343,158 +345,75 @@ class FermiDiracInverseWeighter(Weighter):
         self.bunch_length = bunch_length
         self.bunch_decay_length = bunch_decay_length
         self.maximum_weight=maximum_weight
-        super(self.__class__, self).__init__('bin_midpoint', self.weight_function, 'minimum_weight')
+        super(self.__class__, self).__init__('bin_midpoint', 'minimum_weight')
 
     def weight_function(self,weight):
         weight = np.exp((np.absolute(weight)-self.bunch_length/2.)/float(self.bunch_decay_length))+ 1.
         weight = np.clip(weight,1.,self.maximum_weight)
         return weight
 
-# class Register(object):
-#     """ A general class for a signal register. A signal is stored to the register, when the function process() is
-#         called. Depending on the avg_length parameter, a return value of the process() function is an averaged
-#         value of the stored signals.
-#
-#         A effect of a betatron shift between turns and between the register and the reader is taken into
-#         account by calculating a weight for the register value with phase_weight_function(). Total phase differences are
-#         calculated with delta_phi_calculator. The register can be also ridden without changing it by calling read_signal.
-#         In this case a relative betatron phase angle of the reader must be given as a parameter.
-#     """
-#
-#     def __init__(self,phase_weight_function, delta_phi_calculator, phase_shift_per_turn,delay, avg_length, position_phase_angle, n_slices):
-#         """
-#         :param phase_weight_function: a reference to function which weights register values with phase angle
-#         :param delta_phi_calculator: a reference to function which calculates total phase angles
-#         :param phase_shift_per_turn: a betatron phase sihift per turn
-#         :param delay: a delay between storing to reading values  in turns
-#         :param avg_length: a number of register values are averaged
-#         :param position_phase_angle: a relative betatron angle from the reference point
-#         :param n_slices: a length of the signal. Necessary in a multi pickup system where the register must be
-#             initialized with zeros
-#         """
-#
-#         self.phase_weight_function = phase_weight_function
-#         self.delta_phi_calculator = delta_phi_calculator
-#         self.phase_shift_per_turn = phase_shift_per_turn
-#         self.delay = delay
-#         self.position_phase_angle = position_phase_angle
-#         self.avg_length = avg_length
-#         self.n_slices = n_slices
-#
-#         self.max_reg_length = self.delay+self.avg_length
-#         self.register = deque()
-#
-#     def process(self,signal, *args):
-#
-#         self.register.append(signal)
-#
-#         if len(self.register) > self.max_reg_length:
-#             self.register.popleft()
-#
-#         return self.read_signal(None)
-#
-#     def read_signal(self,reader_phase_angle):
-#
-#         if reader_phase_angle is None:
-#             delta_Phi = 0
-#         else:
-#             delta_Phi = self.delta_phi_calculator(self.position_phase_angle,reader_phase_angle)
-#
-#         turns_to_read = min(self.avg_length,len(self.register))
-#
-#         if turns_to_read == 0:
-#             return np.zeros(self.n_slices)
-#         elif turns_to_read == 1:
-#             return self.phase_weight_function((1-len(self.register)),self.phase_shift_per_turn,delta_Phi)*self.register[0]
-#         else:
-#             output = np.zeros(len(self.register[0]))
-#             for i in range(turns_to_read):
-#                 n_delay = 1-len(self.register)+i
-#                 output += self.phase_weight_function(n_delay,self.phase_shift_per_turn,delta_Phi)*self.register[i]/float(turns_to_read)
-#             return output
-
-
-
-
-
-
-class HilbertRegister(object):
-    # TODO: signal phase angle
-    def __init__(self,delay, avg_length=1, n_slices = None):
-        self.delay = delay
-        self.avg_length = avg_length
-
-        self.register = deque()
-
-        if n_slices is not None:
-            self.register.append(np.zeros(n_slices))
-
-    def process(self, signal, *args):
-        self.register.append(signal)
-
-        if len(self.register) > self.max_reg_length:
-            self.register.popleft()
-
-        return self.read_signal(None)
-
-    def read_signal(self):
-        temp_signal = np.zeros(len(self.register[0]))
-        if len(self.register) == self.max_reg_length:
-            temp_register = []
-            for i, row in enumerate(self.register[0:self.avg_length]):
-                for j,value in enumerate(row):
-                    if i == 0:
-                        temp_register.append(np.zeros(self.avg_length))
-                    temp_register[j][i] = value
-            for i,row in  enumerate(temp_register):
-                h = signal.hilbert(row)
-
-                temp_signal[i] = np.mean(np.sqrt(np.real(h[1:-1])*np.real(h[1:-1])+np.imag(h[1:-1])*np.imag(h[1:-1])))
-
-        return temp_signal
-
 
 class Register(object):
     """ A general class for a signal register. A signal is stored to the register, when the function process() is
-        called. Depending on the avg_length parameter, a return value of the process() function is an averaged
-        value of the stored signals.
+        called. The register is iterable and returns values which have been kept in register longer than
+        delay requires. Normally this means that a number of returned signals corresponds to a paremeter avg_length, but
+        it is less during the first turns. Phase shifts caused by delays and positions can be taken into account
+        by using information stored to variables phase_shift_per_turn, position and reader_position. The variable
+        reader_position is updated, when it is given in a call of the iterator, i.e. by using
+                for value in register(reader_position):
+            instead of
+                for value in register:
 
-        A effect of a betatron shift between turns and between the register and the reader is taken into
-        account by calculating a weight for the register value with phase_weight_function(). Total phase differences are
-        calculated with delta_phi_calculator. The register can be also ridden without changing it by calling read_signal.
-        In this case a relative betatron phase angle of the reader must be given as a parameter.
+        When the register is a part of a signal processor chain, the function process() must return np.array() which
+        length corresponds to the length of the input signal. The class can and must be customized by overwriting
+        the iterator function next().
+
     """
 
-    def __init__(self,delay, avg_length, phase_shift_per_turn, position):
+    def __init__(self,delay, avg_length, phase_shift_per_turn, position, n_slices, in_processor_chain):
         """
-        :param phase_shift_per_turn: a betatron phase shift per turn
         :param delay: a delay between storing to reading values  in turns
         :param avg_length: a number of register values are averaged
-        :param position_phase_angle: a relative betatron angle from the reference point
+        :param phase_shift_per_turn: a betatron phase shift per turn
+        :param position: a betatron position (angle) of the register from a reference point
+        :param n_slices: a length of a signal, which is returned if the register is empty
+        :param in_processor_chain: if True, process() returns a signal
         """
 
-        self.phase_shift_per_turn = phase_shift_per_turn
         self.delay = delay
-        self.position = position
         self.avg_length = avg_length
+        self.phase_shift_per_turn = phase_shift_per_turn
+        self.position = position
+        self.in_processor_chain = in_processor_chain
 
         self.max_reg_length = self.delay+self.avg_length
         self.register = deque()
 
         self.reader_position = None
 
-    def __iter__(self,reader_position = None):
-        self.reader_position = reader_position
-        self.n_iter_left = len(self.register) - self.delay
-        if self.n_iter_left < 0:
-            self.n_iter_left = 0
+        if n_slices is not None:
+            self.register.append(np.zeros(n_slices))
+
+    def __iter__(self):
+        # calculates a maximum number of iterations. If there is no enough values in the register, sets -1, which
+        # indicates that next() might return zero value
+
+        self.n_iter_left =  len(self)
+        if self.n_iter_left == 0:
+            self.n_iter_left = -1
         return self
 
     def __len__(self):
+        # returns a number of signals in the register after delay
         return max((len(self.register) - self.delay), 0)
 
     def next(self):
         pass
+
+    def __call__(self, reader_position = None):
+        # stores a reader position. During a call of a iterator goes to __iter__ function
+        self.reader_position = reader_position
+        return self
 
     def process(self,signal, *args):
 
@@ -503,20 +422,27 @@ class Register(object):
         if len(self.register) > self.max_reg_length:
             self.register.popleft()
 
-        temp_signal = np.zeros(len(signal))
-        if self.len() > 0:
-            for value in self:
-                temp_signal += value/float(self.len())
-        return temp_signal
+        if self.in_processor_chain == True:
+            temp_signal = np.zeros(len(signal))
+            if len(self) > 0:
+                for value in self:
+                    temp_signal += value/float(len(self))
+            return temp_signal
 
 
 class PlainRegister(Register):
-    def __init__(self,delay, avg_length, phase_shift_per_turn, position_phase_angle):
-        super(self.__class__, self).__init__(delay, avg_length, phase_shift_per_turn, position_phase_angle)
+    # A plain register, which does not modify signals. The function process() returns the latest value in the register.
+    # In the other cases, next() returns unmodified values.
+
+    def __init__(self,delay, avg_length, phase_shift_per_turn, position=None, n_slices=None, in_processor_chain=True):
+        super(self.__class__, self).__init__(delay, avg_length, phase_shift_per_turn, position, n_slices, in_processor_chain)
 
     def next(self):
         if self.n_iter_left == 0:
-            return StopIteration
+            raise StopIteration
+        elif self.n_iter_left == -1:
+            self.n_iter_left = 0
+            return np.zeros(len(self.register[0]))
         elif self.reader_position is None:
             self.n_iter_left = 0
             return self.register[len(self.register)-self.delay-1]
@@ -526,25 +452,69 @@ class PlainRegister(Register):
 
 
 class CosineSumRegister(Register):
-    """ sums register values by multiplying the values with a cosine of the betatron phase angle from the reader.
+    """ Returns register values by multiplying the values with a cosine of the betatron phase angle from the reader.
         If there are multiple values in different phases, the sum approaches a value equal to half of the displacement
-        in the reader's position
+        in the reader's position.
+
+        The function process() returns a value, which is an average of the register values (after delay determined by
+        the parameter avg_length)
     """
-    def __init__(self,delay, avg_length, phase_shift_per_turn, position):
-        super(self.__class__, self).__init__(delay, avg_length, phase_shift_per_turn, position)
+    def __init__(self,delay, avg_length, phase_shift_per_turn, position=None, n_slices=None, in_processor_chain=True):
+        super(self.__class__, self).__init__(delay, avg_length, phase_shift_per_turn, position, n_slices, in_processor_chain)
+
 
     def next(self):
         if self.n_iter_left == 0:
-            return StopIteration
+            raise StopIteration
+
+        elif self.n_iter_left == -1:
+            self.n_iter_left = 0
+            return np.zeros(len(self.register[0]))
+
         else:
             if self.reader_position is None:
                 self.reader_position = 0
+
+            if self.position is None:
+                self.position = 0
 
             delta_phi = self.position - self.reader_position
             if delta_phi > pi / 2.:
                 delta_phi = self.position - self.reader_position - 1. * self.phase_shift_per_turn
 
-            delay = len(self.register)-self.n_iter_left
-
+            delay = -1.*(len(self.register)-self.n_iter_left)
             self.n_iter_left -= 1
             return 2.*math.cos(delay*self.phase_shift_per_turn+delta_phi)*self.register[self.n_iter_left]
+
+
+# class HilbertRegister(Register):
+#     # A register which uses Hilber transform to calculate a betatron oscillation amplitude. The register returns in the
+#     # both cases (call of process() and iteration) a single value, which is an averaged oscillation amplitudevalue.
+#     # Note that avg_length must be sufficient (e.g. > X) in order to do a reliable calculation
+#
+#     def __init__(self,delay, avg_length, phase_shift_per_turn, position=None, n_slices=None, in_processor_chain=True):
+#         super(self.__class__, self).__init__(delay, avg_length, phase_shift_per_turn, position, n_slices, in_processor_chain)
+#
+#     def next(self):
+#         if self.n_iter_left == 0:
+#             raise StopIteration
+#
+#         elif self.n_iter_left == -1:
+#             self.n_iter_left = 0
+#             return np.zeros(len(self.register[0]))
+#
+#         else:
+#             signal = np.zeros(len(self.register[0]))
+#             if len(self.register) == self.max_reg_length:
+#                 temp_register = []
+#                 for i, row in enumerate(self.register[0:self.avg_length]):
+#                     for j,value in enumerate(row):
+#                         if i == 0:
+#                             temp_register.append(np.zeros(self.avg_length))
+#                         temp_register[j][i] = value
+#                 for i,row in  enumerate(temp_register):
+#                     h = signal.hilbert(row)
+#
+#                     signal[i] = np.mean(np.sqrt(np.real(h[1:-1])*np.real(h[1:-1])+np.imag(h[1:-1])*np.imag(h[1:-1])))
+#
+#             return signal
