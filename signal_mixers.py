@@ -16,26 +16,48 @@ class Averager(object):
         total_signal = None
         n_signals = 0
 
-        if self.x_to_xp == True:
-            reader_position += pi/2
+        #if self.x_to_xp == True:
+        #    reader_position += pi/2
+        # TODO: if only two registers, no loop
 
-        for register in registers:
-            for signal in register(reader_position):
+        if len(registers)>1:
+
+            prev_register = registers[-1]
+            for register in registers:
+                for signal_1, signal_2 in zip(prev_register,register):
+                    if total_signal is None:
+                        total_signal = np.array([np.zeros(len(signal_1[0])),np.zeros(len(signal_1[0]))])
+                    temp_signal = prev_register.combine(signal_1,signal_2,reader_position,x_to_xp = self.x_to_xp)
+                    if temp_signal[1] is not None:
+                        total_signal = total_signal + temp_signal
+                    else:
+                        total_signal[0] = total_signal[0] + temp_signal[0]
+                    n_signals += 1
+                prev_register = register
+        else:
+            prev_signal = None
+            for signal in registers[0]:
                 if total_signal is None:
-                    total_signal = np.zeros(len(signal))
-
+                    prev_signal = signal
+                    total_signal = np.array([np.zeros(len(signal[0])), np.zeros(len(signal[0]))])
+                #print n_signals,
+                temp_signal = registers[0].combine(signal, prev_signal,reader_position,x_to_xp = self.x_to_xp)
+                if temp_signal[1] is not None:
+                    total_signal = total_signal + temp_signal
+                else:
+                    total_signal[0] = total_signal[0] + temp_signal[0]
                 n_signals += 1
-                total_signal += signal
+                prev_signal = signal
 
-        total_signal /= float(n_signals)
-
+        return_signal = total_signal[0]/float(n_signals)
         if self.x_to_xp == True:
-            total_signal *= self.phase_conv_coeff
+            return_signal *= self.phase_conv_coeff
 
-        return total_signal
+        return return_signal
 
 
 # class RightAnglePickups(object):
+#     # TODO: return tuplex of vectors (real and imag)
 #     # Assumes that betatron phase difference between pickups is pi/2 (+ n*2 pi). Thus, the betatron amplitude is
 #     # a quadratic sum of signals from the pickups independently of the betatron phase angle
 #
@@ -43,16 +65,17 @@ class Averager(object):
 #         self.register_1 = register_1
 #         self.register_2 = register_2
 #
-#     def mix(self):
+#
+#
+#
+#
+#     def mix(self,registers,reader_position):
 #         total_signal = None
+#         n_signals = 0
 #
-#         n_signals = min(len(self.register_1),len(self.register_2))
+#         theta = registers[1].position-registers[0].position
+#         c = np.cos(theta)
+#         s = np.sin(theta)
 #
-#         for signal_1, signal_2 in zip(self.register_1,self.register_2):
-#
-#             if total_signal is None:
-#                 total_signal = np.zeros(len(signal_1))
-#
-#             total_signal += np.sqrt(signal_1*signal_1+signal_2*signal_2)/float(n_signals)
-#
-#         return total_signal
+#         for signal_1, signal_2 in zip(registers[0],registers[1]):
+
