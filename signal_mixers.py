@@ -20,7 +20,7 @@ class Averager(object):
         #    reader_position += pi/2
         # TODO: if only two registers, no loop
 
-        if len(registers)>1:
+        if len(registers)>2:
 
             prev_register = registers[-1]
             for register in registers:
@@ -34,6 +34,18 @@ class Averager(object):
                         total_signal[0] = total_signal[0] + temp_signal[0]
                     n_signals += 1
                 prev_register = register
+
+        if len(registers) == 2:
+
+            for signal_1, signal_2 in zip(registers[0], registers[1]):
+                if total_signal is None:
+                    total_signal = np.array([np.zeros(len(signal_1[0])), np.zeros(len(signal_1[0]))])
+                temp_signal = registers[0].combine(signal_1, signal_2, reader_position, x_to_xp=self.x_to_xp)
+                if temp_signal[1] is not None:
+                    total_signal = total_signal + temp_signal
+                else:
+                    total_signal[0] = total_signal[0] + temp_signal[0]
+                n_signals += 1
         else:
             prev_signal = None
             for signal in registers[0]:

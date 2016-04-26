@@ -416,7 +416,7 @@ class Register(object):
         elif self.n_iter_left == -1:
             self.n_iter_left = 0
             print (np.zeros(len(self.register[0])),None,self.position)
-            return (np.zeros(len(self.register[0])),None,self.position)
+            return (np.zeros(len(self.register[0])),np.zeros(len(self.register[0])),0,self.position)
         else:
             delay = -1. * (len(self.register) - self.n_iter_left) * self.phase_shift_per_turn
             self.n_iter_left -= 1
@@ -515,57 +515,81 @@ class CosineSumRegister(Register):
         return np.array([2.*math.cos(delta_phi)*x1[0],None])
 
 
-# class HilbertRegister(Register):
-# # TODO: return tuplex of vectors (real and imag)
-#     # A register which uses Hilber transform to calculate a betatron oscillation amplitude. The register returns in the
-#     # both cases (call of process() and iteration) a single value, which is an averaged oscillation amplitudevalue.
-#     # Note that avg_length must be sufficient (e.g. > X) in order to do a reliable calculation
-#
-#     def __init__(self,delay, avg_length, phase_shift_per_turn, position=None, n_slices=None, in_processor_chain=True):
-#         super(self.__class__, self).__init__(delay, avg_length, phase_shift_per_turn, position, n_slices, in_processor_chain)
-#
-#     def next(self):
-#         signal_length = len(self.register[0])
-#
-#         if self.n_iter_left == 0:
-#             raise StopIteration
-#         elif len(self.register) < self.max_reg_length:
-#             self.n_iter_left = 0
-#             print (np.zeros(signal_length),np.zeros(signal_length),self.position)
-#         else:
-#             self.n_iter_left = 0
-#             amp = np.zeros(signal_length)
-#             angle = np.zeros(signal_length)
-#
-#             temp_data = np.array(self.register)
-#
-#             for i in range(signal_length):
-#                 h = signal.hilbert(temp_data[:,i])
-#                 re_t = np.real(h[1:-1])
-#                 im_t = np.imag(h[1:-1])
-#                 amp[i] = np.mean(np.sqrt(re_t*re_t+im_t*im_t))
-#                 angle[i] = np.angle
-#
-#             delay = -1. * (len(self.register) - self.n_iter_left) * self.phase_shift_per_turn
-#             self.n_iter_left -= 1
-#             return (re, im, delay, self.position)
-#             # reorders matrix
-#
-#     def combine(self,x1,x2,reader_position,x_to_xp = False):
-#         # turns the vector to the reader's position
-#         delta_phi = x1[2]
-#         if reader_position is not None:
-#             delta_position = x1[3] - reader_position
-#             delta_phi += delta_position
-#             if delta_position > 0:
-#                 delta_phi -= self.phase_shift_per_turn
-#             if x_to_xp == True:
-#                 delta_phi -= pi / 2.
-#
-#         s = np.sin(delta_phi)
-#         c = np.cos(delta_phi)
-#
-#         return np.array([c*x1[0]-s*x1[1], s*x1[0]+c*x1[1]])
+class HilbertRegister(Register):
+# TODO: return tuplex of vectors (real and imag)
+    # A register which uses Hilber transform to calculate a betatron oscillation amplitude. The register returns in the
+    # both cases (call of process() and iteration) a single value, which is an averaged oscillation amplitudevalue.
+    # Note that avg_length must be sufficient (e.g. > X) in order to do a reliable calculation
+
+    def __init__(self,delay, avg_length, phase_shift_per_turn, position=None, n_slices=None, in_processor_chain=True):
+        super(self.__class__, self).__init__(delay, avg_length, phase_shift_per_turn, position, n_slices, in_processor_chain)
+
+    def next(self):
+
+        signal_length = len(self.register[0])
+        if self.n_iter_left == 0:
+            raise StopIteration
+        elif len(self.register) < self.max_reg_length:
+            self.n_iter_left = 0
+            return (np.zeros(signal_length),np.zeros(signal_length),0,self.position)
+        else:
+            self.n_iter_left = 0
+
+            if self.delay == 0:
+                temp_data = np.array(self.register)
+            else:
+                temp_data = np.array(self.register)[:-1*self.delay]
+
+
+            re = []
+            im = []
+
+            for i in range(signal_length):
+                h = signal.hilbert(temp_data[:, i])
+                re.append(np.real(h))
+                im.append(np.imag(h))
+
+            re = np.array(re)
+            im = np.array(im)
+
+            total_re = np.zeros(len(re))
+            total_im = np.zeros(len(re))
+
+            counter = 0
+
+            for i in range(1,(len(re[0])-1)):
+                delay = 1. * float(len(self.register)-i-1) * self.phase_shift_per_turn
+                s = np.sin(delay)
+                c = np.cos(delay)
+                re_t = re[:,i]
+                im_t = im[:,i]
+                total_re += c * re_t - s * im_t
+                total_im += s * re_t + s * im_t
+                counter +=1
+
+            total_re /= float(counter)
+            total_im /= float(counter)
+
+            delay = 0
+
+            return (total_re, total_im, delay, self.position)
+            # reorders matrix
+
+    def combine(self,x1,x2,reader_position,x_to_xp = False):
+        # turns the vector to the reader's position
+        delta_phi = x1[2]
+        if reader_position is not None:
+            delta_position = x1[3] - reader_position
+            delta_phi += delta_position
+            if delta_position > 0:
+                delta_phi -= self.phase_shift_per_turn
+            if x_to_xp == True:
+                delta_phi -= pi / 2.
+
+        s = np.sin(delta_phi)
+        c = np.cos(delta_phi)
+
+        return np.array([c*x1[0]-s*x1[1], s*x1[0]+c*x1[1]])
 
 # class HilbertRegister(Register):
 # # TODO: return tuplex of vectors (real and imag)
