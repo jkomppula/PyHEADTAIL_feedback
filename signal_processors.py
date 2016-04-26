@@ -415,7 +415,7 @@ class Register(object):
             raise StopIteration
         elif self.n_iter_left == -1:
             self.n_iter_left = 0
-            print (np.zeros(len(self.register[0])),None,self.position)
+            # print (np.zeros(len(self.register[0])),None,self.position)
             return (np.zeros(len(self.register[0])),np.zeros(len(self.register[0])),0,self.position)
         else:
             delay = -1. * (len(self.register) - self.n_iter_left) * self.phase_shift_per_turn
@@ -521,6 +521,11 @@ class HilbertRegister(Register):
     # both cases (call of process() and iteration) a single value, which is an averaged oscillation amplitudevalue.
     # Note that avg_length must be sufficient (e.g. > X) in order to do a reliable calculation
 
+    # DEV NOTES: phase rotation is messy thing. I don't understand exactly (yet) why this is working, but probably
+    # because of beam phase rotation and Hilbert transform use different coordinate systems. Thus, there is a minus sign
+    # in the front of the imaginary part of the outgoing vector and the vector has been rotated to different directions,
+    # when average of vectors is calculated in next() and combine() functions.
+
     def __init__(self,delay, avg_length, phase_shift_per_turn, position=None, n_slices=None, in_processor_chain=True):
         super(self.__class__, self).__init__(delay, avg_length, phase_shift_per_turn, position, n_slices, in_processor_chain)
 
@@ -540,7 +545,6 @@ class HilbertRegister(Register):
             else:
                 temp_data = np.array(self.register)[:-1*self.delay]
 
-
             re = []
             im = []
 
@@ -557,8 +561,11 @@ class HilbertRegister(Register):
 
             counter = 0
 
-            for i in range(1,(len(re[0])-1)):
-                delay = 1. * float(len(self.register)-i-1) * self.phase_shift_per_turn
+            edge_skip = 0
+
+            for i in range(edge_skip,(len(re[0])-edge_skip)):
+
+                delay = 1. * float(self.avg_length-i-1) * self.phase_shift_per_turn
                 s = np.sin(delay)
                 c = np.cos(delay)
                 re_t = re[:,i]
@@ -570,12 +577,14 @@ class HilbertRegister(Register):
             total_re /= float(counter)
             total_im /= float(counter)
 
-            delay = 0
-
-            return (total_re, total_im, delay, self.position)
-            # reorders matrix
+            delay = -1. * float(self.delay) * self.phase_shift_per_turn
+            return (total_re, -1.*total_im, delay, self.position)
 
     def combine(self,x1,x2,reader_position,x_to_xp = False):
+
+        re = x1[0]
+        im = x1[1]
+        # turns the vector to the reader's position
         # turns the vector to the reader's position
         delta_phi = x1[2]
         if reader_position is not None:
@@ -589,37 +598,4 @@ class HilbertRegister(Register):
         s = np.sin(delta_phi)
         c = np.cos(delta_phi)
 
-        return np.array([c*x1[0]-s*x1[1], s*x1[0]+c*x1[1]])
-
-# class HilbertRegister(Register):
-# # TODO: return tuplex of vectors (real and imag)
-#     # A register which uses Hilber transform to calculate a betatron oscillation amplitude. The register returns in the
-#     # both cases (call of process() and iteration) a single value, which is an averaged oscillation amplitudevalue.
-#     # Note that avg_length must be sufficient (e.g. > X) in order to do a reliable calculation
-#
-#     def __init__(self,delay, avg_length, phase_shift_per_turn, position=None, n_slices=None, in_processor_chain=True):
-#         super(self.__class__, self).__init__(delay, avg_length, phase_shift_per_turn, position, n_slices, in_processor_chain)
-#
-#     def next(self):
-#         if self.n_iter_left == 0:
-#             raise StopIteration
-#
-#         elif self.n_iter_left == -1:
-#             self.n_iter_left = 0
-#             return np.zeros(len(self.register[0]))
-#
-#         else:
-#             signal = np.zeros(len(self.register[0]))
-#             if len(self.register) == self.max_reg_length:
-#                 temp_register = []
-#                 for i, row in enumerate(self.register[0:self.avg_length]):
-#                     for j,value in enumerate(row):
-#                         if i == 0:
-#                             temp_register.append(np.zeros(self.avg_length))
-#                         temp_register[j][i] = value
-#                 for i,row in  enumerate(temp_register):
-#                     h = signal.hilbert(row)
-#
-#                     signal[i] = np.mean(np.sqrt(np.real(h[1:-1])*np.real(h[1:-1])+np.imag(h[1:-1])*np.imag(h[1:-1])))
-#
-#             return signal
+        return np.array([c * re - s * im, s * re + c * im])
