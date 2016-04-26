@@ -19,9 +19,8 @@ import scipy.signal as signal
 """
 
 # TODO: add delay processor (ns scale)
-# TODO: similar register as used in SPS
-# TODO: alternative implementation by using convolution or FFT?0,
-# TODO:
+# TODO: high pass filter
+# TODO: Fix comments
 
 
 class PickUp(object):
@@ -101,7 +100,7 @@ class NoiseGenerator(object):
         return signal
 
 
-class LinearProcessor(object):
+class LinearTransform(object):
     """ General class for linear signal processing. The signal is processed by calculating a dot product of a transfer
         matrix and a signal. The transfer matrix is produced from response function and (possible non uniform) z_bin_set
         by using generate_matrix function.
@@ -208,7 +207,7 @@ class LinearProcessor(object):
         return matrix
 
 
-class Averager(LinearProcessor):
+class Averager(LinearTransform):
     """ Return a signal, whose length corresponds to the input signal, but has been filled with an average value of
         the input signal. This is implemented by using an uniform matrix in LinearProcessor (response_function returns
         a constant value and sums of the rows in the matrix are normalized to be one).
@@ -220,7 +219,7 @@ class Averager(LinearProcessor):
         return 1
 
 
-class PhaseLinearizedLowpass(LinearProcessor):
+class PhaseLinearizedLowpass(LinearTransform):
     """ Phase linearized lowpass filter, which can be used to describe a frequency behavior of a kicker. A impulse response
         of a phase linearized lowpass filter is modified Bessel function of the second kind (np.special.k0).
         The transfer function has been derived by Gerd Kotzian.
@@ -239,7 +238,7 @@ class PhaseLinearizedLowpass(LinearProcessor):
             return special.k0(abs(x))
 
 
-class LowpassFilter(LinearProcessor):
+class LowpassFilter(LinearTransform):
     """ Classical first order lowpass filter (e.g. a RC filter), whose impulse response can be described as exponential
         decay.
     """
@@ -260,12 +259,14 @@ class Bypass(object):
         return signal
 
 
-class Weighter(object):
+class Multiplication(object):
     """ A general class for signal weighing. A seed for the weight is a property of slices or the signal itself.
         The weight is calculated by passing the weight seed through weight_function.
     """
 
-    def __init__(self, weight_seed, weight_normalization = None, recalculate_weight = False):
+    # TODO: multiplier
+
+    def __init__(self, seed, normalization = None, recalculate_multiplier = False):
         """
         :param weight_seed: 'bin_length', 'bin_midpoint', 'signal' or a property of a slice, which can be found
             from slice_set
@@ -277,62 +278,62 @@ class Weighter(object):
         :param: recalculate_weight: if True, the weight is recalculated every time when process() is called
         """
 
-        self.weight_seed = weight_seed
-        self.weight_normalization = weight_normalization
-        self.recalculate_weight = recalculate_weight
+        self.seed = seed
+        self.normalization = normalization
+        self.recalculate_multiplier = recalculate_multiplier
 
-        self.weight = None
+        self.multiplier = None
 
-    def weight_function(self, *args):
+    def multiplication_function(self, *args):
         pass
 
     def process(self,signal,slice_set):
 
-        if (self.weight is None) or self.recalculate_weight:
-            self.calculate_weight(signal,slice_set)
+        if (self.multiplier is None) or self.recalculate_multiplier:
+            self.calculate_multiplier(signal,slice_set)
 
-        return signal*self.weight
+        return self.multiplier*signal
 
-    def calculate_weight(self,signal,slice_set):
-        if self.weight_seed == 'bin_length':
+    def calculate_multiplier(self,signal,slice_set):
+        if self.seed == 'bin_length':
             bin_set = slice_set.z_bins
-            self.weight = np.array([(j-i) for i, j in zip(bin_set, bin_set[1:])])
-        elif self.weight_seed == 'bin_midpoint':
+            self.multiplier = np.array([(j-i) for i, j in zip(bin_set, bin_set[1:])])
+        elif self.seed == 'bin_midpoint':
             bin_set = slice_set.z_bins
-            self.weight = np.array([(i+j)/2 for i, j in zip(bin_set, bin_set[1:])])
-        elif self.weight_seed == 'signal':
-            self.weight = np.array(signal)
+            self.multiplier = np.array([(i+j)/2 for i, j in zip(bin_set, bin_set[1:])])
+        elif self.seed == 'signal':
+            self.multiplier = np.array(signal)
         else:
-            self.weight = np.array(getattr(slice_set,self.weight_seed))
+            self.multiplier = np.array(getattr(slice_set,self.seed))
 
-        self.weight = self.weight_function(self.weight)
+        self.multiplier = self.multiplication_function(self.multiplier)
 
-        if self.weight_normalization == 'total_weight':
-            norm_coeff = float(np.sum(self.weight))
-        elif self.weight_normalization == 'average_weight':
-            norm_coeff = float(np.sum(self.weight))/float(len(self.weight))
-        elif self.weight_normalization == 'maximum_weight':
-            norm_coeff = float(np.max(self.weight))
-        elif self.weight_normalization == 'minimum_weight':
-            norm_coeff = float(np.min(self.weight))
+        if self.normalization == 'total_weight':
+            norm_coeff = float(np.sum(self.multiplier))
+        elif self.normalization == 'average_weight':
+            norm_coeff = float(np.sum(self.multiplier))/float(len(self.multiplier))
+        elif self.normalization == 'maximum_weight':
+            norm_coeff = float(np.max(self.multiplier))
+        elif self.normalization == 'minimum_weight':
+            norm_coeff = float(np.min(self.multiplier))
         else:
             norm_coeff = 1.
 
-        self.weight = self.weight / norm_coeff
+        self.multiplier = self.multiplier / norm_coeff
 
 
-class ChargeWeighter(Weighter):
+class ChargeWeighter(Multiplication):
     """ weight signal with charge (macroparticles) of slices
     """
 
     def __init__(self, normalization = 'maximum_weight'):
         super(self.__class__, self).__init__('n_macroparticles_per_slice', normalization)
 
-    def weight_function(self,weight):
+    def multiplication_function(self,weight):
         return weight
 
 
-class FermiDiracInverseWeighter(Weighter):
+class FermiDiracInverseWeighter(Multiplication):
     """ Use an inverse of the Fermi-Dirac distribution function to increase signal strength on edge of the bunch
     """
 
@@ -347,10 +348,103 @@ class FermiDiracInverseWeighter(Weighter):
         self.maximum_weight=maximum_weight
         super(self.__class__, self).__init__('bin_midpoint', 'minimum_weight')
 
-    def weight_function(self,weight):
+    def multiplication_function(self,weight):
         weight = np.exp((np.absolute(weight)-self.bunch_length/2.)/float(self.bunch_decay_length))+ 1.
         weight = np.clip(weight,1.,self.maximum_weight)
         return weight
+
+
+
+class Addition(object):
+    """ A general class for signal weighing. A seed for the weight is a property of slices or the signal itself.
+        The weight is calculated by passing the weight seed through weight_function.
+    """
+
+    def __init__(self, seed, normalization = None, recalculate_addend = False):
+        """
+        :param weight_seed: 'bin_length', 'bin_midpoint', 'signal' or a property of a slice, which can be found
+            from slice_set
+        :param weight_normalization:
+            'total_weight':  a sum of weight is equal to 1.
+            'average_weight': an average weight over slices is equal to 1,
+            'maximum_weight': a maximum weight value is equal to 1
+            'minimum_weight': a minimum weight value is equal to 1
+        :param: recalculate_weight: if True, the weight is recalculated every time when process() is called
+        """
+
+        self.seed = seed
+        self.normalization = normalization
+        self.recalculate_addend = recalculate_addend
+
+        self.addend = None
+
+    def addend_function(self, *args):
+        pass
+
+    def process(self,signal,slice_set):
+
+        if (self.addend is None) or self.recalculate_addend:
+            self.calculate_addend(signal,slice_set)
+
+        return signal + self.addend
+
+    def calculate_addend(self,signal,slice_set):
+        if self.seed == 'bin_length':
+            bin_set = slice_set.z_bins
+            self.addend = np.array([(j-i) for i, j in zip(bin_set, bin_set[1:])])
+        elif self.seed == 'bin_midpoint':
+            bin_set = slice_set.z_bins
+            self.addend = np.array([(i+j)/2 for i, j in zip(bin_set, bin_set[1:])])
+        elif self.seed == 'signal':
+            self.addend = np.array(signal)
+        else:
+            self.addend = np.array(getattr(slice_set,self.seed))
+
+        self.addend = self.addend_function(self.addend)
+
+        if self.normalization == 'total':
+            norm_coeff = float(np.sum(self.addend))
+        elif self.normalization == 'average':
+            norm_coeff = float(np.sum(self.addend))/float(len(self.addend))
+        elif self.normalization == 'maximum':
+            norm_coeff = float(np.max(self.addend))
+        elif self.normalization == 'minimum':
+            norm_coeff = float(np.min(self.addend))
+        else:
+            norm_coeff = 1.
+
+        self.addend = self.addend / norm_coeff
+
+class NoiseGeneratorAddition(Addition):
+    """ Add noise to a signal. The noise level is given as RMS value of an absolute level (reference_level = 'absolute'),
+        a relative RMS level to the maximum signal (reference_level = 'maximum') or a relative RMS level to local
+        signal values (reference_level = 'local'). Options for the noise distribution are a Gaussian normal distribution
+        (distribution = 'normal') and an uniform distribution (distribution = 'uniform')
+    """
+
+    def __init__(self,RMS_noise_level,reference_level = 'absolute', distribution = 'normal'):
+
+        self.RMS_noise_level = RMS_noise_level
+        self.reference_level = reference_level
+        self.distribution = distribution
+
+        super(self.__class__, self).__init__(self, 'signal', None, True)
+
+    def addend_function(self,signal):
+
+        randoms = np.zeros(len(signal))
+
+        if self.distribution == 'normal' or self.distribution is None:
+            randoms = np.random.randn(len(signal))
+        elif self.distribution == 'uniform':
+            randoms = 1./0.577263*(-1.+2.*np.random.rand(len(signal)))
+
+        if self.reference_level == 'absolute':
+            self.addend = self.RMS_noise_level*randoms
+        elif self.reference_level == 'maximum':
+            self.addend = self.RMS_noise_level*np.max(signal)*randoms
+        elif self.reference_level == 'local':
+            self.addend = signal*self.RMS_noise_level*randoms
 
 
 class Register(object):
@@ -416,17 +510,11 @@ class Register(object):
         elif self.n_iter_left == -1:
             self.n_iter_left = 0
             # print (np.zeros(len(self.register[0])),None,self.position)
-            return (np.zeros(len(self.register[0])),np.zeros(len(self.register[0])),0,self.position)
+            return (np.zeros(len(self.register[0])),None,0,self.position)
         else:
             delay = -1. * (len(self.register) - self.n_iter_left) * self.phase_shift_per_turn
             self.n_iter_left -= 1
             return (self.register[self.n_iter_left],None,delay,self.position)
-
-
-    # def __call__(self, reader_position = None):
-    #     # stores a reader position. During a call of a iterator goes to __iter__ function
-    #     self.reader_position = reader_position
-    #     return self
 
     def process(self,signal, *args):
 
@@ -439,7 +527,7 @@ class Register(object):
             temp_signal = np.zeros(len(signal))
             if len(self) > 0:
 
-                prev = (np.zeros(len(signal)),np.zeros(len(signal)),0)
+                prev = (np.zeros(len(self.register[0])),None,0,self.position)
 
                 for value in self:
                     combined = self.combine(value,prev,None)
@@ -462,8 +550,11 @@ class VectorSumRegister(Register):
         super(self.__class__, self).__init__(delay, avg_length, phase_shift_per_turn, position, n_slices, in_processor_chain)
 
     def combine(self,x1,x2,reader_position,x_to_xp = False):
-        # print x1
-        # print x2
+        if (len(x1) < 4) or (len(x2) < 4):
+            print "len(x1)=" + str(len(x1)) + " and len(x2)=" + str(len(x2))
+
+            print x1
+            print x2
         # calculates a vector in position x1
         # TODO: Why not x2[3]-x1[3]?
         phi_x1_x2 = x1[3]-x2[3]
@@ -516,7 +607,6 @@ class CosineSumRegister(Register):
 
 
 class HilbertRegister(Register):
-# TODO: return tuplex of vectors (real and imag)
     # A register which uses Hilber transform to calculate a betatron oscillation amplitude. The register returns in the
     # both cases (call of process() and iteration) a single value, which is an averaged oscillation amplitudevalue.
     # Note that avg_length must be sufficient (e.g. > X) in order to do a reliable calculation

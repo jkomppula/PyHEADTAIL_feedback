@@ -18,7 +18,7 @@ class Averager(object):
 
         #if self.x_to_xp == True:
         #    reader_position += pi/2
-        # TODO: if only two registers, no loop
+        # TODO: if only two registers, no loop?
 
         if len(registers)>1:
 
