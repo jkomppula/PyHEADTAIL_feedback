@@ -10,7 +10,7 @@ import scipy.special as special
 import scipy.signal as signal
 
 
-""" This file contains signal processors whom can be used to process signal in the feedback module of PyHEADTAIL.
+""" This file contains signal processors which can be used to process signals in the feedback module of PyHEADTAIL.
 
     A general requirement for the signal processor is that it is a class object which contains a function, namely,
     process(signal, slice_set). The input parameters of the function process(signal, slice_set) are a numpy array
@@ -21,27 +21,24 @@ import scipy.signal as signal
 # TODO: add delay processor (ns scale)
 # TODO: high pass filter
 # TODO: Fix comments
+# TODO: file read
 
 
 class PickUp(object):
-    """ Model for a realistic two plates pickup system, which has a finite noise level and bandwidth.
-        The model assumes that signals from the plates vary to opposite polarities from the reference signal
-        level. The reference signal level has been chosen to be 1 in order to avoid normalization at the end.
-        The signals of both plates pass separately ChargeWeighter, NoiseGenerator and LowpassFilter in order to
-        simulate realistic levels of signal, noise and frequency response. The output signal is calculated by
-        using the ratio of a difference and sum of the signals.
+    """ A signal processor, which models realistic two plates pickup system, which has a finite noise level and
+        bandwidth. The model assumes that signals from the plates vary to opposite polarities from the reference signal
+        level. The signals of both plates pass separately ChargeWeighter, NoiseGenerator and LowpassFilter in order to
+        simulate realistic levels of signal, noise and frequency response. The output signal is calculated from
+        the ratio of a difference and sum of the signals. Signals below a given threshold level is set to zero
+        in order to avoid high noise level at low input signal levels
 
-        If the cut off frequency of the LowpassFilter is higher than 'sampling rate', a signal passes this without
-        changes. In other cases, a step response is faster than by using only a LowpassFilter but finite.
-
-        In principle, there are no bugs in the algorithm, but it is NOT RECOMMENDED TO USE it at the moment.
-        Any noise outside the bunch is significantly amplified and also the trailing edge of the signal does not
-        decay to zero due to infinite long exponential decay of the lowpass filters. These problems will be solved.
+        If the cut off frequency of the LowpassFilter is higher than 'sampling rate', a signal passes this model without
+        changes. In other cases, a step response is faster than by using only a LowpassFilter but still finite.
     """
-        # TODO: Find a solution to an infinite long decay of signals
-        # TODO: Ask about noise reduction outside of the bunch
 
-    def __init__(self,RMS_noise_level,f_cutoff):
+    def __init__(self,RMS_noise_level,f_cutoff, threshold_level):
+
+        self.threshold_level = threshold_level
 
         self.noise_generator = NoiseGenerator(RMS_noise_level)
         self.filter = LowpassFilter(f_cutoff)
@@ -49,56 +46,135 @@ class PickUp(object):
 
     def process(self,signal,slice_set):
 
-        reference_level = 1.
+        reference_level = 1
 
-        signal_1 = (reference_level + np.array(signal))
-        signal_2 = (reference_level - np.array(signal))
-        signal_1 = self.charge_weighter.process(signal_1,slice_set)
-        signal_2 = self.charge_weighter.process(signal_2,slice_set)
+        signal_A = (reference_level + np.array(signal))
+        signal_A = self.charge_weighter.process(signal_A,slice_set)
+        signal_A = self.noise_generator.process(signal_A,slice_set)
+        signal_A = self.filter.process(signal_A,slice_set)
 
-        signal_1 = self.noise_generator.process(signal_1,slice_set)
-        signal_1 = self.filter.process(signal_1,slice_set)
+        signal_B = (reference_level - np.array(signal))
+        signal_B = self.charge_weighter.process(signal_B,slice_set)
+        signal_B = self.noise_generator.process(signal_B,slice_set)
+        signal_B = self.filter.process(signal_B,slice_set)
 
-        signal_2 = self.noise_generator.process(signal_2,slice_set)
-        signal_2 = self.filter.process(signal_2,slice_set)
+        # sets signals below the threshold level to 0. Multiplier 2 to the threshold level comes the fact that
+        # the signal difference is two times the original level and the threshold level refers to the original signal
+        signal_diff = signal_A - signal_B
+        signal_diff[np.absolute(signal_diff) < 2.*self.threshold_level] = 0.
 
-#        print signal
-#        print (reference_level*(signal_1-signal_2)/(signal_1+signal_2))/signal
+        # in order to avoid 0/0, also sum signals below the threshold level have been set to 1
+        signal_sum = (signal_A + signal_B)
+        signal_sum[np.absolute(signal_diff) < 2.*self.threshold_level] = 1.
 
-        return reference_level*(signal_1-signal_2)/(signal_1+signal_2)
-class NoiseGenerator(object):
-    """ Add noise to a signal. The noise level is given as RMS value of an absolute level (reference_level = 'absolute'),
-        a relative RMS level to the maximum signal (reference_level = 'maximum') or a relative RMS level to local
-        signal values (reference_level = 'local'). Options for the noise distribution are a Gaussian normal distribution
-        (distribution = 'normal') and an uniform distribution (distribution = 'uniform')
-    """
+        return reference_level * signal_diff / signal_sum
 
-    def __init__(self,RMS_noise_level,reference_level = 'absolute', distribution = 'normal'):
 
-        self.RMS_noise_level = RMS_noise_level
-        self.reference_level = reference_level
-        self.distribution = distribution
-
-        super(self.__class__, self).__init__()
-
-    def process(self,signal,slice_set):
-
-        randoms = np.zeros(len(signal))
-
-        if self.distribution == 'normal' or self.distribution is None:
-            randoms = np.random.randn(len(signal))
-        elif self.distribution == 'uniform':
-            randoms = 1./0.577263*(-1.+2.*np.random.rand(len(signal)))
-
-        if self.reference_level == 'absolute':
-            signal += self.RMS_noise_level*randoms
-        elif self.reference_level == 'maximum':
-            signal += self.RMS_noise_level*np.max(signal)*randoms
-        elif self.reference_level == 'local':
-            signal += signal*self.RMS_noise_level*randoms
-
-        return signal
-
+# class LinearTransform(object):
+#     """ General class for linear signal processing. The signal is processed by calculating a dot product of a transfer
+#         matrix and a signal. The transfer matrix is produced from response function and (possible non uniform) z_bin_set
+#         by using generate_matrix function.
+#     """
+#
+#     def __init__(self, scaling=1., norm_type=None, norm_range=None, bin_check = False, bin_middle = 'bin'):
+#         """
+#         :param scaling: Because integration by substitution doesn't work with np.quad (see quad_problem.ipynbl), it
+#             must be done by scaling integral limits. This parameter is a linear scaling coefficient of the integral
+#             limits. An ugly way which must be fixed.
+#         :param norm_type: Describes a normalization method for the transfer matrix
+#             'bunch_average': an average value over the bunch is equal to 1
+#             'fixed_average': an average value over a range given in a parameter norm_range is equal to 1
+#             'bunch_integral': an integral over the bunch is equal to 1
+#             'fixed_integral': an integral over a fixed range given in a parameter norm_range is equal to 1
+#             'matrix_sum': a sum over elements in the middle column of the matrix is equal to 1
+#         :param norm_range: Normalization length in cases of self.norm_type == 'fixed_length_average' or
+#             self.norm_type == 'fixed_length_integral'
+#         :param bin_check: if True, a change of the bin_set is checked every time process() is called and matrix is
+#             recalculated if any change is found
+#         :param bin_middle: defines if middle points of the bins are determined by a middle point of the bin
+#             (bin_middle = 'bin') or an average place of macro particles (bin_middle = 'particles')
+#         """
+#
+#         self.scaling = scaling
+#         self.norm_type = norm_type
+#         self.norm_range = norm_range
+#         self.bin_check = bin_check
+#         self.bin_middle = bin_middle
+#
+#         self.z_bin_set = None
+#         self.matrix = None
+#
+#         self.recalculate_matrix = True
+#
+#     def response_function(self, *args):
+#         # Impulse response function of the processor
+#         pass
+#
+#     def process(self,signal,slice_set, *args):
+#
+#         # check if the bin set is changed
+#         if self.bin_check:
+#             self.recalculate_matrix = self.check_bin_set(slice_set.z_bins)
+#
+#         # recalculte the matrix if necessary
+#         if self.recalculate_matrix:
+#             self.recalculate_matrix = False
+#             if self.bin_middle == 'particles':
+#                 bin_midpoints = np.array(copy.copy(slice_set.mean_z))
+#             else:
+#                 bin_midpoints = np.array([(i+j)/2. for i, j in zip(slice_set.z_bins, slice_set.z_bins[1:])])
+#
+#             self.matrix = self.generate_matrix(slice_set.z_bins,bin_midpoints)
+#
+#         # process the signal
+#         return np.dot(self.matrix,signal)
+#
+#     def check_bin_set(self,z_bin_set):
+#
+#         if self.z_bin_set is None:
+#             self.z_bin_set = copy.copy(z_bin_set)
+#             return True
+#
+#         else:
+#             changed = False
+#             for old, new in itertools.izip(self.z_bin_set,z_bin_set):
+#                 if old != new:
+#                     changed = True
+#                     self.z_bin_set = copy.copy(z_bin_set)
+#                     break
+#             return changed
+#
+#     def print_matrix(self):
+#         for row in self.matrix:
+#             print "[",
+#             for element in row:
+#                 print "{:6.3f}".format(element),
+#             print "]"
+#
+#     def generate_matrix(self,bin_set, bin_midpoints):
+#         self.norm_coeff = 1
+#
+#         if self.norm_type == 'bunch_average':
+#             self.norm_coeff=bin_set[-1]-bin_set[0]
+#         elif self.norm_type == 'fixed_average':
+#             self.norm_coeff=self.norm_range[1]-self.norm_range[0]
+#         elif self.norm_type == 'bunch_integral':
+#             self.norm_coeff, _ = integrate.quad(self.response_function, self.scaling*bin_set[0], self.scaling*bin_set[-1])
+#         elif self.norm_type == 'fixed_integral':
+#             self.norm_coeff, _ = integrate.quad(self.response_function, self.scaling*self.norm_range[0], self.scaling*self.norm_range[1])
+#         elif self.norm_type == 'matrix_sum':
+#             center_idx = math.floor(len(bin_midpoints)/2)
+#             self.norm_coeff, _ = integrate.quad(self.response_function,self.scaling*(bin_set[0]-bin_midpoints[center_idx]),self.scaling*(bin_set[-1]-bin_midpoints[center_idx]))
+#
+#         matrix = np.identity(len(bin_midpoints))
+#
+#         for i, midpoint in enumerate(bin_midpoints):
+#                 for j in range(len(bin_midpoints)):
+#
+#                     temp, _ = integrate.quad(self.response_function,self.scaling*(bin_set[j]-midpoint),self.scaling*(bin_set[j+1]-midpoint))
+#                     matrix[j][i] = temp/self.norm_coeff
+#
+#         return matrix
 
 class LinearTransform(object):
     """ General class for linear signal processing. The signal is processed by calculating a dot product of a transfer
@@ -106,7 +182,7 @@ class LinearTransform(object):
         by using generate_matrix function.
     """
 
-    def __init__(self, scaling=1., norm_type=None, norm_range=None, bin_check = False, bin_middle = 'bin'):
+    def __init__(self, norm_type=None, norm_range=None, bin_check = False, bin_middle = 'bin'):
         """
         :param scaling: Because integration by substitution doesn't work with np.quad (see quad_problem.ipynbl), it
             must be done by scaling integral limits. This parameter is a linear scaling coefficient of the integral
@@ -125,7 +201,6 @@ class LinearTransform(object):
             (bin_middle = 'bin') or an average place of macro particles (bin_middle = 'particles')
         """
 
-        self.scaling = scaling
         self.norm_type = norm_type
         self.norm_range = norm_range
         self.bin_check = bin_check
@@ -136,7 +211,7 @@ class LinearTransform(object):
 
         self.recalculate_matrix = True
 
-    def response_function(self, *args):
+    def response_function(self, ref_bin_mid, ref_bin_from, ref_bin_to, bin_mid, bin_from, bin_to):
         # Impulse response function of the processor
         pass
 
@@ -154,7 +229,7 @@ class LinearTransform(object):
             else:
                 bin_midpoints = np.array([(i+j)/2. for i, j in zip(slice_set.z_bins, slice_set.z_bins[1:])])
 
-            self.matrix = self.generate_matrix(slice_set.z_bins,bin_midpoints)
+            self.generate_matrix(slice_set.z_bins,bin_midpoints)
 
         # process the signal
         return np.dot(self.matrix,signal)
@@ -182,30 +257,35 @@ class LinearTransform(object):
             print "]"
 
     def generate_matrix(self,bin_set, bin_midpoints):
-        self.norm_coeff = 1
 
         if self.norm_type == 'bunch_average':
-            self.norm_coeff=bin_set[-1]-bin_set[0]
+            self.norm_coeff = bin_set[-1] - bin_set[0]
         elif self.norm_type == 'fixed_average':
-            self.norm_coeff=self.norm_range[1]-self.norm_range[0]
+            self.norm_coeff = self.norm_range[1] - self.norm_range[0]
         elif self.norm_type == 'bunch_integral':
-            self.norm_coeff, _ = integrate.quad(self.response_function, self.scaling*bin_set[0], self.scaling*bin_set[-1])
+            center_idx = math.floor(len(bin_midpoints) / 2)
+            self.norm_coeff = self.response_function(bin_midpoints[center_idx], bin_set[center_idx],
+                                                    bin_set[center_idx + 1], bin_midpoints[center_idx],
+                                                    bin_set[0], bin_set[-1])
         elif self.norm_type == 'fixed_integral':
-            self.norm_coeff, _ = integrate.quad(self.response_function, self.scaling*self.norm_range[0], self.scaling*self.norm_range[1])
+            center_idx = math.floor(len(bin_midpoints) / 2)
+            self.norm_coeff = self.response_function(bin_midpoints[center_idx], bin_set[center_idx],
+                                                    bin_set[center_idx + 1], bin_midpoints[center_idx],
+                                                    self.norm_range[0], self.norm_range[-1])
         elif self.norm_type == 'matrix_sum':
-            center_idx = math.floor(len(bin_midpoints)/2)
-            self.norm_coeff, _ = integrate.quad(self.response_function,self.scaling*(bin_set[0]-bin_midpoints[center_idx]),self.scaling*(bin_set[-1]-bin_midpoints[center_idx]))
+            self.norm_coeff = 0
+            center_idx = math.floor(len(bin_midpoints) / 2)
+            for i, midpoint in enumerate(bin_midpoints):
+                self.norm_coeff += self.response_function(bin_midpoints[center_idx], bin_set[center_idx],
+                                                    bin_set[center_idx + 1], midpoint, bin_set[i], bin_set[i + 1])
 
-        matrix = np.identity(len(bin_midpoints))
 
-        for i, midpoint in enumerate(bin_midpoints):
-                for j in range(len(bin_midpoints)):
+        self.matrix = np.identity(len(bin_midpoints))
 
-                    temp, _ = integrate.quad(self.response_function,self.scaling*(bin_set[j]-midpoint),self.scaling*(bin_set[j+1]-midpoint))
-                    matrix[j][i] = temp/self.norm_coeff
-
-        return matrix
-
+        for i, midpoint_i in enumerate(bin_midpoints):
+            for j, midpoint_j in enumerate(bin_midpoints):
+                    self.matrix[j][i] = self.response_function(midpoint_i,bin_set[i],bin_set[i+1],midpoint_j,bin_set[j]
+                                                               ,bin_set[j+1]) / float(self.norm_coeff)
 
 class Averager(LinearTransform):
     """ Return a signal, whose length corresponds to the input signal, but has been filled with an average value of
@@ -213,11 +293,24 @@ class Averager(LinearTransform):
         a constant value and sums of the rows in the matrix are normalized to be one).
     """
     def __init__(self,norm_type = 'matrix_sum', norm_range = None):
-        super(self.__class__, self).__init__(1, norm_type, norm_range)
+        super(self.__class__, self).__init__(norm_type, norm_range)
 
-    def response_function(self,x):
+    def response_function(self, ref_bin_mid, ref_bin_from, ref_bin_to, bin_mid, bin_from, bin_to):
         return 1
 
+class Bypass(LinearTransform):
+    """ Return a signal, whose length corresponds to the input signal, but has been filled with an average value of
+        the input signal. This is implemented by using an uniform matrix in LinearProcessor (response_function returns
+        a constant value and sums of the rows in the matrix are normalized to be one).
+    """
+    def __init__(self,norm_type = 'matrix_sum', norm_range = None):
+        super(self.__class__, self).__init__(norm_type, norm_range)
+
+    def response_function(self, ref_bin_mid, ref_bin_from, ref_bin_to, bin_mid, bin_from, bin_to):
+        if ref_bin_mid == bin_mid:
+            return 1
+        else:
+            return 0
 
 class PhaseLinearizedLowpass(LinearTransform):
     """ Phase linearized lowpass filter, which can be used to describe a frequency behavior of a kicker. A impulse response
@@ -227,11 +320,16 @@ class PhaseLinearizedLowpass(LinearTransform):
 
     # TODO: Add 2 pi?
     def __init__(self, f_cutoff, norm_type = 'matrix_sum', norm_range = None):
-        scaling = f_cutoff/c
+        self.scaling = f_cutoff/c
         self.norm_range_coeff = 10
-        super(self.__class__, self).__init__(scaling, norm_type, norm_range)
+        super(self.__class__, self).__init__(norm_type, norm_range)
 
-    def response_function(self,x):
+    def response_function(self, ref_bin_mid, ref_bin_from, ref_bin_to, bin_mid, bin_from, bin_to):
+        temp, _ = integrate.quad(self.transfer_function, self.scaling * (bin_from - ref_bin_mid),
+                       self.scaling * (bin_to - ref_bin_mid))
+        return temp
+
+    def transfer_function(self,x):
         if x == 0:
             return 0
         else:
@@ -244,17 +342,46 @@ class LowpassFilter(LinearTransform):
     """
     def __init__(self, f_cutoff, norm_type = 'matrix_sum', norm_range = None):
         self.scaling = 2.*pi*f_cutoff/c
-        super(self.__class__, self).__init__(self.scaling, norm_type, norm_range)
+        super(self.__class__, self).__init__(norm_type, norm_range)
 
-    def response_function(self,x):
+    def response_function(self, ref_bin_mid, ref_bin_from, ref_bin_to, bin_mid, bin_from, bin_to):
+        temp, _ = integrate.quad(self.transfer_function, self.scaling * (bin_from - ref_bin_mid),
+                       self.scaling * (bin_to - ref_bin_mid))
+        return temp
+
+    def transfer_function(self,x):
         if x < 0:
             return 0
         else:
             return math.exp(-1.*x)
 
+class HighpassFilter(LinearTransform):
+    """ Classical first order highpass filter (e.g. a RC filter)
+    """
+    def __init__(self, f_cutoff, norm_type = 'matrix_sum', norm_range = None):
+        self.scaling = 2.*pi*f_cutoff/c
+        super(self.__class__, self).__init__(norm_type, norm_range)
+
+    def response_function(self, ref_bin_mid, ref_bin_from, ref_bin_to, bin_mid, bin_from, bin_to):
+        temp, _ = integrate.quad(self.transfer_function, self.scaling * (bin_from - ref_bin_mid),
+                       self.scaling * (bin_to - ref_bin_mid))
+
+        if ref_bin_mid == bin_mid:
+            temp += 1.
+
+        return temp
+
+    def transfer_function(self,x):
+        if x < 0:
+            return 0
+        else:
+            return -1.*math.exp(-1.*x)
 
 
-class Bypass(object):
+
+
+
+class Bypass_Fast(object):
     def process(self,signal, *args):
         return signal
 
@@ -415,7 +542,7 @@ class Addition(object):
 
         self.addend = self.addend / norm_coeff
 
-class NoiseGeneratorAddition(Addition):
+class NoiseGenerator(Addition):
     """ Add noise to a signal. The noise level is given as RMS value of an absolute level (reference_level = 'absolute'),
         a relative RMS level to the maximum signal (reference_level = 'maximum') or a relative RMS level to local
         signal values (reference_level = 'local'). Options for the noise distribution are a Gaussian normal distribution
@@ -428,24 +555,25 @@ class NoiseGeneratorAddition(Addition):
         self.reference_level = reference_level
         self.distribution = distribution
 
-        super(self.__class__, self).__init__(self, 'signal', None, True)
+        super(self.__class__, self).__init__('signal', None, True)
 
-    def addend_function(self,signal):
+    def addend_function(self,seed):
 
-        randoms = np.zeros(len(signal))
+        randoms = np.zeros(len(seed))
 
         if self.distribution == 'normal' or self.distribution is None:
-            randoms = np.random.randn(len(signal))
+            randoms = np.random.randn(len(seed))
         elif self.distribution == 'uniform':
-            randoms = 1./0.577263*(-1.+2.*np.random.rand(len(signal)))
+            randoms = 1./0.577263*(-1.+2.*np.random.rand(len(seed)))
 
         if self.reference_level == 'absolute':
-            self.addend = self.RMS_noise_level*randoms
+            addend = self.RMS_noise_level*randoms
         elif self.reference_level == 'maximum':
-            self.addend = self.RMS_noise_level*np.max(signal)*randoms
+            addend = self.RMS_noise_level*np.max(seed)*randoms
         elif self.reference_level == 'local':
-            self.addend = signal*self.RMS_noise_level*randoms
+            addend = signal*self.RMS_noise_level*randoms
 
+        return addend
 
 class Register(object):
     """ A general class for a signal register. A signal is stored to the register, when the function process() is
@@ -615,6 +743,8 @@ class HilbertRegister(Register):
     # because of beam phase rotation and Hilbert transform use different coordinate systems. Thus, there is a minus sign
     # in the front of the imaginary part of the outgoing vector and the vector has been rotated to different directions,
     # when average of vectors is calculated in next() and combine() functions.
+
+    # FIXME:
 
     def __init__(self,delay, avg_length, phase_shift_per_turn, position=None, n_slices=None, in_processor_chain=True):
         super(self.__class__, self).__init__(delay, avg_length, phase_shift_per_turn, position, n_slices, in_processor_chain)
