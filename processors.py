@@ -69,113 +69,6 @@ class PickUp(object):
 
         return reference_level * signal_diff / signal_sum
 
-
-# class LinearTransform(object):
-#     """ General class for linear signal processing. The signal is processed by calculating a dot product of a transfer
-#         matrix and a signal. The transfer matrix is produced from response function and (possible non uniform) z_bin_set
-#         by using generate_matrix function.
-#     """
-#
-#     def __init__(self, scaling=1., norm_type=None, norm_range=None, bin_check = False, bin_middle = 'bin'):
-#         """
-#         :param scaling: Because integration by substitution doesn't work with np.quad (see quad_problem.ipynbl), it
-#             must be done by scaling integral limits. This parameter is a linear scaling coefficient of the integral
-#             limits. An ugly way which must be fixed.
-#         :param norm_type: Describes a normalization method for the transfer matrix
-#             'bunch_average': an average value over the bunch is equal to 1
-#             'fixed_average': an average value over a range given in a parameter norm_range is equal to 1
-#             'bunch_integral': an integral over the bunch is equal to 1
-#             'fixed_integral': an integral over a fixed range given in a parameter norm_range is equal to 1
-#             'matrix_sum': a sum over elements in the middle column of the matrix is equal to 1
-#         :param norm_range: Normalization length in cases of self.norm_type == 'fixed_length_average' or
-#             self.norm_type == 'fixed_length_integral'
-#         :param bin_check: if True, a change of the bin_set is checked every time process() is called and matrix is
-#             recalculated if any change is found
-#         :param bin_middle: defines if middle points of the bins are determined by a middle point of the bin
-#             (bin_middle = 'bin') or an average place of macro particles (bin_middle = 'particles')
-#         """
-#
-#         self.scaling = scaling
-#         self.norm_type = norm_type
-#         self.norm_range = norm_range
-#         self.bin_check = bin_check
-#         self.bin_middle = bin_middle
-#
-#         self.z_bin_set = None
-#         self.matrix = None
-#
-#         self.recalculate_matrix = True
-#
-#     def response_function(self, *args):
-#         # Impulse response function of the processor
-#         pass
-#
-#     def process(self,signal,slice_set, *args):
-#
-#         # check if the bin set is changed
-#         if self.bin_check:
-#             self.recalculate_matrix = self.check_bin_set(slice_set.z_bins)
-#
-#         # recalculte the matrix if necessary
-#         if self.recalculate_matrix:
-#             self.recalculate_matrix = False
-#             if self.bin_middle == 'particles':
-#                 bin_midpoints = np.array(copy.copy(slice_set.mean_z))
-#             else:
-#                 bin_midpoints = np.array([(i+j)/2. for i, j in zip(slice_set.z_bins, slice_set.z_bins[1:])])
-#
-#             self.matrix = self.generate_matrix(slice_set.z_bins,bin_midpoints)
-#
-#         # process the signal
-#         return np.dot(self.matrix,signal)
-#
-#     def check_bin_set(self,z_bin_set):
-#
-#         if self.z_bin_set is None:
-#             self.z_bin_set = copy.copy(z_bin_set)
-#             return True
-#
-#         else:
-#             changed = False
-#             for old, new in itertools.izip(self.z_bin_set,z_bin_set):
-#                 if old != new:
-#                     changed = True
-#                     self.z_bin_set = copy.copy(z_bin_set)
-#                     break
-#             return changed
-#
-#     def print_matrix(self):
-#         for row in self.matrix:
-#             print "[",
-#             for element in row:
-#                 print "{:6.3f}".format(element),
-#             print "]"
-#
-#     def generate_matrix(self,bin_set, bin_midpoints):
-#         self.norm_coeff = 1
-#
-#         if self.norm_type == 'bunch_average':
-#             self.norm_coeff=bin_set[-1]-bin_set[0]
-#         elif self.norm_type == 'fixed_average':
-#             self.norm_coeff=self.norm_range[1]-self.norm_range[0]
-#         elif self.norm_type == 'bunch_integral':
-#             self.norm_coeff, _ = integrate.quad(self.response_function, self.scaling*bin_set[0], self.scaling*bin_set[-1])
-#         elif self.norm_type == 'fixed_integral':
-#             self.norm_coeff, _ = integrate.quad(self.response_function, self.scaling*self.norm_range[0], self.scaling*self.norm_range[1])
-#         elif self.norm_type == 'matrix_sum':
-#             center_idx = math.floor(len(bin_midpoints)/2)
-#             self.norm_coeff, _ = integrate.quad(self.response_function,self.scaling*(bin_set[0]-bin_midpoints[center_idx]),self.scaling*(bin_set[-1]-bin_midpoints[center_idx]))
-#
-#         matrix = np.identity(len(bin_midpoints))
-#
-#         for i, midpoint in enumerate(bin_midpoints):
-#                 for j in range(len(bin_midpoints)):
-#
-#                     temp, _ = integrate.quad(self.response_function,self.scaling*(bin_set[j]-midpoint),self.scaling*(bin_set[j+1]-midpoint))
-#                     matrix[j][i] = temp/self.norm_coeff
-#
-#         return matrix
-
 class LinearTransform(object):
     """ General class for linear signal processing. The signal is processed by calculating a dot product of a transfer
         matrix and a signal. The transfer matrix is produced from response function and (possible non uniform) z_bin_set
@@ -226,7 +119,7 @@ class LinearTransform(object):
             self.recalculate_matrix = False
             if self.bin_middle == 'particles':
                 bin_midpoints = np.array(copy.copy(slice_set.mean_z))
-            else:
+            elif self.bin_middle == 'bin':
                 bin_midpoints = np.array([(i+j)/2. for i, j in zip(slice_set.z_bins, slice_set.z_bins[1:])])
 
             self.generate_matrix(slice_set.z_bins,bin_midpoints)
@@ -278,6 +171,8 @@ class LinearTransform(object):
             for i, midpoint in enumerate(bin_midpoints):
                 self.norm_coeff += self.response_function(bin_midpoints[center_idx], bin_set[center_idx],
                                                     bin_set[center_idx + 1], midpoint, bin_set[i], bin_set[i + 1])
+        elif self.norm_type is None:
+            self.norm_coeff = 1
 
 
         self.matrix = np.identity(len(bin_midpoints))
@@ -311,6 +206,30 @@ class Bypass(LinearTransform):
             return 1
         else:
             return 0
+
+class Delay(LinearTransform):
+    """ Delays signal. Delay in units of [second].
+    """
+    def __init__(self,delay, norm_type = None, norm_range = None):
+        self.delay = delay
+        super(self.__class__, self).__init__(norm_type, norm_range)
+
+    def response_function(self, ref_bin_mid, ref_bin_from, ref_bin_to, bin_mid, bin_from, bin_to):
+
+        if bin_from <= (ref_bin_from+self.delay*c) and bin_to >= (ref_bin_to+self.delay*c):
+            print all
+            return 1.
+        elif bin_from >= (ref_bin_from + self.delay * c) and bin_to <= (ref_bin_to + self.delay * c):
+            return (bin_to-bin_from) / float(ref_bin_to - ref_bin_from)
+
+        elif bin_from <= (ref_bin_from + self.delay * c) < bin_to:
+            return (bin_to - (ref_bin_from + self.delay * c)) / float(ref_bin_to - ref_bin_from)
+
+        elif bin_from < (ref_bin_to + self.delay * c) <= bin_to:
+            return ((ref_bin_to + self.delay * c) - bin_from) / float(ref_bin_to - ref_bin_from)
+        else:
+            return 0.
+
 
 class PhaseLinearizedLowpass(LinearTransform):
     """ Phase linearized lowpass filter, which can be used to describe a frequency behavior of a kicker. A impulse response
