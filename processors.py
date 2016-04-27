@@ -18,7 +18,6 @@ import scipy.signal as signal
     the input array.
 """
 
-# TODO: add delay processor (ns scale)
 # TODO: high pass filter
 # TODO: Fix comments
 # TODO: file read
@@ -217,7 +216,6 @@ class Delay(LinearTransform):
     def response_function(self, ref_bin_mid, ref_bin_from, ref_bin_to, bin_mid, bin_from, bin_to):
 
         if bin_from <= (ref_bin_from+self.delay*c) and bin_to >= (ref_bin_to+self.delay*c):
-            print all
             return 1.
         elif bin_from >= (ref_bin_from + self.delay * c) and bin_to <= (ref_bin_to + self.delay * c):
             return (bin_to-bin_from) / float(ref_bin_to - ref_bin_from)
@@ -277,7 +275,7 @@ class LowpassFilter(LinearTransform):
 class HighpassFilter(LinearTransform):
     """ Classical first order highpass filter (e.g. a RC filter)
     """
-    def __init__(self, f_cutoff, norm_type = 'matrix_sum', norm_range = None):
+    def __init__(self, f_cutoff, norm_type = None, norm_range = None):
         self.scaling = 2.*pi*f_cutoff/c
         super(self.__class__, self).__init__(norm_type, norm_range)
 
