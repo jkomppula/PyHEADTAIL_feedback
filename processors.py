@@ -2,6 +2,7 @@ import itertools
 import math
 import copy
 from collections import deque
+from abc import ABCMeta, abstractmethod
 
 import numpy as np
 from scipy.constants import c, pi
@@ -10,29 +11,38 @@ import scipy.special as special
 import scipy.signal as signal
 
 
-""" This file contains signal processors which can be used to process signals in the feedback module of PyHEADTAIL.
+""" This file contains signal processors which can be used in the feedback module in PyHEADTAIL.
 
-    A general requirement for the signal processor is that it is a class object which contains a function, namely,
-    process(signal, slice_set). The input parameters of the function process(signal, slice_set) are a numpy array
-    'signal' and a slice_set object from PyHEADTAIL. The function must return a numpy array with equal length to
+    A general requirement for the signal processor is that it is a class object containing a function, namely,
+    process(signal, slice_set). The input parameters for the function process(signal, slice_set) are a numpy array
+    'signal' and a slice_set object of PyHEADTAIL. The function must return a numpy array with equal length to
     the input array.
-"""
 
-# TODO: high pass filter
-# TODO: Fix comments
+    The signals processors in this file are based on four abstract classes;
+        1) in LinearTransform objects the input signal is multiplied with a matrix.
+        2) in Multiplication objects the input signal is multiplied with an array with equal length to the input array
+        3) in Addition objects to the input signal is added an array with equal length to the input array
+        4) A normal signal processor doesn't store a signal (in terms of process() calls). Processors buffering,
+           registering and/or delaying signals are namely Registers. The Registers have following properties in addition
+           to the normal processor:
+            a) the object is iterable
+            b) the object contains a function namely combine(*args), which combines two signals returned by iteration
+               together
+
+"""
 # TODO: file read
 
 
 class PickUp(object):
-    """ A signal processor, which models realistic two plates pickup system, which has a finite noise level and
+    """ A signal processor, which models a realistic two plates pickup system, which has a finite noise level and
         bandwidth. The model assumes that signals from the plates vary to opposite polarities from the reference signal
         level. The signals of both plates pass separately ChargeWeighter, NoiseGenerator and LowpassFilter in order to
         simulate realistic levels of signal, noise and frequency response. The output signal is calculated from
-        the ratio of a difference and sum of the signals. Signals below a given threshold level is set to zero
+        the ratio of a difference and sum signals of the plates. Signals below a given threshold level is set to zero
         in order to avoid high noise level at low input signal levels
 
-        If the cut off frequency of the LowpassFilter is higher than 'sampling rate', a signal passes this model without
-        changes. In other cases, a step response is faster than by using only a LowpassFilter but still finite.
+        If the cut off frequency of the LowpassFilter is higher than 'the sampling rate', a signal passes this model
+        without changes. In other cases, a step response is faster than by using only a LowpassFilter but still finite.
     """
 
     def __init__(self,RMS_noise_level,f_cutoff, threshold_level):
@@ -69,22 +79,22 @@ class PickUp(object):
         return reference_level * signal_diff / signal_sum
 
 class LinearTransform(object):
-    """ General class for linear signal processing. The signal is processed by calculating a dot product of a transfer
-        matrix and a signal. The transfer matrix is produced from response function and (possible non uniform) z_bin_set
-        by using generate_matrix function.
+    __metaclass__ = ABCMeta
+    """ An abstract class for signal processors which are based on linear transformation. The signal is processed by
+        calculating a dot product of a transfer matrix and a signal. The transfer matrix is produced with an abstract
+        method, namely response_function(*args), which returns an elements of the matrix (a ref_bin affection to a bin)
     """
 
     def __init__(self, norm_type=None, norm_range=None, bin_check = False, bin_middle = 'bin'):
         """
-        :param scaling: Because integration by substitution doesn't work with np.quad (see quad_problem.ipynbl), it
-            must be done by scaling integral limits. This parameter is a linear scaling coefficient of the integral
-            limits. An ugly way which must be fixed.
+
         :param norm_type: Describes a normalization method for the transfer matrix
             'bunch_average': an average value over the bunch is equal to 1
             'fixed_average': an average value over a range given in a parameter norm_range is equal to 1
             'bunch_integral': an integral over the bunch is equal to 1
             'fixed_integral': an integral over a fixed range given in a parameter norm_range is equal to 1
             'matrix_sum': a sum over elements in the middle column of the matrix is equal to 1
+            None: no normalization
         :param norm_range: Normalization length in cases of self.norm_type == 'fixed_length_average' or
             self.norm_type == 'fixed_length_integral'
         :param bin_check: if True, a change of the bin_set is checked every time process() is called and matrix is
@@ -103,6 +113,7 @@ class LinearTransform(object):
 
         self.recalculate_matrix = True
 
+    @abstractmethod
     def response_function(self, ref_bin_mid, ref_bin_from, ref_bin_to, bin_mid, bin_from, bin_to):
         # Impulse response function of the processor
         pass
@@ -173,7 +184,6 @@ class LinearTransform(object):
         elif self.norm_type is None:
             self.norm_coeff = 1
 
-
         self.matrix = np.identity(len(bin_midpoints))
 
         for i, midpoint_i in enumerate(bin_midpoints):
@@ -182,10 +192,10 @@ class LinearTransform(object):
                                                                ,bin_set[j+1]) / float(self.norm_coeff)
 
 class Averager(LinearTransform):
-    """ Return a signal, whose length corresponds to the input signal, but has been filled with an average value of
-        the input signal. This is implemented by using an uniform matrix in LinearProcessor (response_function returns
-        a constant value and sums of the rows in the matrix are normalized to be one).
+    """ Returns a signal, which consists an average value of the input signal. A sums of the rows in the matrix
+    are normalized to be one (i.e. a sum of the input signal doesn't change).
     """
+
     def __init__(self,norm_type = 'matrix_sum', norm_range = None):
         super(self.__class__, self).__init__(norm_type, norm_range)
 
@@ -193,11 +203,9 @@ class Averager(LinearTransform):
         return 1
 
 class Bypass(LinearTransform):
-    """ Return a signal, whose length corresponds to the input signal, but has been filled with an average value of
-        the input signal. This is implemented by using an uniform matrix in LinearProcessor (response_function returns
-        a constant value and sums of the rows in the matrix are normalized to be one).
+    """ Passes a signal without change (an identity matrix).
     """
-    def __init__(self,norm_type = 'matrix_sum', norm_range = None):
+    def __init__(self,norm_type = None, norm_range = None):
         super(self.__class__, self).__init__(norm_type, norm_range)
 
     def response_function(self, ref_bin_mid, ref_bin_from, ref_bin_to, bin_mid, bin_from, bin_to):
@@ -207,7 +215,7 @@ class Bypass(LinearTransform):
             return 0
 
 class Delay(LinearTransform):
-    """ Delays signal. Delay in units of [second].
+    """ Delays signal in units of [second].
     """
     def __init__(self,delay, norm_type = None, norm_range = None):
         self.delay = delay
@@ -235,15 +243,18 @@ class PhaseLinearizedLowpass(LinearTransform):
         The transfer function has been derived by Gerd Kotzian.
     """
 
-    # TODO: Add 2 pi?
     def __init__(self, f_cutoff, norm_type = 'matrix_sum', norm_range = None):
-        self.scaling = f_cutoff/c
+        self.f_cutoff = f_cutoff
         self.norm_range_coeff = 10
         super(self.__class__, self).__init__(norm_type, norm_range)
 
     def response_function(self, ref_bin_mid, ref_bin_from, ref_bin_to, bin_mid, bin_from, bin_to):
-        temp, _ = integrate.quad(self.transfer_function, self.scaling * (bin_from - ref_bin_mid),
-                       self.scaling * (bin_to - ref_bin_mid))
+        # Frequency scaling must be done by scaling integral limits, because integration by substitution doesn't work
+        # with np.quad (see quad_problem.ipynbl). An ugly way could be fixed.
+        # TODO: Add 2 pi?
+        scaling = self.f_cutoff / c
+        temp, _ = integrate.quad(self.transfer_function, scaling * (bin_from - ref_bin_mid),
+                       scaling * (bin_to - ref_bin_mid))
         return temp
 
     def transfer_function(self,x):
@@ -258,12 +269,15 @@ class LowpassFilter(LinearTransform):
         decay.
     """
     def __init__(self, f_cutoff, norm_type = 'matrix_sum', norm_range = None):
-        self.scaling = 2.*pi*f_cutoff/c
+        self.f_cutoff = f_cutoff
         super(self.__class__, self).__init__(norm_type, norm_range)
 
     def response_function(self, ref_bin_mid, ref_bin_from, ref_bin_to, bin_mid, bin_from, bin_to):
-        temp, _ = integrate.quad(self.transfer_function, self.scaling * (bin_from - ref_bin_mid),
-                       self.scaling * (bin_to - ref_bin_mid))
+        # Frequency scaling must be done by scaling integral limits, because integration by substitution doesn't work
+        # with np.quad (see quad_problem.ipynbl). An ugly way could be fixed.
+        scaling = 2.*pi*self.f_cutoff/c
+        temp, _ = integrate.quad(self.transfer_function, scaling * (bin_from - ref_bin_mid),
+                       scaling * (bin_to - ref_bin_mid))
         return temp
 
     def transfer_function(self,x):
@@ -276,10 +290,14 @@ class HighpassFilter(LinearTransform):
     """ Classical first order highpass filter (e.g. a RC filter)
     """
     def __init__(self, f_cutoff, norm_type = None, norm_range = None):
-        self.scaling = 2.*pi*f_cutoff/c
+        self.f_cutoff = f_cutoff
         super(self.__class__, self).__init__(norm_type, norm_range)
 
     def response_function(self, ref_bin_mid, ref_bin_from, ref_bin_to, bin_mid, bin_from, bin_to):
+        # Frequency scaling must be done by scaling integral limits, because integration by substitution doesn't work
+        # with np.quad (see quad_problem.ipynbl). An ugly way could be fixed.
+        scaling = 2.*pi*self.f_cutoff/c
+
         temp, _ = integrate.quad(self.transfer_function, self.scaling * (bin_from - ref_bin_mid),
                        self.scaling * (bin_to - ref_bin_mid))
 
@@ -294,31 +312,26 @@ class HighpassFilter(LinearTransform):
         else:
             return -1.*math.exp(-1.*x)
 
-
-
-
-
 class Bypass_Fast(object):
     def process(self,signal, *args):
         return signal
 
 
 class Multiplication(object):
-    """ A general class for signal weighing. A seed for the weight is a property of slices or the signal itself.
-        The weight is calculated by passing the weight seed through weight_function.
+    __metaclass__ = ABCMeta
+    """ An abstract class which multiplies the input signal by an array. The multiplier array is produced by taking
+        a slice property (determined in the input parameter 'seed') and passing it through the abstract method, namely
+        multiplication_function(seed).
     """
-
-    # TODO: multiplier
-
     def __init__(self, seed, normalization = None, recalculate_multiplier = False):
         """
-        :param weight_seed: 'bin_length', 'bin_midpoint', 'signal' or a property of a slice, which can be found
+        :param seed: 'bin_length', 'bin_midpoint', 'signal' or a property of a slice, which can be found
             from slice_set
-        :param weight_normalization:
-            'total_weight':  a sum of weight is equal to 1.
-            'average_weight': an average weight over slices is equal to 1,
-            'maximum_weight': a maximum weight value is equal to 1
-            'minimum_weight': a minimum weight value is equal to 1
+        :param normalization:
+            'total_weight':  a sum of the multiplier array is equal to 1.
+            'average_weight': an average in  the multiplier array is equal to 1,
+            'maximum_weight': a maximum value in the multiplier array value is equal to 1
+            'minimum_weight': a minimum value in the multiplier array value is equal to 1
         :param: recalculate_weight: if True, the weight is recalculated every time when process() is called
         """
 
@@ -328,7 +341,8 @@ class Multiplication(object):
 
         self.multiplier = None
 
-    def multiplication_function(self, *args):
+    @abstractmethod
+    def multiplication_function(self, seed):
         pass
 
     def process(self,signal,slice_set):
@@ -360,14 +374,14 @@ class Multiplication(object):
             norm_coeff = float(np.max(self.multiplier))
         elif self.normalization == 'minimum_weight':
             norm_coeff = float(np.min(self.multiplier))
-        else:
+        elif self.normalization == None:
             norm_coeff = 1.
 
         self.multiplier = self.multiplier / norm_coeff
 
 
 class ChargeWeighter(Multiplication):
-    """ weight signal with charge (macroparticles) of slices
+    """ weights signal with charge (macroparticles) of slices
     """
 
     def __init__(self, normalization = 'maximum_weight'):
@@ -378,7 +392,7 @@ class ChargeWeighter(Multiplication):
 
 
 class FermiDiracInverseWeighter(Multiplication):
-    """ Use an inverse of the Fermi-Dirac distribution function to increase signal strength on edge of the bunch
+    """ Use an inverse of the Fermi-Dirac distribution function to increase signal strength on the edges of the bunch
     """
 
     def __init__(self,bunch_length,bunch_decay_length,maximum_weight = 10):
@@ -398,21 +412,49 @@ class FermiDiracInverseWeighter(Multiplication):
         return weight
 
 
+class NoiseGate(Multiplication):
+    """ Passes a signal which level is greater/less than the threshold level.
+    """
+
+    def __init__(self,threshold, operator = 'greater', threshold_ref = 'amplitude'):
+
+        self.threshold = threshold
+        self.operator = operator
+        self.threshold_ref = threshold_ref
+        super(self.__class__, self).__init__('signal', None,recalculate_multiplier = True)
+
+    def multiplication_function(self, seed):
+        multiplier = np.zeros(len(seed))
+
+        if self.threshold_ref == 'amplitude':
+            comparable = np.abs(seed)
+        elif self.threshold_ref == 'absolute':
+            comparable = seed
+
+        if self.operator == 'greater':
+            multiplier[comparable > self.threshold] = 1
+        elif self.operator == 'less':
+            multiplier[comparable < self.threshold] = 1
+
+        return multiplier
+
 
 class Addition(object):
-    """ A general class for signal weighing. A seed for the weight is a property of slices or the signal itself.
-        The weight is calculated by passing the weight seed through weight_function.
+    __metaclass__ = ABCMeta
+    """ An abstract class which adds an array to the input signal. The addend array is produced by taking
+        a slice property (determined in the input parameter 'seed') and passing it through the abstract method, namely
+        addend_function(seed).
     """
 
     def __init__(self, seed, normalization = None, recalculate_addend = False):
         """
-        :param weight_seed: 'bin_length', 'bin_midpoint', 'signal' or a property of a slice, which can be found
+        :param seed: 'bin_length', 'bin_midpoint', 'signal' or a property of a slice, which can be found
             from slice_set
-        :param weight_normalization:
-            'total_weight':  a sum of weight is equal to 1.
-            'average_weight': an average weight over slices is equal to 1,
-            'maximum_weight': a maximum weight value is equal to 1
-            'minimum_weight': a minimum weight value is equal to 1
+        :param normalization:
+            'total_weight':  a sum of the multiplier array is equal to 1.
+            'average_weight': an average in  the multiplier array is equal to 1,
+            'maximum_weight': a maximum value in the multiplier array value is equal to 1
+            'minimum_weight': a minimum value in the multiplier array value is equal to 1
         :param: recalculate_weight: if True, the weight is recalculated every time when process() is called
         """
 
@@ -422,7 +464,8 @@ class Addition(object):
 
         self.addend = None
 
-    def addend_function(self, *args):
+    @abstractmethod
+    def addend_function(self, seed):
         pass
 
     def process(self,signal,slice_set):
@@ -460,7 +503,7 @@ class Addition(object):
         self.addend = self.addend / norm_coeff
 
 class NoiseGenerator(Addition):
-    """ Add noise to a signal. The noise level is given as RMS value of an absolute level (reference_level = 'absolute'),
+    """ Adds noise to a signal. The noise level is given as RMS value of the absolute level (reference_level = 'absolute'),
         a relative RMS level to the maximum signal (reference_level = 'maximum') or a relative RMS level to local
         signal values (reference_level = 'local'). Options for the noise distribution are a Gaussian normal distribution
         (distribution = 'normal') and an uniform distribution (distribution = 'uniform')
@@ -493,23 +536,22 @@ class NoiseGenerator(Addition):
         return addend
 
 class Register(object):
-    """ A general class for a signal register. A signal is stored to the register, when the function process() is
+    __metaclass__ = ABCMeta
+
+    """ An abstract class for a signal register. A signal is stored to the register, when the function process() is
         called. The register is iterable and returns values which have been kept in register longer than
         delay requires. Normally this means that a number of returned signals corresponds to a paremeter avg_length, but
-        it is less during the first turns. Phase shifts caused by delays and positions can be taken into account
-        by using information stored to variables phase_shift_per_turn, position and reader_position. The variable
-        reader_position is updated, when it is given in a call of the iterator, i.e. by using
-                for value in register(reader_position):
-            instead of
-                for value in register:
+        it is less during the first turns. The values from the register can be calculated together by using a abstract
+        function combine(*). It manipulates values (in terms of a phase advance) such way they can be calculated
+        together in the reader position.
 
-        When the register is a part of a signal processor chain, the function process() must return np.array() which
-        length corresponds to the length of the input signal. The class can and must be customized by overwriting
-        the iterator function next().
+        When the register is a part of a signal processor chain, the function process() returns np.array() which
+        is an average of register values determined by a paremeter avg_length. The exact functionality of the register
+        is determined by in the abstract iterator combine(*args).
 
     """
 
-    def __init__(self,delay, avg_length, phase_shift_per_turn, position, n_slices, in_processor_chain, combine_prev = False):
+    def __init__(self,delay, avg_length, phase_shift_per_turn, position, n_slices, in_processor_chain):
         """
         :param delay: a delay between storing to reading values  in turns
         :param avg_length: a number of register values are averaged
@@ -523,7 +565,6 @@ class Register(object):
         self.phase_shift_per_turn = phase_shift_per_turn
         self.position = position
         self.in_processor_chain = in_processor_chain
-        self.combine_prev = combine_prev
 
 
         self.max_reg_length = self.delay+self.avg_length
@@ -554,7 +595,6 @@ class Register(object):
             raise StopIteration
         elif self.n_iter_left == -1:
             self.n_iter_left = 0
-            # print (np.zeros(len(self.register[0])),None,self.position)
             return (np.zeros(len(self.register[0])),None,0,self.position)
         else:
             delay = -1. * (len(self.register) - self.n_iter_left) * self.phase_shift_per_turn
@@ -581,26 +621,21 @@ class Register(object):
 
             return temp_signal
 
+    @abstractmethod
     def combine(self,x1,x2,reader_position,x_to_xp = False):
 
-        return x1
+        pass
 
 
 class VectorSumRegister(Register):
-    # A plain register, which does not modify signals. The function process() returns the latest value in the register.
-    # In the other cases, next() returns unmodified values.
 
     def __init__(self,delay, avg_length, phase_shift_per_turn, position=None, n_slices=None, in_processor_chain=True):
         self.type = 'plain'
         super(self.__class__, self).__init__(delay, avg_length, phase_shift_per_turn, position, n_slices, in_processor_chain)
 
     def combine(self,x1,x2,reader_position,x_to_xp = False):
-        if (len(x1) < 4) or (len(x2) < 4):
-            print "len(x1)=" + str(len(x1)) + " and len(x2)=" + str(len(x2))
-
-            print x1
-            print x2
-        # calculates a vector in position x1
+        # determines a complex number representation from two signals (e.g. from two pickups or different turns), by using
+        # knowledge about phase advance between signals. After this turns the vector to the reader's phase
         # TODO: Why not x2[3]-x1[3]?
         phi_x1_x2 = x1[3]-x2[3]
         # print 'x1: ' + str(x1[3]) + ' x2: ' + str(x2[3]) + ' diff:' + str(phi_x1_x2)
@@ -652,9 +687,9 @@ class CosineSumRegister(Register):
 
 
 class HilbertRegister(Register):
-    # A register which uses Hilber transform to calculate a betatron oscillation amplitude. The register returns in the
-    # both cases (call of process() and iteration) a single value, which is an averaged oscillation amplitudevalue.
-    # Note that avg_length must be sufficient (e.g. > X) in order to do a reliable calculation
+    # uses Hilbert transform to calculate a complex number representation for each value in the register. After this
+    # turns all vectors to same direction and returns an average of these vectors. Note that avg_length must be
+    # sufficient (e.g. >= 7) in order to do a reliable calculations.
 
     # DEV NOTES: phase rotation is messy thing. I don't understand exactly (yet) why this is working, but probably
     # because of beam phase rotation and Hilbert transform use different coordinate systems. Thus, there is a minus sign
@@ -718,11 +753,10 @@ class HilbertRegister(Register):
             return (total_re, -1.*total_im, delay, self.position)
 
     def combine(self,x1,x2,reader_position,x_to_xp = False):
+        # turns vector x1 to the readers phase
 
         re = x1[0]
         im = x1[1]
-        # turns the vector to the reader's position
-        # turns the vector to the reader's position
         delta_phi = x1[2]
         if reader_position is not None:
             delta_position = x1[3] - reader_position
