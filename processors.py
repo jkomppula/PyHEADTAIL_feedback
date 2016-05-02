@@ -222,14 +222,14 @@ class Delay(LinearTransform):
         super(self.__class__, self).__init__(norm_type, norm_range)
 
     def response_function(self, ref_bin_mid, ref_bin_from, ref_bin_to, bin_mid, bin_from, bin_to):
-        
-        return self.CDF(bin_to-self.delay*c, ref_bin_from, ref_bin_to)-self.CDF(bin_from-self.delay*c, ref_bin_from, ref_bin_to)
+
+        return self.CDF(bin_to, ref_bin_from, ref_bin_to) - self.CDF(bin_from, ref_bin_from, ref_bin_to)
 
     def CDF(self,x,ref_bin_from, ref_bin_to):
-        if x <= ref_bin_from:
+        if (x-self.delay*c) <= ref_bin_from:
             return 0.
-        elif x < ref_bin_to:
-            return (x-ref_bin_from)/float(ref_bin_to-ref_bin_from)
+        elif (x-self.delay*c) < ref_bin_to:
+            return ((x-self.delay*c)-ref_bin_from)/float(ref_bin_to-ref_bin_from)
         else:
             return 1.
 
