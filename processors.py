@@ -161,6 +161,15 @@ class LinearTransform(object):
 
     def generate_matrix(self,bin_set, bin_midpoints):
 
+
+
+        self.matrix = np.identity(len(bin_midpoints))
+
+        for i, midpoint_i in enumerate(bin_midpoints):
+            for j, midpoint_j in enumerate(bin_midpoints):
+                    self.matrix[j][i] = self.response_function(midpoint_i,bin_set[i],bin_set[i+1],midpoint_j,bin_set[j]
+                                                               ,bin_set[j+1])
+
         if self.norm_type == 'bunch_average':
             self.norm_coeff = bin_set[-1] - bin_set[0]
         elif self.norm_type == 'fixed_average':
@@ -168,35 +177,27 @@ class LinearTransform(object):
         elif self.norm_type == 'bunch_integral':
             center_idx = math.floor(len(bin_midpoints) / 2)
             self.norm_coeff = self.response_function(bin_midpoints[center_idx], bin_set[center_idx],
-                                                    bin_set[center_idx + 1], bin_midpoints[center_idx],
-                                                    bin_set[0], bin_set[-1])
+                                                     bin_set[center_idx + 1], bin_midpoints[center_idx],
+                                                     bin_set[0], bin_set[-1])
         elif self.norm_type == 'fixed_integral':
             center_idx = math.floor(len(bin_midpoints) / 2)
             self.norm_coeff = self.response_function(bin_midpoints[center_idx], bin_set[center_idx],
-                                                    bin_set[center_idx + 1], bin_midpoints[center_idx],
-                                                    self.norm_range[0], self.norm_range[-1])
-        elif self.norm_type == 'matrix_sum':
-            self.norm_coeff = 0
-            center_idx = math.floor(len(bin_midpoints) / 2)
-            for i, midpoint in enumerate(bin_midpoints):
-                self.norm_coeff += self.response_function(bin_midpoints[center_idx], bin_set[center_idx],
-                                                    bin_set[center_idx + 1], midpoint, bin_set[i], bin_set[i + 1])
+                                                     bin_set[center_idx + 1], bin_midpoints[center_idx],
+                                                     self.norm_range[0], self.norm_range[-1])
+        elif self.norm_type == 'max_column':
+            self.norm_coeff= np.max(np.sum(self.matrix,0))
+
         elif self.norm_type is None:
             self.norm_coeff = 1
 
-        self.matrix = np.identity(len(bin_midpoints))
-
-        for i, midpoint_i in enumerate(bin_midpoints):
-            for j, midpoint_j in enumerate(bin_midpoints):
-                    self.matrix[j][i] = self.response_function(midpoint_i,bin_set[i],bin_set[i+1],midpoint_j,bin_set[j]
-                                                               ,bin_set[j+1]) / float(self.norm_coeff)
+        self.matrix = self.matrix / float(self.norm_coeff)
 
 class Averager(LinearTransform):
     """ Returns a signal, which consists an average value of the input signal. A sums of the rows in the matrix
     are normalized to be one (i.e. a sum of the input signal doesn't change).
     """
 
-    def __init__(self,norm_type = 'matrix_sum', norm_range = None):
+    def __init__(self,norm_type = 'max_column', norm_range = None):
         super(self.__class__, self).__init__(norm_type, norm_range)
 
     def response_function(self, ref_bin_mid, ref_bin_from, ref_bin_to, bin_mid, bin_from, bin_to):
@@ -239,7 +240,7 @@ class PhaseLinearizedLowpass(LinearTransform):
         The transfer function has been derived by Gerd Kotzian.
     """
 
-    def __init__(self, f_cutoff, norm_type = 'matrix_sum', norm_range = None):
+    def __init__(self, f_cutoff, norm_type = 'max_column', norm_range = None):
         self.f_cutoff = f_cutoff
         self.norm_range_coeff = 10
         super(self.__class__, self).__init__(norm_type, norm_range)
@@ -263,7 +264,7 @@ class LowpassFilter(LinearTransform):
     """ Classical first order lowpass filter (e.g. a RC filter), whose impulse response can be described as exponential
         decay.
     """
-    def __init__(self, f_cutoff, norm_type = 'matrix_sum', norm_range = None):
+    def __init__(self, f_cutoff, norm_type = 'max_column', norm_range = None):
         self.f_cutoff = f_cutoff
         super(self.__class__, self).__init__(norm_type, norm_range)
 
