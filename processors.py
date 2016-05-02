@@ -316,6 +316,21 @@ class HighpassFilter(LinearTransform):
         else:
             return -1.*math.exp(-1.*x)
 
+
+class LinearTransfromFromFile(LinearTransform):
+    def __init__(self,filename, x_axis = 'time', norm_type = 'max_column', norm_range = None):
+        self.filename = filename
+        self.x_axis = x_axis
+        self.data = np.loadtxt(self.filename)
+        if self.x_axis == 'time':
+            self.data[:, 0]=self.data[:, 0]*c
+
+        super(self.__class__, self).__init__(norm_type, norm_range)
+
+    def response_function(self, ref_bin_mid, ref_bin_from, ref_bin_to, bin_mid, bin_from, bin_to):
+            return np.interp(bin_mid - ref_bin_mid, self.data[:, 0], self.data[:, 1])
+
+
 class Bypass_Fast(object):
     def process(self,signal, *args):
         return signal
@@ -443,6 +458,20 @@ class NoiseGate(Multiplication):
         return multiplier
 
 
+class MultiplicationFromFile(Multiplication):
+
+    def __init__(self,filename, x_axis='time', seed='bin_midpoint',normalization = None, recalculate_multiplier = False):
+        super(self.__class__, self).__init__(seed, normalization, recalculate_multiplier)
+        self.filename = filename
+        self.x_axis = x_axis
+        self.data = np.loadtxt(self.filename)
+        if self.x_axis == 'time':
+            self.data[:, 0] = self.data[:, 0] * c
+
+    def multiplication_function(self, seed):
+        return np.interp(seed, self.data[:, 0], self.data[:, 1])
+
+
 class Addition(object):
     __metaclass__ = ABCMeta
     """ An abstract class which adds an array to the input signal. The addend array is produced by taking
@@ -538,6 +567,19 @@ class NoiseGenerator(Addition):
             addend = signal*self.RMS_noise_level*randoms
 
         return addend
+
+class AdditionFromFile(Addition):
+
+    def __init__(self,filename, x_axis='time', seed='bin_midpoint',normalization = None, recalculate_multiplier = False):
+        super(self.__class__, self).__init__(seed, normalization, recalculate_multiplier)
+        self.filename = filename
+        self.x_axis = x_axis
+        self.data = np.loadtxt(self.filename)
+        if self.x_axis == 'time':
+            self.data[:, 0] = self.data[:, 0] * c
+
+    def addend_function(self, seed):
+        return np.interp(seed, self.data[:, 0], self.data[:, 1])
 
 class Register(object):
     __metaclass__ = ABCMeta
