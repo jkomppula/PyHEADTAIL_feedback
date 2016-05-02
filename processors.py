@@ -222,20 +222,16 @@ class Delay(LinearTransform):
         super(self.__class__, self).__init__(norm_type, norm_range)
 
     def response_function(self, ref_bin_mid, ref_bin_from, ref_bin_to, bin_mid, bin_from, bin_to):
+        
+        return self.CDF(bin_to-self.delay*c, ref_bin_from, ref_bin_to)-self.CDF(bin_from-self.delay*c, ref_bin_from, ref_bin_to)
 
-        if bin_from <= (ref_bin_from+self.delay*c) and bin_to >= (ref_bin_to+self.delay*c):
-            return 1.
-        elif bin_from >= (ref_bin_from + self.delay * c) and bin_to <= (ref_bin_to + self.delay * c):
-            return (bin_to-bin_from) / float(ref_bin_to - ref_bin_from)
-
-        elif bin_from <= (ref_bin_from + self.delay * c) < bin_to:
-            return (bin_to - (ref_bin_from + self.delay * c)) / float(ref_bin_to - ref_bin_from)
-
-        elif bin_from < (ref_bin_to + self.delay * c) <= bin_to:
-            return ((ref_bin_to + self.delay * c) - bin_from) / float(ref_bin_to - ref_bin_from)
-        else:
+    def CDF(self,x,ref_bin_from, ref_bin_to):
+        if x <= ref_bin_from:
             return 0.
-
+        elif x < ref_bin_to:
+            return (x-ref_bin_from)/float(ref_bin_to-ref_bin_from)
+        else:
+            return 1.
 
 class PhaseLinearizedLowpass(LinearTransform):
     """ Phase linearized lowpass filter, which can be used to describe a frequency behavior of a kicker. A impulse response
