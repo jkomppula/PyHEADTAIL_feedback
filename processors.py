@@ -45,24 +45,32 @@ class PickUp(object):
         without changes. In other cases, a step response is faster than by using only a LowpassFilter but still finite.
     """
 
-    def __init__(self,RMS_noise_level,f_cutoff, threshold_level):
+    def __init__(self,RMS_noise,f_cutoff, threshold, reference = 1e-3):
+        """
+        :param RMS_noise: an absolute RMS noise level in the signal [m]
+        :param f_cutoff: a cutoff frequency for a signal from a single plate
+        :param threshold: a relative level of the one plate signal, below which the signal is set to be zero. The reference
+            level is given in the parameter reference
+        :param reference: a reference signal level, when beam moves in the middle of the beam tube
+        """
 
-        self.threshold_level = threshold_level
+        self.threshold = threshold
+        self.reference = reference
 
-        self.noise_generator = NoiseGenerator(RMS_noise_level)
+        self.threshold_level = 2. * self.threshold * self.reference
+
+        self.noise_generator = NoiseGenerator(RMS_noise)
         self.filter = LowpassFilter(f_cutoff)
         self.charge_weighter = ChargeWeighter()
 
     def process(self,signal,slice_set):
 
-        reference_level = 1
-
-        signal_A = (reference_level + np.array(signal))
+        signal_A = (self.reference + np.array(signal))
         signal_A = self.charge_weighter.process(signal_A,slice_set)
         signal_A = self.noise_generator.process(signal_A,slice_set)
         signal_A = self.filter.process(signal_A,slice_set)
 
-        signal_B = (reference_level - np.array(signal))
+        signal_B = (self.reference - np.array(signal))
         signal_B = self.charge_weighter.process(signal_B,slice_set)
         signal_B = self.noise_generator.process(signal_B,slice_set)
         signal_B = self.filter.process(signal_B,slice_set)
@@ -70,13 +78,15 @@ class PickUp(object):
         # sets signals below the threshold level to 0. Multiplier 2 to the threshold level comes the fact that
         # the signal difference is two times the original level and the threshold level refers to the original signal
         signal_diff = signal_A - signal_B
-        signal_diff[np.absolute(signal_diff) < 2.*self.threshold_level] = 0.
+        signal_sum = signal_A + signal_B
+
+        signal_diff[np.absolute(signal_sum) < self.threshold_level] = 0.
 
         # in order to avoid 0/0, also sum signals below the threshold level have been set to 1
-        signal_sum = (signal_A + signal_B)
-        signal_sum[np.absolute(signal_diff) < 2.*self.threshold_level] = 1.
+        signal_sum[np.absolute(signal_sum) < self.threshold_level] = 1.
 
-        return reference_level * signal_diff / signal_sum
+
+        return self.reference * signal_diff / signal_sum
 
 class LinearTransform(object):
     __metaclass__ = ABCMeta
@@ -160,8 +170,6 @@ class LinearTransform(object):
             print "]"
 
     def generate_matrix(self,bin_set, bin_midpoints):
-
-
 
         self.matrix = np.identity(len(bin_midpoints))
 
