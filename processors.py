@@ -247,8 +247,7 @@ class PhaseLinearizedLowpass(LinearTransform):
     def response_function(self, ref_bin_mid, ref_bin_from, ref_bin_to, bin_mid, bin_from, bin_to):
         # Frequency scaling must be done by scaling integral limits, because integration by substitution doesn't work
         # with np.quad (see quad_problem.ipynbl). An ugly way could be fixed.
-        # TODO: Add 2 pi?
-        scaling = self.f_cutoff / c
+        scaling = 2.*pi*self.f_cutoff / c
         temp, _ = integrate.quad(self.transfer_function, scaling * (bin_from - ref_bin_mid),
                        scaling * (bin_to - ref_bin_mid))
         return temp
