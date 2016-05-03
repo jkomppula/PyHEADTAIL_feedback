@@ -569,7 +569,7 @@ class NoiseGenerator(Addition):
         elif self.reference_level == 'maximum':
             addend = self.RMS_noise_level*np.max(seed)*randoms
         elif self.reference_level == 'local':
-            addend = signal*self.RMS_noise_level*randoms
+            addend = seed*self.RMS_noise_level*randoms
 
         return addend
 
@@ -692,7 +692,10 @@ class VectorSumRegister(Register):
         # determines a complex number representation from two signals (e.g. from two pickups or different turns), by using
         # knowledge about phase advance between signals. After this turns the vector to the reader's phase
         # TODO: Why not x2[3]-x1[3]?
-        phi_x1_x2 = x1[3]-x2[3]
+        if x1[3] is not None:
+            phi_x1_x2 = x1[3]-x2[3]
+        else:
+            phi_x1_x2 = -1. * self.phase_shift_per_turn
         # print 'x1: ' + str(x1[3]) + ' x2: ' + str(x2[3]) + ' diff:' + str(phi_x1_x2)
         s = np.sin(phi_x1_x2)
         c = np.cos(phi_x1_x2)
