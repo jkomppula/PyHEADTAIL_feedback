@@ -253,7 +253,7 @@ class PhaseLinearizedLowpass(LinearTransform):
 
     def response_function(self, ref_bin_mid, ref_bin_from, ref_bin_to, bin_mid, bin_from, bin_to):
         # Frequency scaling must be done by scaling integral limits, because integration by substitution doesn't work
-        # with np.quad (see quad_problem.ipynbl). An ugly way could be fixed.
+        # with np.quad (see quad_problem.ipynbl). An ugly way, which could be fixed.
         scaling = 2.*pi*self.f_cutoff / c
         temp, _ = integrate.quad(self.transfer_function, scaling * (bin_from - ref_bin_mid),
                        scaling * (bin_to - ref_bin_mid))
@@ -267,7 +267,7 @@ class PhaseLinearizedLowpass(LinearTransform):
 
 
 class LowpassFilter(LinearTransform):
-    """ Classical first order lowpass filter (e.g. a RC filter), whose impulse response can be described as exponential
+    """ Classical first order lowpass filter (e.g. a RC filter), which impulse response can be described as exponential
         decay.
     """
     def __init__(self, f_cutoff, norm_type = 'max_column', norm_range = None):
@@ -276,7 +276,7 @@ class LowpassFilter(LinearTransform):
 
     def response_function(self, ref_bin_mid, ref_bin_from, ref_bin_to, bin_mid, bin_from, bin_to):
         # Frequency scaling must be done by scaling integral limits, because integration by substitution doesn't work
-        # with np.quad (see quad_problem.ipynbl). An ugly way could be fixed.
+        # with np.quad (see quad_problem.ipynbl). An ugly way, which could be fixed.
         scaling = 2.*pi*self.f_cutoff/c
         temp, _ = integrate.quad(self.transfer_function, scaling * (bin_from - ref_bin_mid),
                        scaling * (bin_to - ref_bin_mid))
@@ -297,7 +297,7 @@ class HighpassFilter(LinearTransform):
 
     def response_function(self, ref_bin_mid, ref_bin_from, ref_bin_to, bin_mid, bin_from, bin_to):
         # Frequency scaling must be done by scaling integral limits, because integration by substitution doesn't work
-        # with np.quad (see quad_problem.ipynbl). An ugly way could be fixed.
+        # with np.quad (see quad_problem.ipynbl). An ugly way, which could be fixed.
         scaling = 2.*pi*self.f_cutoff/c
 
         temp, _ = integrate.quad(self.transfer_function, self.scaling * (bin_from - ref_bin_mid),
@@ -692,11 +692,11 @@ class VectorSumRegister(Register):
         # determines a complex number representation from two signals (e.g. from two pickups or different turns), by using
         # knowledge about phase advance between signals. After this turns the vector to the reader's phase
         # TODO: Why not x2[3]-x1[3]?
-        if x1[3] is not None:
+        if (x1[3] is not None) and (x1[3] != x2[3]):
             phi_x1_x2 = x1[3]-x2[3]
         else:
             phi_x1_x2 = -1. * self.phase_shift_per_turn
-        # print 'x1: ' + str(x1[3]) + ' x2: ' + str(x2[3]) + ' diff:' + str(phi_x1_x2)
+
         s = np.sin(phi_x1_x2)
         c = np.cos(phi_x1_x2)
         re = x1[0]
@@ -754,7 +754,6 @@ class HilbertRegister(Register):
     # in the front of the imaginary part of the outgoing vector and the vector has been rotated to different directions,
     # when average of vectors is calculated in next() and combine() functions.
 
-    # FIXME:
 
     def __init__(self,delay, avg_length, phase_shift_per_turn, position=None, n_slices=None, in_processor_chain=True):
         super(self.__class__, self).__init__(delay, avg_length, phase_shift_per_turn, position, n_slices, in_processor_chain)
