@@ -30,10 +30,8 @@ import scipy.signal as signal
                together
 
 """
-# TODO: file read
 
-
-class PickUp(object):
+class  PickUpProcessor(object):
     """ A signal processor, which models a realistic two plates pickup system, which has a finite noise level and
         bandwidth. The model assumes that signals from the plates vary to opposite polarities from the reference signal
         level. The signals of both plates pass separately ChargeWeighter, NoiseGenerator and LowpassFilter in order to
@@ -317,7 +315,9 @@ class HighpassFilter(LinearTransform):
             return -1.*math.exp(-1.*x)
 
 
-class LinearTransfromFromFile(LinearTransform):
+class LinearTransformFromFile(LinearTransform):
+    """ Interpolates matrix columns by using inpulse response data from a file. """
+
     def __init__(self,filename, x_axis = 'time', norm_type = 'max_column', norm_range = None):
         self.filename = filename
         self.x_axis = x_axis
@@ -410,7 +410,7 @@ class ChargeWeighter(Multiplication):
         return weight
 
 
-class FermiDiracInverseWeighter(Multiplication):
+class EdgeWeighter(Multiplication):
     """ Use an inverse of the Fermi-Dirac distribution function to increase signal strength on the edges of the bunch
     """
 
@@ -459,6 +459,11 @@ class NoiseGate(Multiplication):
 
 
 class MultiplicationFromFile(Multiplication):
+    """ Multiplies the signal with an array, which is produced by interpolation from the loaded data. Note the seed for
+        the interpolation can be any of those presented in the abstract function. E.g. a spatial weight can be
+        determined by using a bin midpoint as a seed, nonlinear amplification can be modelled by using signal itself
+        as a seed and etc...
+    """
 
     def __init__(self,filename, x_axis='time', seed='bin_midpoint',normalization = None, recalculate_multiplier = False):
         super(self.__class__, self).__init__(seed, normalization, recalculate_multiplier)
@@ -569,6 +574,10 @@ class NoiseGenerator(Addition):
         return addend
 
 class AdditionFromFile(Addition):
+    """ Adds an array to the signal, which is produced by interpolation from the loaded data. Note the seed for
+        the interpolation can be any of those presented in the abstract function.
+    """
+
 
     def __init__(self,filename, x_axis='time', seed='bin_midpoint',normalization = None, recalculate_multiplier = False):
         super(self.__class__, self).__init__(seed, normalization, recalculate_multiplier)
