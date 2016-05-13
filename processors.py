@@ -377,7 +377,7 @@ class Multiplication(object):
             self.multiplier = np.array([(j-i) for i, j in zip(bin_set, bin_set[1:])])
         elif self.seed == 'bin_midpoint':
             bin_set = slice_set.z_bins
-            self.multiplier = np.array([(i+j)/2 for i, j in zip(bin_set, bin_set[1:])])
+            self.multiplier = np.array([(i+j)/2. for i, j in zip(bin_set, bin_set[1:])])
         elif self.seed == 'signal':
             self.multiplier = np.array(signal)
         else:
@@ -519,7 +519,7 @@ class Addition(object):
             self.addend = np.array([(j-i) for i, j in zip(bin_set, bin_set[1:])])
         elif self.seed == 'bin_midpoint':
             bin_set = slice_set.z_bins
-            self.addend = np.array([(i+j)/2 for i, j in zip(bin_set, bin_set[1:])])
+            self.addend = np.array([(i+j)/2. for i, j in zip(bin_set, bin_set[1:])])
         elif self.seed == 'signal':
             self.addend = np.array(signal)
         else:
@@ -666,7 +666,6 @@ class Register(object):
         if self.in_processor_chain == True:
             temp_signal = np.zeros(len(signal))
             if len(self) > 0:
-
                 prev = (np.zeros(len(self.register[0])),None,0,self.position)
 
                 for value in self:
@@ -757,6 +756,13 @@ class HilbertRegister(Register):
 
     def __init__(self,delay, avg_length, phase_shift_per_turn, position=None, n_slices=None, in_processor_chain=True):
         super(self.__class__, self).__init__(delay, avg_length, phase_shift_per_turn, position, n_slices, in_processor_chain)
+
+    def __len__(self):
+        # returns a number of signals in the register after delay
+        if (len(self.register) - self.delay) > 0:
+            return 1
+        else:
+            return 0
 
     def next(self):
 
