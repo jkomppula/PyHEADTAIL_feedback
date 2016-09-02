@@ -49,13 +49,14 @@ class OneboxFeedback(object):
         self.axis = axis
 
     def track(self,bunch):
-        slice_set = bunch.get_slices(self.slicer, statistics=True)
 
         if self.axis == 'divergence':
+            slice_set = bunch.get_slices(self.slicer, statistics=['mean_z','mean_xp', 'mean_yp'])
             signal_x = np.array([s for s in slice_set.mean_xp])
             signal_y = np.array([s for s in slice_set.mean_yp])
 
         elif self.axis == 'displacement':
+            slice_set = bunch.get_slices(self.slicer, statistics=['mean_z','mean_x', 'mean_y'])
             signal_x = np.array([s for s in slice_set.mean_x])
             signal_y = np.array([s for s in slice_set.mean_y])
 

@@ -3,7 +3,7 @@ import math
 import copy
 from collections import deque
 from abc import ABCMeta, abstractmethod
-
+from random import randint
 import numpy as np
 from scipy.constants import c, pi
 import scipy.integrate as integrate
@@ -86,6 +86,33 @@ class  PickUpProcessor(object):
 
         return self.reference * signal_diff / signal_sum
 
+
+class Jitter(object):
+    def __init__(self,amplitude, distribution = 'uniform',n_values = 100):
+        self.amplitude = amplitude
+        self.distribution = distribution
+        self.n_values = n_values
+
+        self.delays = np.linspace(-1.*self.amplitude,1.*self.amplitude,self.n_values)
+
+        # if self.distribution == 'normal' or self.distribution is None:
+        #     self.randoms = np.random.randn(self.values)
+        # elif self.distribution == 'uniform':
+        #     self.randoms = 1./0.577263*(-1.+2.*np.random.rand(self.values))
+        #
+        # self.randoms *= self.amplitude
+        self.processors = []
+
+        for delay in self.delays:
+            self.processors.append(Delay(delay))
+
+    def process(self, signal, slice_set):
+
+        return self.processors[randint(0,(self.n_values-1))].process(signal,slice_set)
+
+
+
+
 class LinearTransform(object):
     __metaclass__ = ABCMeta
     """ An abstract class for signal processors which are based on linear transformation. The signal is processed by
@@ -93,7 +120,7 @@ class LinearTransform(object):
         method, namely response_function(*args), which returns an elements of the matrix (a ref_bin affection to a bin)
     """
 
-    def __init__(self, norm_type=None, norm_range=None, bin_check = False, bin_middle = 'bin'):
+    def __init__(self, norm_type=None, norm_range=None, bin_check = False, bin_middle = 'bin', recalculate_always = False):
         """
 
         :param norm_type: Describes a normalization method for the transfer matrix
@@ -103,7 +130,8 @@ class LinearTransform(object):
             'fixed_integral': an integral over a fixed range given in a parameter norm_range is equal to 1
             'matrix_sum': a sum over elements in the middle column of the matrix is equal to 1
             None: no normalization
-        :param norm_range: Normalization length in cases of self.norm_type == 'fixed_length_average' or
+        :param norm_range: Normalization length in cases of self.norm_type == 'fi
+        xed_length_average' or
             self.norm_type == 'fixed_length_integral'
         :param bin_check: if True, a change of the bin_set is checked every time process() is called and matrix is
             recalculated if any change is found
@@ -120,6 +148,7 @@ class LinearTransform(object):
         self.matrix = None
 
         self.recalculate_matrix = True
+        self.recalculate_matrix_always = recalculate_always
 
     @abstractmethod
     def response_function(self, ref_bin_mid, ref_bin_from, ref_bin_to, bin_mid, bin_from, bin_to):
@@ -134,7 +163,8 @@ class LinearTransform(object):
 
         # recalculte the matrix if necessary
         if self.recalculate_matrix:
-            self.recalculate_matrix = False
+            if self.recalculate_matrix_always == False:
+                self.recalculate_matrix = False
             if self.bin_middle == 'particles':
                 bin_midpoints = np.array(copy.copy(slice_set.mean_z))
             elif self.bin_middle == 'bin':
@@ -194,7 +224,7 @@ class LinearTransform(object):
             self.norm_coeff= np.max(np.sum(self.matrix,0))
 
         elif self.norm_type is None:
-            self.norm_coeff = 1
+            self.norm_coeff = 1.
 
         self.matrix = self.matrix / float(self.norm_coeff)
 
@@ -224,9 +254,9 @@ class Bypass(LinearTransform):
 class Delay(LinearTransform):
     """ Delays signal in units of [second].
     """
-    def __init__(self,delay, norm_type = None, norm_range = None):
+    def __init__(self,delay, norm_type = None, norm_range = None,recalculate_always = False):
         self.delay = delay
-        super(self.__class__, self).__init__(norm_type, norm_range)
+        super(self.__class__, self).__init__(norm_type, norm_range, recalculate_always = recalculate_always)
 
     def response_function(self, ref_bin_mid, ref_bin_from, ref_bin_to, bin_mid, bin_from, bin_to):
 
@@ -246,7 +276,8 @@ class PhaseLinearizedLowpass(LinearTransform):
         The transfer function has been derived by Gerd Kotzian.
     """
 
-    def __init__(self, f_cutoff, norm_type = 'max_column', norm_range = None):
+    # def __init__(self, f_cutoff, norm_type='max_column', norm_range=None):
+    def __init__(self, f_cutoff, norm_type = None, norm_range = None):
         self.f_cutoff = f_cutoff
         self.norm_range_coeff = 10
         super(self.__class__, self).__init__(norm_type, norm_range)
@@ -263,14 +294,217 @@ class PhaseLinearizedLowpass(LinearTransform):
         if x == 0:
             return 0
         else:
-            return special.k0(abs(x))
+            return special.k0(abs(x))/np.pi
 
+class PhaseLinearizedHighpass(LinearTransform):
+    """ Phase linearized lowpass filter, which can be used to describe a frequency behavior of a kicker. A impulse response
+        of a phase linearized lowpass filter is modified Bessel function of the second kind (np.special.k0).
+        The transfer function has been derived by Gerd Kotzian.
+    """
+
+    # def __init__(self, f_cutoff, norm_type='max_column', norm_range=None):
+    def __init__(self, f_cutoff, norm_type = None, norm_range = None):
+        self.f_cutoff = f_cutoff
+        self.norm_range_coeff = 10
+        super(self.__class__, self).__init__(norm_type, norm_range)
+
+    def response_function(self, ref_bin_mid, ref_bin_from, ref_bin_to, bin_mid, bin_from, bin_to):
+        # Frequency scaling must be done by scaling integral limits, because integration by substitution doesn't work
+        # with np.quad (see quad_problem.ipynbl). An ugly way, which could be fixed.
+        scaling = 2.*pi*self.f_cutoff / c
+        temp, _ = integrate.quad(self.transfer_function, scaling * (bin_from - ref_bin_mid),
+                       scaling * (bin_to - ref_bin_mid))
+
+        if ref_bin_mid == bin_mid:
+            temp += 1.
+
+        return temp
+
+    def transfer_function(self,x):
+        if x == 0:
+            return 0
+        else:
+            return -1.*special.k0(abs(x))/np.pi
+
+class HalfTauLowpass(LinearTransform):
+    """ Phase linearized lowpass filter, which can be used to describe a frequency behavior of a kicker. A impulse response
+        of a phase linearized lowpass filter is modified Bessel function of the second kind (np.special.k0).
+        The transfer function has been derived by Gerd Kotzian.
+    """
+
+    # def __init__(self, f_cutoff, norm_type='max_column', norm_range=None):
+    def __init__(self, f_cutoff, delay = 0., norm_type = None, norm_range = None):
+        self.f_cutoff = f_cutoff
+        self.delay_z = delay * c
+        self.norm_range_coeff = 10
+        super(self.__class__, self).__init__(norm_type, norm_range)
+
+    def response_function(self, ref_bin_mid, ref_bin_from, ref_bin_to, bin_mid, bin_from, bin_to):
+        # Frequency scaling must be done by scaling integral limits, because integration by substitution doesn't work
+        # with np.quad (see quad_problem.ipynbl). An ugly way, which could be fixed.
+        scaling = 2.*pi*self.f_cutoff / c
+        temp, _ = integrate.quad(self.transfer_function, scaling * (bin_from - (ref_bin_mid+self.delay_z)),
+                       scaling * (bin_to - (ref_bin_mid+self.delay_z)))
+        return temp
+
+    def transfer_function(self,x):
+        if x == 0:
+            return 0
+        elif abs(x) < 0.5:
+            return 0.417947498915
+        else:
+            return special.k0(abs(x))/2.21180668296
+
+class HalfTauHighpass(LinearTransform):
+    """ Phase linearized lowpass filter, which can be used to describe a frequency behavior of a kicker. A impulse response
+        of a phase linearized lowpass filter is modified Bessel function of the second kind (np.special.k0).
+        The transfer function has been derived by Gerd Kotzian.
+    """
+
+    # def __init__(self, f_cutoff, norm_type='max_column', norm_range=None):
+    def __init__(self, f_cutoff, delay = 0., norm_type = None, norm_range = None):
+        self.f_cutoff = f_cutoff
+        self.delay_z = delay * c
+        self.norm_range_coeff = 10
+        super(self.__class__, self).__init__(norm_type, norm_range)
+
+    def response_function(self, ref_bin_mid, ref_bin_from, ref_bin_to, bin_mid, bin_from, bin_to):
+        # Frequency scaling must be done by scaling integral limits, because integration by substitution doesn't work
+        # with np.quad (see quad_problem.ipynbl). An ugly way, which could be fixed.
+        scaling = 2.*pi*self.f_cutoff / c
+        temp, _ = integrate.quad(self.transfer_function, scaling * (bin_from - (ref_bin_mid+self.delay_z)),
+                       scaling * (bin_to - (ref_bin_mid+self.delay_z)))
+
+        temp *= -1.
+
+        if ref_bin_mid == bin_mid:
+            temp += 1.
+
+        return temp
+
+    def transfer_function(self,x):
+        if x == 0:
+            return 0
+        elif abs(x) < 0.5:
+            return 0.417947498915
+        else:
+            return special.k0(abs(x))/2.21180668296
+
+class TunedPhaseLinearizedLowpass(LinearTransform):
+    """ Phase linearized lowpass filter, which can be used to describe a frequency behavior of a kicker. A impulse response
+        of a phase linearized lowpass filter is modified Bessel function of the second kind (np.special.k0).
+        The transfer function has been derived by Gerd Kotzian.
+    """
+
+    # def __init__(self, f_cutoff, norm_type='max_column', norm_range=None):
+    def __init__(self, f_cutoff, delay = 0., norm_type = None, norm_range = None):
+        self.f_cutoff = f_cutoff
+        self.delay_z = delay * c
+        self.norm_range_coeff = 10
+        super(self.__class__, self).__init__(norm_type, norm_range)
+
+    def response_function(self, ref_bin_mid, ref_bin_from, ref_bin_to, bin_mid, bin_from, bin_to):
+        # Frequency scaling must be done by scaling integral limits, because integration by substitution doesn't work
+        # with np.quad (see quad_problem.ipynbl). An ugly way, which could be fixed.
+        scaling = 2.*pi*self.f_cutoff / c
+        temp, _ = integrate.quad(self.transfer_function, scaling * (bin_from - (ref_bin_mid+self.delay_z)),
+                       scaling * (bin_to - (ref_bin_mid+self.delay_z)))
+        return temp
+
+    def transfer_function(self,x):
+        if x == 0:
+            return 0
+        elif abs(x) < 0.1:
+            return 0.898924802868180016815
+        else:
+            return special.k0(abs(x))/2.69997
+
+class Tuned2PhaseLinearizedLowpass(LinearTransform):
+    """ Phase linearized lowpass filter, which can be used to describe a frequency behavior of a kicker. A impulse response
+        of a phase linearized lowpass filter is modified Bessel function of the second kind (np.special.k0).
+        The transfer function has been derived by Gerd Kotzian.
+    """
+
+    # def __init__(self, f_cutoff, norm_type='max_column', norm_range=None):
+    def __init__(self, f_cutoff, delay = 0., norm_type = None, norm_range = None):
+        self.f_cutoff = f_cutoff
+        self.delay_z = delay * c
+        self.norm_range_coeff = 10
+        super(self.__class__, self).__init__(norm_type, norm_range)
+
+    def response_function(self, ref_bin_mid, ref_bin_from, ref_bin_to, bin_mid, bin_from, bin_to):
+        # Frequency scaling must be done by scaling integral limits, because integration by substitution doesn't work
+        # with np.quad (see quad_problem.ipynbl). An ugly way, which could be fixed.
+        scaling = 2.*pi*self.f_cutoff / c
+        temp, _ = integrate.quad(self.transfer_function, scaling * (bin_from - (ref_bin_mid+self.delay_z)),
+                       scaling * (bin_to - (ref_bin_mid+self.delay_z)))
+        return temp
+
+    def transfer_function(self,x):
+        if x == 0:
+            return 0
+        elif abs(x) < 0.01591549430918:
+            return 1.49949152306659903197852598651
+        else:
+            return special.k0(abs(x))/2.83878
+
+class PhaseLinearizedLowpassWithDelay(LinearTransform):
+    """ Phase linearized lowpass filter, which can be used to describe a frequency behavior of a kicker. A impulse response
+        of a phase linearized lowpass filter is modified Bessel function of the second kind (np.special.k0).
+        The transfer function has been derived by Gerd Kotzian.
+    """
+
+    # def __init__(self, f_cutoff, norm_type='max_column', norm_range=None):
+    def __init__(self, f_cutoff, delay = 0., norm_type = None, norm_range = None):
+        self.f_cutoff = f_cutoff
+        self.delay_z = delay*c
+        self.norm_range_coeff = 10
+        super(self.__class__, self).__init__(norm_type, norm_range)
+
+    def response_function(self, ref_bin_mid, ref_bin_from, ref_bin_to, bin_mid, bin_from, bin_to):
+        # Frequency scaling must be done by scaling integral limits, because integration by substitution doesn't work
+        # with np.quad (see quad_problem.ipynbl). An ugly way, which could be fixed.
+        scaling = 2.*pi*self.f_cutoff / c
+        temp, _ = integrate.quad(self.transfer_function, scaling * (bin_from - (ref_bin_mid+self.delay_z)),
+                       scaling * (bin_to - (ref_bin_mid+self.delay_z)))
+        return temp
+
+    def transfer_function(self,x):
+        if x == 0:
+            return 0
+        else:
+            return special.k0(abs(x))/np.pi
+
+class LowpassFilterWithDelay(LinearTransform):
+    """ Classical first order lowpass filter (e.g. a RC filter), which impulse response can be described as exponential
+        decay.
+    """
+    # def __init__(self, f_cutoff, norm_type='max_column', norm_range=None):
+    def __init__(self, f_cutoff, delay = 0.,norm_type = None, norm_range = None):
+        self.f_cutoff = f_cutoff
+        self.delay_z = delay*c
+        super(self.__class__, self).__init__(norm_type, norm_range)
+
+    def response_function(self, ref_bin_mid, ref_bin_from, ref_bin_to, bin_mid, bin_from, bin_to):
+        # Frequency scaling must be done by scaling integral limits, because integration by substitution doesn't work
+        # with np.quad (see quad_problem.ipynbl). An ugly way, which could be fixed.
+        scaling = 2.*pi*self.f_cutoff/c
+        temp, _ = integrate.quad(self.transfer_function, scaling * (bin_from - (ref_bin_mid+self.delay_z)),
+                       scaling * (bin_to - (ref_bin_mid+self.delay_z)))
+        return temp
+
+    def transfer_function(self,x):
+        if x < 0:
+            return 0
+        else:
+            return math.exp(-1.*x)
 
 class LowpassFilter(LinearTransform):
     """ Classical first order lowpass filter (e.g. a RC filter), which impulse response can be described as exponential
         decay.
     """
-    def __init__(self, f_cutoff, norm_type = 'max_column', norm_range = None):
+    # def __init__(self, f_cutoff, norm_type='max_column', norm_range=None):
+    def __init__(self, f_cutoff, norm_type = None, norm_range = None):
         self.f_cutoff = f_cutoff
         super(self.__class__, self).__init__(norm_type, norm_range)
 
@@ -300,8 +534,8 @@ class HighpassFilter(LinearTransform):
         # with np.quad (see quad_problem.ipynbl). An ugly way, which could be fixed.
         scaling = 2.*pi*self.f_cutoff/c
 
-        temp, _ = integrate.quad(self.transfer_function, self.scaling * (bin_from - ref_bin_mid),
-                       self.scaling * (bin_to - ref_bin_mid))
+        temp, _ = integrate.quad(self.transfer_function, scaling * (bin_from - ref_bin_mid),
+                       scaling * (bin_to - ref_bin_mid))
 
         if ref_bin_mid == bin_mid:
             temp += 1.
