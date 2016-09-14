@@ -2,7 +2,7 @@ import numpy as np
 from scipy.constants import pi
 
 class Averager(object):
-    """ The simplest possible signal mixer, which calculates an average of
+    """ The simplest possible signal combiner, which calculates an average of
         signals from different registers.
     """
 

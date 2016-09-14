@@ -1,4 +1,32 @@
 import numpy as np
+from processors import Register
+
+def get_statistical_variables(processors, variables = None):
+    """
+    Function which checks statistical variables required by signal processors
+
+    :param processors: a list of signal processors
+    :param variables: a list of statistical variables determined earlier
+    :return: a list of statistical variables, which is a sum of variables from input list and those found from
+    the signal processors
+    """
+
+    if variables is None:
+        variables = []
+
+    for processor in processors:
+        variables.extend(processor.required_variables)
+
+    variables = list(set(variables))
+
+    if 'z_bins' in variables:
+        variables.remove('z_bins')
+
+    if 'n_macroparticles_per_slice' in variables:
+        variables.remove('n_macroparticles_per_slice')
+
+
+    return variables
 
 
 class IdealBunchFeedback(object):
@@ -21,7 +49,7 @@ class IdealSliceFeedback(object):
         self.gain = gain
 
     def track(self,bunch):
-        slice_set = bunch.get_slices(self.slicer, statistics=True)
+        slice_set = bunch.get_slices(self.slicer, statistics = ['mean_xp', 'mean_yp'])
 
         # Reads a particle index and a slice index for each macroparticle
         p_idx = slice_set.particles_within_cuts
@@ -48,8 +76,23 @@ class OneboxFeedback(object):
 
         self.axis = axis
 
+        self.statistical_variables = None
+
     def track(self,bunch):
-        slice_set = bunch.get_slices(self.slicer, statistics=True)
+
+        if self.statistical_variables is None:
+            if self.axis == 'divergence':
+                self.statistical_variables = ['mean_xp', 'mean_yp']
+            elif self.axis == 'displacement':
+                self.statistical_variables = ['mean_x', 'mean_y']
+
+            self.statistical_variables = get_statistical_variables(self.processors_x, self.statistical_variables)
+            self.statistical_variables = get_statistical_variables(self.processors_y, self.statistical_variables)
+
+        slice_set = bunch.get_slices(self.slicer, statistics=self.statistical_variables)
+
+        signal_x = np.array([])
+        signal_y = np.array([])
 
         if self.axis == 'divergence':
             signal_x = np.array([s for s in slice_set.mean_xp])
@@ -95,8 +138,16 @@ class PickUp(object):
         self.signal_x = []
         self.signal_y = []
 
+        self.statistical_variables = None
+
     def track(self,bunch):
-        slice_set = bunch.get_slices(self.slicer, statistics=True)
+
+        if self.statistical_variables is None:
+            self.statistical_variables = ['mean_x', 'mean_y']
+            self.statistical_variables = get_statistical_variables(self.processors_x, self.statistical_variables)
+            self.statistical_variables = get_statistical_variables(self.processors_y, self.statistical_variables)
+
+        slice_set = bunch.get_slices(self.slicer, statistics=self.statistical_variables)
 
         self.signal_x = np.array([s for s in slice_set.mean_x])
         self.signal_y = np.array([s for s in slice_set.mean_y])
@@ -118,13 +169,13 @@ class Kicker(object):
         (input parameters phase_angle_x and phase_angle_y).
     """
 
-    def __init__(self,phase_angle_x,phase_angle_y,gain,slicer,registers_x,registers_y,processors_x,processors_y,signal_mixer_x,signal_mixer_y):
+    def __init__(self,position_x,position_y,gain,slicer,registers_x,registers_y,processors_x,processors_y,signal_mixer_x,signal_mixer_y):
 
         self.gain=gain
         self.slicer = slicer
 
-        self.phase_angle_x = phase_angle_x
-        self.phase_angle_y = phase_angle_y
+        self.position_x = position_x
+        self.position_y = position_y
 
         self.registers_x = registers_x
         self.registers_y = registers_y
@@ -135,12 +186,19 @@ class Kicker(object):
         self.signal_mixer_x = signal_mixer_x
         self.signal_mixer_y = signal_mixer_y
 
+        self.statistical_variables = None
+
     def track(self,bunch):
 
-        slice_set = bunch.get_slices(self.slicer, statistics=['mean_xp', 'mean_yp','mean_z'])
+        if self.statistical_variables is None:
+            self.statistical_variables = ['mean_xp', 'mean_yp']
+            self.statistical_variables = get_statistical_variables(self.processors_x, self.statistical_variables)
+            self.statistical_variables = get_statistical_variables(self.processors_y, self.statistical_variables)
 
-        signal_x = self.signal_mixer_x.mix(self.registers_x,self.phase_angle_x)
-        signal_y = self.signal_mixer_y.mix(self.registers_y,self.phase_angle_y)
+        slice_set = bunch.get_slices(self.slicer, statistics=self.statistical_variables)
+
+        signal_x = self.signal_mixer_x.mix(self.registers_x,self.position_x)
+        signal_y = self.signal_mixer_y.mix(self.registers_y,self.position_y)
 
         for processor in self.processors_x:
             signal_x = processor.process(signal_x,slice_set)
@@ -158,3 +216,39 @@ class Kicker(object):
         bunch.xp[p_idx] -= correction_xp[s_idx]
         bunch.yp[p_idx] -= correction_yp[s_idx]
 
+
+class FIRRegister(Register):
+
+    def __init__(self,delay, tune, avg_length, position=None, n_slices=None, in_processor_chain=True):
+        self.type = 'plain'
+        super(self.__class__, self).__init__(delay, tune, avg_length, position, n_slices, in_processor_chain)
+        self.required_variables = []
+
+    def combine(self,x1,x2,reader_position,x_to_xp = False):
+        # determines a complex number representation from two signals (e.g. from two pickups or different turns), by using
+        # knowledge about phase advance between signals. After this turns the vector to the reader's phase
+        # TODO: Why not x2[3]-x1[3]?
+        if (x1[3] is not None) and (x1[3] != x2[3]):
+            phi_x1_x2 = x1[3]-x2[3]
+        else:
+            phi_x1_x2 = -1. * self.phase_shift_per_turn
+
+        s = np.sin(phi_x1_x2)
+        c = np.cos(phi_x1_x2)
+        re = x1[0]
+        im = (c*x1[0]-x2[0])/float(s)
+
+        # turns the vector to the reader's position
+        delta_phi = x1[2]
+        if reader_position is not None:
+            delta_position = x1[3] - reader_position
+            delta_phi += delta_position
+            if delta_position > 0:
+                delta_phi -= self.phase_shift_per_turn
+            if x_to_xp == True:
+                delta_phi -= pi/2.
+
+        s = np.sin(delta_phi)
+        c = np.cos(delta_phi)
+
+        return np.array([c*re-s*im,s*re+c*im])

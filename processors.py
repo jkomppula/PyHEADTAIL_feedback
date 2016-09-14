@@ -3,12 +3,10 @@ import math
 import copy
 from collections import deque
 from abc import ABCMeta, abstractmethod
-
 import numpy as np
 from scipy.constants import c, pi
 import scipy.integrate as integrate
 import scipy.special as special
-import scipy.signal as signal
 
 
 """ This file contains signal processors which can be used in the feedback module in PyHEADTAIL.
@@ -16,7 +14,8 @@ import scipy.signal as signal
     A general requirement for the signal processor is that it is a class object containing a function, namely,
     process(signal, slice_set). The input parameters for the function process(signal, slice_set) are a numpy array
     'signal' and a slice_set object of PyHEADTAIL. The function must return a numpy array with equal length to
-    the input array.
+    the input array. The other requirement is that the class object contains a list variable, namely
+    'required_variables', which includes required variables for slicet_objects.
 
     The signals processors in this file are based on four abstract classes;
         1) in LinearTransform objects the input signal is multiplied with a matrix.
@@ -31,80 +30,32 @@ import scipy.signal as signal
 
 """
 
-class  PickUpProcessor(object):
-    """ A signal processor, which models a realistic two plates pickup system, which has a finite noise level and
-        bandwidth. The model assumes that signals from the plates vary to opposite polarities from the reference signal
-        level. The signals of both plates pass separately ChargeWeighter, NoiseGenerator and LowpassFilter in order to
-        simulate realistic levels of signal, noise and frequency response. The output signal is calculated from
-        the ratio of a difference and sum signals of the plates. Signals below a given threshold level is set to zero
-        in order to avoid high noise level at low input signal levels
-
-        If the cut off frequency of the LowpassFilter is higher than 'the sampling rate', a signal passes this model
-        without changes. In other cases, a step response is faster than by using only a LowpassFilter but still finite.
-    """
-
-    def __init__(self,RMS_noise,f_cutoff, threshold, reference = 1e-3):
-        """
-        :param RMS_noise: an absolute RMS noise level in the signal [m]
-        :param f_cutoff: a cutoff frequency for a signal from a single plate
-        :param threshold: a relative level of the one plate signal, below which the signal is set to be zero. The reference
-            level is given in the parameter reference
-        :param reference: a reference signal level, when beam moves in the middle of the beam tube
-        """
-
-        self.threshold = threshold
-        self.reference = reference
-
-        self.threshold_level = 2. * self.threshold * self.reference
-
-        self.noise_generator = NoiseGenerator(RMS_noise)
-        self.filter = LowpassFilter(f_cutoff)
-        self.charge_weighter = ChargeWeighter()
-
-    def process(self,signal,slice_set):
-
-        signal_A = (self.reference + np.array(signal))
-        signal_A = self.charge_weighter.process(signal_A,slice_set)
-        signal_A = self.noise_generator.process(signal_A,slice_set)
-        signal_A = self.filter.process(signal_A,slice_set)
-
-        signal_B = (self.reference - np.array(signal))
-        signal_B = self.charge_weighter.process(signal_B,slice_set)
-        signal_B = self.noise_generator.process(signal_B,slice_set)
-        signal_B = self.filter.process(signal_B,slice_set)
-
-        # sets signals below the threshold level to 0. Multiplier 2 to the threshold level comes the fact that
-        # the signal difference is two times the original level and the threshold level refers to the original signal
-        signal_diff = signal_A - signal_B
-        signal_sum = signal_A + signal_B
-
-        signal_diff[np.absolute(signal_sum) < self.threshold_level] = 0.
-
-        # in order to avoid 0/0, also sum signals below the threshold level have been set to 1
-        signal_sum[np.absolute(signal_sum) < self.threshold_level] = 1.
-
-
-        return self.reference * signal_diff / signal_sum
-
 class LinearTransform(object):
     __metaclass__ = ABCMeta
     """ An abstract class for signal processors which are based on linear transformation. The signal is processed by
         calculating a dot product of a transfer matrix and a signal. The transfer matrix is produced with an abstract
-        method, namely response_function(*args), which returns an elements of the matrix (a ref_bin affection to a bin)
+        method, namely response_function(*args), which returns an elements of the matrix (an effect of
+        the ref_bin to the bin)
     """
 
-    def __init__(self, norm_type=None, norm_range=None, bin_check = False, bin_middle = 'bin'):
+    def __init__(self, norm_type=None, norm_range=None, matrix_symmetry = 'none', bin_check = False,
+                 bin_middle = 'bin', recalculate_always = False):
         """
 
-        :param norm_type: Describes a normalization method for the transfer matrix
-            'bunch_average': an average value over the bunch is equal to 1
-            'fixed_average': an average value over a range given in a parameter norm_range is equal to 1
-            'bunch_integral': an integral over the bunch is equal to 1
-            'fixed_integral': an integral over a fixed range given in a parameter norm_range is equal to 1
-            'matrix_sum': a sum over elements in the middle column of the matrix is equal to 1
-            None: no normalization
-        :param norm_range: Normalization length in cases of self.norm_type == 'fixed_length_average' or
+        :param norm_type: Describes normalization method for the transfer matrix
+            'bunch_average':    an average value over the bunch is equal to 1
+            'fixed_average':    an average value over a range given in a parameter norm_range is equal to 1
+            'bunch_integral':   an integral over the bunch is equal to 1
+            'fixed_integral':   an integral over a fixed range given in a parameter norm_range is equal to 1
+            'matrix_sum':       a sum over elements in the middle column of the matrix is equal to 1
+            None:               no normalization
+        :param norm_range: Normalization length in cases of self.norm_type == 'fi
+        xed_length_average' or
             self.norm_type == 'fixed_length_integral'
+        :param matrix_symmetry: symmetry of the matrix is used for minimizing the number of calculable elements
+            in the matrix. Implemented options are:
+            'none':             all elements are calculated separately
+            'fully_diagonal':   all elements are identical in diagonal direction
         :param bin_check: if True, a change of the bin_set is checked every time process() is called and matrix is
             recalculated if any change is found
         :param bin_middle: defines if middle points of the bins are determined by a middle point of the bin
@@ -115,11 +66,16 @@ class LinearTransform(object):
         self.norm_range = norm_range
         self.bin_check = bin_check
         self.bin_middle = bin_middle
+        self.matrix_symmetry = matrix_symmetry
+
 
         self.z_bin_set = None
         self.matrix = None
 
         self.recalculate_matrix = True
+        self.recalculate_matrix_always = recalculate_always
+
+        self.required_variables = ['z_bins','mean_z']
 
     @abstractmethod
     def response_function(self, ref_bin_mid, ref_bin_from, ref_bin_to, bin_mid, bin_from, bin_to):
@@ -134,7 +90,8 @@ class LinearTransform(object):
 
         # recalculte the matrix if necessary
         if self.recalculate_matrix:
-            self.recalculate_matrix = False
+            if self.recalculate_matrix_always == False:
+                self.recalculate_matrix = False
             if self.bin_middle == 'particles':
                 bin_midpoints = np.array(copy.copy(slice_set.mean_z))
             elif self.bin_middle == 'bin':
@@ -144,6 +101,10 @@ class LinearTransform(object):
 
         # process the signal
         return np.dot(self.matrix,signal)
+
+    def clear_matrix(self):
+        self.matrix = np.array([])
+        self.recalculate_matrix = True
 
     def check_bin_set(self,z_bin_set):
 
@@ -170,11 +131,47 @@ class LinearTransform(object):
     def generate_matrix(self,bin_set, bin_midpoints):
 
         self.matrix = np.identity(len(bin_midpoints))
+        self.matrix *= np.nan
 
-        for i, midpoint_i in enumerate(bin_midpoints):
-            for j, midpoint_j in enumerate(bin_midpoints):
-                    self.matrix[j][i] = self.response_function(midpoint_i,bin_set[i],bin_set[i+1],midpoint_j,bin_set[j]
-                                                               ,bin_set[j+1])
+        bin_widths = []
+        for i,j in zip(bin_set,bin_set[1:]):
+            bin_widths.append(j-i)
+
+        bin_widths = np.array(bin_widths)
+        bin_std = np.std(bin_widths)/np.mean(bin_widths)
+
+        if bin_std > 1e-3:
+            'Dynamic slicer -> unoptimized matrix generation!'
+
+        if self.matrix_symmetry == 'fully_diagonal' and bin_std < 1e-3:
+            j = 0
+            midpoint_j = bin_midpoints[0]
+            for i, midpoint_i in enumerate(bin_midpoints):
+                self.matrix[j][i] = self.response_function(midpoint_i, bin_set[i], bin_set[i + 1], midpoint_j,
+                                                           bin_set[j]
+                                                           , bin_set[j + 1])
+                for val in xrange(1,len(bin_midpoints) - max(i,j)):
+                    self.matrix[j + val][i + val] = self.matrix[j][i]
+
+            i = 0
+            midpoint_i = bin_midpoints[0]
+            for j, midpoint_j in enumerate(bin_midpoints[1:], start=1):
+                self.matrix[j][i] = self.response_function(midpoint_i, bin_set[i], bin_set[i + 1], midpoint_j,
+                                                           bin_set[j]
+                                                           , bin_set[j + 1])
+                for val in xrange(1,len(bin_midpoints) - max(i,j)):
+                    self.matrix[j + val][i + val] = self.matrix[j][i]
+
+        else:
+            counter = 0
+            for i, midpoint_i in enumerate(bin_midpoints):
+                for j, midpoint_j in enumerate(bin_midpoints):
+                        if np.isnan(self.matrix[j][i]):
+                            counter += 1
+                            self.matrix[j][i] = self.response_function(midpoint_i,bin_set[i],bin_set[i+1],midpoint_j,bin_set[j]
+                                                                   ,bin_set[j+1])
+            print str(counter) + ' elements is calculated'
+
 
         if self.norm_type == 'bunch_average':
             self.norm_coeff = bin_set[-1] - bin_set[0]
@@ -194,23 +191,13 @@ class LinearTransform(object):
             self.norm_coeff= np.max(np.sum(self.matrix,0))
 
         elif self.norm_type is None:
-            self.norm_coeff = 1
+            self.norm_coeff = 1.
 
         self.matrix = self.matrix / float(self.norm_coeff)
 
-class Averager(LinearTransform):
-    """ Returns a signal, which consists an average value of the input signal. A sums of the rows in the matrix
-    are normalized to be one (i.e. a sum of the input signal doesn't change).
-    """
-
-    def __init__(self,norm_type = 'max_column', norm_range = None):
-        super(self.__class__, self).__init__(norm_type, norm_range)
-
-    def response_function(self, ref_bin_mid, ref_bin_from, ref_bin_to, bin_mid, bin_from, bin_to):
-        return 1
-
-class Bypass(LinearTransform):
-    """ Passes a signal without change (an identity matrix).
+class BypassLinearTransform(LinearTransform):
+    """ A test processor for testing the abstract class of linear transform. The response function produces
+        an unit matrix
     """
     def __init__(self,norm_type = None, norm_range = None):
         super(self.__class__, self).__init__(norm_type, norm_range)
@@ -221,12 +208,23 @@ class Bypass(LinearTransform):
         else:
             return 0
 
+class Averager(LinearTransform):
+    """ Returns a signal, which consists an average value of the input signal. A sums of the rows in the matrix
+        are normalized to be one (i.e. a sum of the input signal doesn't change).
+    """
+
+    def __init__(self,norm_type = 'max_column', norm_range = None):
+        super(self.__class__, self).__init__(norm_type, norm_range)
+
+    def response_function(self, ref_bin_mid, ref_bin_from, ref_bin_to, bin_mid, bin_from, bin_to):
+        return 1
+
 class Delay(LinearTransform):
     """ Delays signal in units of [second].
     """
-    def __init__(self,delay, norm_type = None, norm_range = None):
+    def __init__(self,delay, norm_type = None, norm_range = None,recalculate_always = False):
         self.delay = delay
-        super(self.__class__, self).__init__(norm_type, norm_range)
+        super(self.__class__, self).__init__(norm_type, norm_range, 'fully_diagonal', recalculate_always = recalculate_always)
 
     def response_function(self, ref_bin_mid, ref_bin_from, ref_bin_to, bin_mid, bin_from, bin_to):
 
@@ -239,81 +237,6 @@ class Delay(LinearTransform):
             return ((x-self.delay*c)-ref_bin_from)/float(ref_bin_to-ref_bin_from)
         else:
             return 1.
-
-class PhaseLinearizedLowpass(LinearTransform):
-    """ Phase linearized lowpass filter, which can be used to describe a frequency behavior of a kicker. A impulse response
-        of a phase linearized lowpass filter is modified Bessel function of the second kind (np.special.k0).
-        The transfer function has been derived by Gerd Kotzian.
-    """
-
-    def __init__(self, f_cutoff, norm_type = 'max_column', norm_range = None):
-        self.f_cutoff = f_cutoff
-        self.norm_range_coeff = 10
-        super(self.__class__, self).__init__(norm_type, norm_range)
-
-    def response_function(self, ref_bin_mid, ref_bin_from, ref_bin_to, bin_mid, bin_from, bin_to):
-        # Frequency scaling must be done by scaling integral limits, because integration by substitution doesn't work
-        # with np.quad (see quad_problem.ipynbl). An ugly way, which could be fixed.
-        scaling = 2.*pi*self.f_cutoff / c
-        temp, _ = integrate.quad(self.transfer_function, scaling * (bin_from - ref_bin_mid),
-                       scaling * (bin_to - ref_bin_mid))
-        return temp
-
-    def transfer_function(self,x):
-        if x == 0:
-            return 0
-        else:
-            return special.k0(abs(x))
-
-
-class LowpassFilter(LinearTransform):
-    """ Classical first order lowpass filter (e.g. a RC filter), which impulse response can be described as exponential
-        decay.
-    """
-    def __init__(self, f_cutoff, norm_type = 'max_column', norm_range = None):
-        self.f_cutoff = f_cutoff
-        super(self.__class__, self).__init__(norm_type, norm_range)
-
-    def response_function(self, ref_bin_mid, ref_bin_from, ref_bin_to, bin_mid, bin_from, bin_to):
-        # Frequency scaling must be done by scaling integral limits, because integration by substitution doesn't work
-        # with np.quad (see quad_problem.ipynbl). An ugly way, which could be fixed.
-        scaling = 2.*pi*self.f_cutoff/c
-        temp, _ = integrate.quad(self.transfer_function, scaling * (bin_from - ref_bin_mid),
-                       scaling * (bin_to - ref_bin_mid))
-        return temp
-
-    def transfer_function(self,x):
-        if x < 0:
-            return 0
-        else:
-            return math.exp(-1.*x)
-
-class HighpassFilter(LinearTransform):
-    """ Classical first order highpass filter (e.g. a RC filter)
-    """
-    def __init__(self, f_cutoff, norm_type = None, norm_range = None):
-        self.f_cutoff = f_cutoff
-        super(self.__class__, self).__init__(norm_type, norm_range)
-
-    def response_function(self, ref_bin_mid, ref_bin_from, ref_bin_to, bin_mid, bin_from, bin_to):
-        # Frequency scaling must be done by scaling integral limits, because integration by substitution doesn't work
-        # with np.quad (see quad_problem.ipynbl). An ugly way, which could be fixed.
-        scaling = 2.*pi*self.f_cutoff/c
-
-        temp, _ = integrate.quad(self.transfer_function, self.scaling * (bin_from - ref_bin_mid),
-                       self.scaling * (bin_to - ref_bin_mid))
-
-        if ref_bin_mid == bin_mid:
-            temp += 1.
-
-        return temp
-
-    def transfer_function(self,x):
-        if x < 0:
-            return 0
-        else:
-            return -1.*math.exp(-1.*x)
-
 
 class LinearTransformFromFile(LinearTransform):
     """ Interpolates matrix columns by using inpulse response data from a file. """
@@ -331,10 +254,133 @@ class LinearTransformFromFile(LinearTransform):
             return np.interp(bin_mid - ref_bin_mid, self.data[:, 0], self.data[:, 1])
 
 
-class Bypass_Fast(object):
-    def process(self,signal, *args):
-        return signal
+class Filter(LinearTransform):
+    __metaclass__ = ABCMeta
+    """ A general class for (analog) filters. Impulse response of the filter must be determined by overwriting
+        the function raw_impulse_response.
 
+        This processor includes two additional properties.
+
+    """
+
+    def __init__(self, filter_type, f_cutoff, delay, f_cutoff_2nd, norm_type, norm_range):
+        """
+        :param filter_type: Options are:
+                'lowpass'
+                'highpass'
+        :param f_cutoff: cut-off frequency of the filter [Hz]
+        :param delay: Delay in units of seconds
+        :param f_cutoff_2nd:
+        :param norm_type:
+        :param norm_range:
+        """
+
+        self.f_cutoff = f_cutoff
+        self.delay_z = delay * c
+        self.filter_type = filter_type
+
+        self.impulse_response = self.impulse_response_generator(f_cutoff_2nd)
+        super(Filter, self).__init__(norm_type, norm_range, 'fully_diagonal')
+
+
+    @abstractmethod
+    def raw_impulse_response(self, x):
+        """ Impulse response of the filter.
+        :param x: normalized time (t*2.*pi*f_c)
+        :return: response at the given time
+        """
+        pass
+
+    def impulse_response_generator(self,f_cutoff_2nd):
+        """ A function which generates the response function from the raw impulse response. If 2nd cut-off frequency
+            is given, the value of the raw impulse response is set to constant at the time scale below that.
+            The integral over the response function is normalized to value 1.
+        """
+
+        if f_cutoff_2nd is not None:
+            threshold_tau = (2.*pi * self.f_cutoff) / (2.*pi * f_cutoff_2nd)
+            threshold_val_neg = self.raw_impulse_response(-1.*threshold_tau)
+            threshold_val_pos = self.raw_impulse_response(threshold_tau)
+            integral_neg, _ = integrate.quad(self.raw_impulse_response, -100., -1.*threshold_tau)
+            integral_pos, _ = integrate.quad(self.raw_impulse_response, threshold_tau, 100.)
+
+            norm_coeff = np.abs(integral_neg + integral_pos + (threshold_val_neg + threshold_val_pos) * threshold_tau)
+
+            def transfer_function(x):
+                if np.abs(x) < threshold_tau:
+                    return self.raw_impulse_response(np.sign(x)*threshold_tau)
+                else:
+                    return self.raw_impulse_response(x) / norm_coeff
+        else:
+            norm_coeff, _ = integrate.quad(self.raw_impulse_response, -100., 100.)
+            norm_coeff = np.abs(norm_coeff)
+            def transfer_function(x):
+                    return self.raw_impulse_response(x) / norm_coeff
+
+        return transfer_function
+
+    def response_function(self, ref_bin_mid, ref_bin_from, ref_bin_to, bin_mid, bin_from, bin_to):
+        # Frequency scaling must be done by scaling integral limits, because integration by substitution doesn't work
+        # with np.quad (see quad_problem.ipynbl). An ugly way, which could be fixed.
+
+        scaling = 2.*pi*self.f_cutoff/c
+        temp, _ = integrate.quad(self.impulse_response, scaling * (bin_from - (ref_bin_mid+self.delay_z)),
+                       scaling * (bin_to - (ref_bin_mid+self.delay_z)))
+
+        if ref_bin_mid == bin_mid:
+            if self.filter_type == 'highpass':
+                temp += 1.
+
+        return temp
+
+
+class Sinc(Filter):
+    """ Classical first order lowpass filter (e.g. a RC filter), which impulse response can be described as exponential
+        decay.
+        """
+    def __init__(self, f_cutoff, delay=0., f_cutoff_2nd=None, norm_type=None, norm_range=None):
+        super(self.__class__, self).__init__('lowpass', f_cutoff, delay, f_cutoff_2nd, norm_type, norm_range)
+
+    def raw_impulse_response(self, x):
+        if np.abs(x/pi) > 5.:
+            return 0.
+        else:
+            return np.sinc(x/pi)*(0.42-0.5*np.cos(2.*pi*(x/pi+5.)/(10.))+0.08*np.cos(4.*pi*(x/pi+5.)/(10.)))
+
+
+class Lowpass(Filter):
+    """ Classical first order lowpass filter (e.g. a RC filter), which impulse response can be described as exponential
+        decay.
+        """
+    def __init__(self, f_cutoff, delay=0., f_cutoff_2nd=None, norm_type=None, norm_range=None):
+        super(self.__class__, self).__init__('lowpass', f_cutoff, delay, f_cutoff_2nd, norm_type, norm_range)
+
+    def raw_impulse_response(self, x):
+        if x < 0:
+            return 0
+        else:
+            return math.exp(-1. * x)
+
+class Highpass(Filter):
+    """The classical version of a highpass filter, which """
+    def __init__(self, f_cutoff, delay=0., f_cutoff_2nd=None, norm_type=None, norm_range=None):
+        super(self.__class__, self).__init__('highpass', f_cutoff, delay, f_cutoff_2nd, norm_type, norm_range)
+
+    def raw_impulse_response(self, x):
+        if x < 0:
+            return 0
+        else:
+            return -1.*math.exp(-1. * x)
+
+class PhaseLinearizedLowpass(Filter):
+    def __init__(self, f_cutoff, delay=0., f_cutoff_2nd=None, norm_type=None, norm_range=None):
+        super(self.__class__, self).__init__('lowpass', f_cutoff, delay, f_cutoff_2nd, norm_type, norm_range)
+
+    def raw_impulse_response(self, x):
+        if x == 0:
+            return 0
+        else:
+            return special.k0(abs(x))
 
 class Multiplication(object):
     __metaclass__ = ABCMeta
@@ -359,6 +405,11 @@ class Multiplication(object):
         self.recalculate_multiplier = recalculate_multiplier
 
         self.multiplier = None
+
+        self.required_variables = ['z_bins']
+
+        if self.seed not in ['bin_length','bin_midpoint','signal']:
+            self.required_variables.append(self.seed)
 
     @abstractmethod
     def multiplication_function(self, seed):
@@ -398,6 +449,16 @@ class Multiplication(object):
 
         self.multiplier = self.multiplier / norm_coeff
 
+class BypassMultiplication(Multiplication):
+    """
+    A test processor for testing the abstract class of multiplication
+    """
+    def __init__(self, normalization = 'maximum_weight'):
+        super(self.__class__, self).__init__('signal', normalization)
+
+    def multiplication_function(self,weight):
+        return 1.
+
 
 class ChargeWeighter(Multiplication):
     """ weights signal with charge (macroparticles) of slices
@@ -432,7 +493,7 @@ class EdgeWeighter(Multiplication):
 
 
 class NoiseGate(Multiplication):
-    """ Passes a signal which level is greater/less than the threshold level.
+    """ Passes a signal which is greater/less than the threshold level.
     """
 
     def __init__(self,threshold, operator = 'greater', threshold_ref = 'amplitude'):
@@ -502,6 +563,11 @@ class Addition(object):
 
         self.addend = None
 
+        self.required_variables=['z_bins']
+
+        if self.seed not in ['bin_length','bin_midpoint','signal']:
+            self.required_variables.append(self.seed)
+
     @abstractmethod
     def addend_function(self, seed):
         pass
@@ -539,6 +605,15 @@ class Addition(object):
             norm_coeff = 1.
 
         self.addend = self.addend / norm_coeff
+
+
+class BypassAddition(Addition):
+    def __init__(self, normalization = 'maximum_weight'):
+        super(self.__class__, self).__init__('signal', normalization)
+
+    def addend_function(self,weight):
+        return 0.
+
 
 class NoiseGenerator(Addition):
     """ Adds noise to a signal. The noise level is given as RMS value of the absolute level (reference_level = 'absolute'),
@@ -606,7 +681,7 @@ class Register(object):
 
     """
 
-    def __init__(self,delay, avg_length, phase_shift_per_turn, position, n_slices, in_processor_chain):
+    def __init__(self, n_avg, tune, delay, position, n_slices, in_processor_chain):
         """
         :param delay: a delay between storing to reading values  in turns
         :param avg_length: a number of register values are averaged
@@ -616,13 +691,13 @@ class Register(object):
         :param in_processor_chain: if True, process() returns a signal
         """
         self.delay = delay
-        self.avg_length = avg_length
-        self.phase_shift_per_turn = phase_shift_per_turn
+        self.n_avg = n_avg
+        self.phase_shift_per_turn = 2.*pi * tune
         self.position = position
         self.in_processor_chain = in_processor_chain
 
 
-        self.max_reg_length = self.delay+self.avg_length
+        self.max_reg_length = self.delay+self.n_avg
         self.register = deque()
 
         self.n_iter_left = -1
@@ -632,9 +707,11 @@ class Register(object):
         if n_slices is not None:
             self.register.append(np.zeros(n_slices))
 
+        self.required_variables = None
+
     def __iter__(self):
         # calculates a maximum number of iterations. If there is no enough values in the register, sets -1, which
-        # indicates that next() might return zero value
+        # indicates that next() can return zero value
 
         self.n_iter_left =  len(self)
         if self.n_iter_left == 0:
@@ -683,9 +760,10 @@ class Register(object):
 
 class VectorSumRegister(Register):
 
-    def __init__(self,delay, avg_length, phase_shift_per_turn, position=None, n_slices=None, in_processor_chain=True):
+    def __init__(self, n_avg, tune, delay = 0, position=None, n_slices=None, in_processor_chain=True):
         self.type = 'plain'
-        super(self.__class__, self).__init__(delay, avg_length, phase_shift_per_turn, position, n_slices, in_processor_chain)
+        super(self.__class__, self).__init__(n_avg, tune, delay, position, n_slices, in_processor_chain)
+        self.required_variables = []
 
     def combine(self,x1,x2,reader_position,x_to_xp = False):
         # determines a complex number representation from two signals (e.g. from two pickups or different turns), by using
@@ -725,9 +803,10 @@ class CosineSumRegister(Register):
         The function process() returns a value, which is an average of the register values (after delay determined by
         the parameter avg_length)
     """
-    def __init__(self,delay, avg_length, phase_shift_per_turn, position=None, n_slices=None, in_processor_chain=True):
+    def __init__(self, n_avg, tune, delay = 0, position=None, n_slices=None, in_processor_chain=True):
         self.type = 'cosine'
-        super(self.__class__, self).__init__(delay, avg_length, phase_shift_per_turn, position, n_slices, in_processor_chain)
+        super(self.__class__, self).__init__(n_avg, tune, delay, position, n_slices, in_processor_chain)
+        self.required_variables = []
 
     def combine(self,x1,x2,reader_position,x_to_xp = False):
         #print "x_to_xp: " + str(x_to_xp)
@@ -743,93 +822,3 @@ class CosineSumRegister(Register):
         return np.array([2.*math.cos(delta_phi)*x1[0],None])
 
 
-class HilbertRegister(Register):
-    # uses Hilbert transform to calculate a complex number representation for each value in the register. After this
-    # turns all vectors to same direction and returns an average of these vectors. Note that avg_length must be
-    # sufficient (e.g. >= 7) in order to do a reliable calculations.
-
-    # DEV NOTES: phase rotation is messy thing. I don't understand exactly (yet) why this is working, but probably
-    # because of beam phase rotation and Hilbert transform use different coordinate systems. Thus, there is a minus sign
-    # in the front of the imaginary part of the outgoing vector and the vector has been rotated to different directions,
-    # when average of vectors is calculated in next() and combine() functions.
-
-
-    def __init__(self,delay, avg_length, phase_shift_per_turn, position=None, n_slices=None, in_processor_chain=True):
-        super(self.__class__, self).__init__(delay, avg_length, phase_shift_per_turn, position, n_slices, in_processor_chain)
-
-    def __len__(self):
-        # returns a number of signals in the register after delay
-        if (len(self.register) - self.delay) > 0:
-            return 1
-        else:
-            return 0
-
-    def next(self):
-
-        signal_length = len(self.register[0])
-        if self.n_iter_left == 0:
-            raise StopIteration
-        elif len(self.register) < self.max_reg_length:
-            self.n_iter_left = 0
-            return (np.zeros(signal_length),np.zeros(signal_length),0,self.position)
-        else:
-            self.n_iter_left = 0
-
-            if self.delay == 0:
-                temp_data = np.array(self.register)
-            else:
-                temp_data = np.array(self.register)[:-1*self.delay]
-
-            re = []
-            im = []
-
-            for i in range(signal_length):
-                h = signal.hilbert(temp_data[:, i])
-                re.append(np.real(h))
-                im.append(np.imag(h))
-
-            re = np.array(re)
-            im = np.array(im)
-
-            total_re = np.zeros(len(re))
-            total_im = np.zeros(len(re))
-
-            counter = 0
-
-            edge_skip = 0
-
-            for i in range(edge_skip,(len(re[0])-edge_skip)):
-
-                delay = 1. * float(self.avg_length-i-1) * self.phase_shift_per_turn
-                s = np.sin(delay)
-                c = np.cos(delay)
-                re_t = re[:,i]
-                im_t = im[:,i]
-                total_re += c * re_t - s * im_t
-                total_im += s * re_t + s * im_t
-                counter +=1
-
-            total_re /= float(counter)
-            total_im /= float(counter)
-
-            delay = -1. * float(self.delay) * self.phase_shift_per_turn
-            return (total_re, -1.*total_im, delay, self.position)
-
-    def combine(self,x1,x2,reader_position,x_to_xp = False):
-        # turns vector x1 to the readers phase
-
-        re = x1[0]
-        im = x1[1]
-        delta_phi = x1[2]
-        if reader_position is not None:
-            delta_position = x1[3] - reader_position
-            delta_phi += delta_position
-            if delta_position > 0:
-                delta_phi -= self.phase_shift_per_turn
-            if x_to_xp == True:
-                delta_phi -= pi / 2.
-
-        s = np.sin(delta_phi)
-        c = np.cos(delta_phi)
-
-        return np.array([c * re - s * im, s * re + c * im])
