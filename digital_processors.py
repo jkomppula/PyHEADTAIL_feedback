@@ -32,6 +32,8 @@ class Resampler(object):
 
         self._matrix = None
 
+        self.required_variables = ['z_bins']
+
     def __generate_matrix(self, z_bins_input, z_bins_output):
         self._matrix = np.zeros((len(z_bins_output)-1, len(z_bins_input)-1))
         for i, bin_in_min, bin_in_max in izip(count(), z_bins_input,z_bins_input[1:]):
@@ -95,8 +97,8 @@ class Resampler(object):
 
             self.__generate_matrix(z_bins_input, z_bins_output)
 
-        print self._matrix.shape
-        print len(signal)
+        # print self._matrix.shape
+        # print len(signal)
         return np.dot(self._matrix, signal)
 
 
@@ -110,6 +112,7 @@ class Digitizer(object):
         self._n_bits = n_bits
         self._max_integer = np.power(2,self._n_bits)-1.
         self._input_range = input_range
+        self.required_variables = []
 
     def process(self, signal, *args):
         signal -= self._input_range[0]
@@ -134,10 +137,12 @@ class ADC(object):
         :param sync_method:
         """
         self._resampler = Resampler('ADC', sampling_rate, sync_method)
+        self.required_variables = copy.copy(self._resampler.required_variables)
 
         self._digitizer = None
         if (n_bits is not None) and (input_range is not None):
             self._digitizer = Digitizer(n_bits,input_range)
+            self.required_variables += self._digitizer.required_variables
 
     def process(self,signal,slice_set, *args):
         signal = self._resampler.process(signal,slice_set)
@@ -157,10 +162,12 @@ class DAC(object):
         :param sync_method:
         """
         self._resampler = Resampler('DAC', sampling_rate, sync_method)
+        self.required_variables = copy.copy(self._resampler.required_variables)
 
         self._digitizer = None
         if (n_bits is not None) and (output_range is not None):
             self._digitizer = Digitizer(n_bits,output_range)
+            self.required_variables += self._digitizer.required_variables
 
     def process(self,signal,slice_set, *args):
 
@@ -184,8 +191,8 @@ class DigitalFilter(object):
 class BypassFIR(DigitalFilter):
 
     def __init__(self):
-
         coefficients = [1.]
+
         super(self.__class__, self).__init__(coefficients)
 
 
