@@ -1,0 +1,54 @@
+# Changelog
+
+## v0.1.0
+    * statistical variable check has been add to feedback classes in feedback.py file
+        * Calculations of the statistical variables in the Slicer of PyHEADTAIL are heavy. In earlier versions
+          the option All was used for required variables in the Slicer. In this version required variables are
+          determined in every processors, and those parameters have been ridden in the feedback classes
+    * naming of the filters is standardized
+    * new abstract filter class has been implemented
+        * a option for delay is included. This is because if the separated delay element can disturb signal
+          processing due to finite signal lenght -> can be minimized by using filter, whose signal response exceed
+          the length of the stored signal
+        * a option for 2nd cutoff frequency is included, which provides possibility to a unphysical behaviours caused by
+          infinite bandwidth of the filters. In practice, this means that signal response below the 2nd cutoff frequency
+          is reduced by averaging signal by cutting the tip of the impulse responses
+    * bypass processors implemented by using every abstract class of signal processors
+        * helps testing
+    * parameter phase per turn changed to tune in register classes
+    * generation of the matrix in LinearTransform processors is optimized
+        * the abstract class includes parameter matrix_symmetry which tells about unique elements in the matrix
+        * at the moment only option 'fully_diagonal' is implemented, which speeds up the generation of the matrix
+          an order of magnitude or even more
+    * processors have been divided into different files
+          * processors.py includes also processors which are based on classses of
+            LinearTransform, Addition, Multiplication or Register
+          * derived_processes.py includes processors which are based on the procesessors in processors.py
+    * clear_matrix() method included to LinearTransform class
+
+    * combiner to feedback.py
+    * position -> phase_advance
+    * position to pickup instead of register
+
+
+""" Change log:
+        * delay is included to filters
+        * parameter check included to feedbacks
+            *processors must include a variable required_variables
+        * processors divided to processors and derived processors
+        * LowpassFilter -> Lowpass
+        * HighpassFilter -> Highpass
+        * tau cut filters
+        * BypassTests
+        * Change tune to registers
+        * Symmetric matrix
+
+
+    TODO:
+        * reset
+"""
+
+
+
+
+

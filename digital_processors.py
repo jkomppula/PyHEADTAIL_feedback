@@ -6,6 +6,18 @@ from scipy.constants import c, pi
 from itertools import izip, count
 from processors import Register
 
+"""
+    This file contains signal processors which can be used for emulating digital signal processing in the feedback
+    module. All the processors can be used separately, but digital filters assumes uniform slice spacing (bin width).
+    If UniformCharge mode is used in the slicer, uniform bin width can be formed with ADC and DAC processors.
+
+    @author Jani Komppula
+    @date 16/09/2016
+    @copyright CERN
+
+"""
+
+
 class Resampler(object):
     def __init__(self,type, sampling_rate, sync_method):
 
@@ -255,7 +267,7 @@ class FIR_Register(Register):
         :param n_slices: number of slices in the input signal
         :param in_processor_chain: if True, process() returns a signal, if False saves computing time
         """
-        self.type = 'FIR'
+        self.combination = 'individual'
         self._zero_idx = zero_idx
         self._n_taps = n_taps
 
@@ -263,20 +275,20 @@ class FIR_Register(Register):
         self.required_variables = []
 
     def combine(self,x1,x2,reader_phase_advance,x_to_xp = False):
-        delta_phi = -1. * float(self.delay) * self.phase_shift_per_turn
+        delta_phi = -1. * float(self._delay) * self._phase_shift_per_turn
 
         if self._zero_idx == 'middle':
-            delta_phi -= float(self._n_taps/2) * self.phase_shift_per_turn
+            delta_phi -= float(self._n_taps/2) * self._phase_shift_per_turn
 
         if reader_phase_advance is not None:
-            delta_position = self.phase_advance - reader_phase_advance
+            delta_position = self._phase_advance - reader_phase_advance
             delta_phi += delta_position
             if delta_position > 0:
-                delta_phi -= self.phase_shift_per_turn
+                delta_phi -= self._phase_shift_per_turn
             if x_to_xp == True:
                 delta_phi -= pi/2.
 
-        n = self.n_iter_left
+        n = self._n_iter_left
 
         if self._zero_idx == 'middle':
             n -= self._n_taps/2
@@ -286,7 +298,7 @@ class FIR_Register(Register):
 
         # print str(len(self)/2) + 'n: ' + str(n) + ' -> ' + str(h)  + ' (phi = ' + str(delta_phi) + ')'
 
-        return np.array([h*x1[0],None])
+        return h*x1[0]
 
     def coeff_generator(self, n, delta_phi):
         """ Calculates filter coefficients

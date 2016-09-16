@@ -54,14 +54,6 @@ class Jitter(RandomizedInput):
 
         super(self.__class__, self).__init__(input_range,n_points,processors.Delay,['parameter'])
 
-class Bypass(MetaProcessor):
-    def __init__(self):
-        super(self.__class__, self).__init__()
-        self.required_variables = []
-
-    def process(self,signal, *args):
-        return signal
-
 
 class  PickUpProcessor(object):
     """ A signal processor, which models a realistic two plates pickup system, which has a finite noise level and

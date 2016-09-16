@@ -1,3 +1,6 @@
+'''
+
+'''
 import itertools
 import math
 import copy
@@ -9,12 +12,14 @@ import scipy.integrate as integrate
 import scipy.special as special
 
 
-""" This file contains signal processors which can be used in the feedback module in PyHEADTAIL.
+"""
+    This file contains signal processors which can be used in the feedback module in PyHEADTAIL.
 
     A general requirement for the signal processor is that it is a class object containing a function, namely,
-    process(signal, slice_set). The input parameters for the function process(signal, slice_set) are a numpy array
-    'signal' and a slice_set object of PyHEADTAIL. The function must return a numpy array with equal length to
-    the input array. The other requirement is that the class object contains a list variable, namely
+    process (signal, slice_set, phase_advance). The input parameters for the function process(signal, slice_set) are
+    a numpy array 'signal',  a slice_set object of PyHEADTAIL and a phase advance of the signal in the units of absolute
+    angle of betatron motion from the reference point of the accelerator. The function must return a numpy array with
+    equal length to the input array. The other requirement is that the class object contains a list variable, namely
     'required_variables', which includes required variables for slicet_objects.
 
     The signals processors in this file are based on four abstract classes;
@@ -27,6 +32,10 @@ import scipy.special as special
             a) the object is iterable
             b) the object contains a function namely combine(*args), which combines two signals returned by iteration
                together
+
+    @author Jani Komppula
+    @date 16/09/2016
+    @copyright CERN
 
 """
 
@@ -62,18 +71,18 @@ class LinearTransform(object):
             (bin_middle = 'bin') or an average place of macro particles (bin_middle = 'particles')
         """
 
-        self.norm_type = norm_type
-        self.norm_range = norm_range
-        self.bin_check = bin_check
-        self.bin_middle = bin_middle
-        self.matrix_symmetry = matrix_symmetry
+        self._norm_type = norm_type
+        self._norm_range = norm_range
+        self._bin_check = bin_check
+        self._bin_middle = bin_middle
+        self._matrix_symmetry = matrix_symmetry
 
 
-        self.z_bin_set = None
-        self.matrix = None
+        self._z_bin_set = None
+        self._matrix = None
 
-        self.recalculate_matrix = True
-        self.recalculate_matrix_always = recalculate_always
+        self._recalculate_matrix = True
+        self._recalculate_matrix_always = recalculate_always
 
         self.required_variables = ['z_bins','mean_z']
 
@@ -85,53 +94,53 @@ class LinearTransform(object):
     def process(self,signal,slice_set, *args):
 
         # check if the bin set is changed
-        if self.bin_check:
-            self.recalculate_matrix = self.check_bin_set(slice_set.z_bins)
+        if self._bin_check:
+            self._recalculate_matrix = self.__check_bin_set(slice_set.z_bins)
 
         # recalculte the matrix if necessary
-        if self.recalculate_matrix:
-            if self.recalculate_matrix_always == False:
-                self.recalculate_matrix = False
-            if self.bin_middle == 'particles':
+        if self._recalculate_matrix:
+            if self._recalculate_matrix_always == False:
+                self._recalculate_matrix = False
+            if self._bin_middle == 'particles':
                 bin_midpoints = np.array(copy.copy(slice_set.mean_z))
-            elif self.bin_middle == 'bin':
+            elif self._bin_middle == 'bin':
                 bin_midpoints = np.array([(i+j)/2. for i, j in zip(slice_set.z_bins, slice_set.z_bins[1:])])
 
-            self.generate_matrix(slice_set.z_bins,bin_midpoints)
+            self.__generate_matrix(slice_set.z_bins,bin_midpoints)
 
         # process the signal
-        return np.dot(self.matrix,signal)
+        return np.dot(self._matrix,signal)
 
     def clear_matrix(self):
-        self.matrix = np.array([])
-        self.recalculate_matrix = True
+        self._matrix = np.array([])
+        self._recalculate_matrix = True
 
-    def check_bin_set(self,z_bin_set):
+    def __check_bin_set(self,z_bin_set):
 
-        if self.z_bin_set is None:
-            self.z_bin_set = copy.copy(z_bin_set)
+        if self._z_bin_set is None:
+            self._z_bin_set = copy.copy(z_bin_set)
             return True
 
         else:
             changed = False
-            for old, new in itertools.izip(self.z_bin_set,z_bin_set):
+            for old, new in itertools.izip(self._z_bin_set,z_bin_set):
                 if old != new:
                     changed = True
-                    self.z_bin_set = copy.copy(z_bin_set)
+                    self._z_bin_set = copy.copy(z_bin_set)
                     break
             return changed
 
     def print_matrix(self):
-        for row in self.matrix:
+        for row in self._matrix:
             print "[",
             for element in row:
                 print "{:6.3f}".format(element),
             print "]"
 
-    def generate_matrix(self,bin_set, bin_midpoints):
+    def __generate_matrix(self,bin_set, bin_midpoints):
 
-        self.matrix = np.identity(len(bin_midpoints))
-        self.matrix *= np.nan
+        self._matrix = np.identity(len(bin_midpoints))
+        self._matrix *= np.nan
 
         bin_widths = []
         for i,j in zip(bin_set,bin_set[1:]):
@@ -143,57 +152,57 @@ class LinearTransform(object):
         if bin_std > 1e-3:
             'Dynamic slicer -> unoptimized matrix generation!'
 
-        if self.matrix_symmetry == 'fully_diagonal' and bin_std < 1e-3:
+        if self._matrix_symmetry == 'fully_diagonal' and bin_std < 1e-3:
             j = 0
             midpoint_j = bin_midpoints[0]
             for i, midpoint_i in enumerate(bin_midpoints):
-                self.matrix[j][i] = self.response_function(midpoint_i, bin_set[i], bin_set[i + 1], midpoint_j,
+                self._matrix[j][i] = self.response_function(midpoint_i, bin_set[i], bin_set[i + 1], midpoint_j,
                                                            bin_set[j]
                                                            , bin_set[j + 1])
                 for val in xrange(1,len(bin_midpoints) - max(i,j)):
-                    self.matrix[j + val][i + val] = self.matrix[j][i]
+                    self._matrix[j + val][i + val] = self._matrix[j][i]
 
             i = 0
             midpoint_i = bin_midpoints[0]
             for j, midpoint_j in enumerate(bin_midpoints[1:], start=1):
-                self.matrix[j][i] = self.response_function(midpoint_i, bin_set[i], bin_set[i + 1], midpoint_j,
+                self._matrix[j][i] = self.response_function(midpoint_i, bin_set[i], bin_set[i + 1], midpoint_j,
                                                            bin_set[j]
                                                            , bin_set[j + 1])
                 for val in xrange(1,len(bin_midpoints) - max(i,j)):
-                    self.matrix[j + val][i + val] = self.matrix[j][i]
+                    self._matrix[j + val][i + val] = self._matrix[j][i]
 
         else:
             counter = 0
             for i, midpoint_i in enumerate(bin_midpoints):
                 for j, midpoint_j in enumerate(bin_midpoints):
-                        if np.isnan(self.matrix[j][i]):
+                        if np.isnan(self._matrix[j][i]):
                             counter += 1
-                            self.matrix[j][i] = self.response_function(midpoint_i,bin_set[i],bin_set[i+1],midpoint_j,bin_set[j]
+                            self._matrix[j][i] = self.response_function(midpoint_i,bin_set[i],bin_set[i+1],midpoint_j,bin_set[j]
                                                                    ,bin_set[j+1])
             print str(counter) + ' elements is calculated'
 
 
-        if self.norm_type == 'bunch_average':
-            self.norm_coeff = bin_set[-1] - bin_set[0]
-        elif self.norm_type == 'fixed_average':
-            self.norm_coeff = self.norm_range[1] - self.norm_range[0]
-        elif self.norm_type == 'bunch_integral':
+        if self._norm_type == 'bunch_average':
+            self._norm_coeff = bin_set[-1] - bin_set[0]
+        elif self._norm_type == 'fixed_average':
+            self._norm_coeff = self._norm_range[1] - self._norm_range[0]
+        elif self._norm_type == 'bunch_integral':
             center_idx = math.floor(len(bin_midpoints) / 2)
-            self.norm_coeff = self.response_function(bin_midpoints[center_idx], bin_set[center_idx],
+            self._norm_coeff = self.response_function(bin_midpoints[center_idx], bin_set[center_idx],
                                                      bin_set[center_idx + 1], bin_midpoints[center_idx],
                                                      bin_set[0], bin_set[-1])
-        elif self.norm_type == 'fixed_integral':
+        elif self._norm_type == 'fixed_integral':
             center_idx = math.floor(len(bin_midpoints) / 2)
-            self.norm_coeff = self.response_function(bin_midpoints[center_idx], bin_set[center_idx],
+            self._norm_coeff = self.response_function(bin_midpoints[center_idx], bin_set[center_idx],
                                                      bin_set[center_idx + 1], bin_midpoints[center_idx],
-                                                     self.norm_range[0], self.norm_range[-1])
-        elif self.norm_type == 'max_column':
-            self.norm_coeff= np.max(np.sum(self.matrix,0))
+                                                     self._norm_range[0], self._norm_range[-1])
+        elif self._norm_type == 'max_column':
+            self._norm_coeff= np.max(np.sum(self._matrix,0))
 
-        elif self.norm_type is None:
-            self.norm_coeff = 1.
+        elif self._norm_type is None:
+            self._norm_coeff = 1.
 
-        self.matrix = self.matrix / float(self.norm_coeff)
+        self._matrix /= float(self._norm_coeff)
 
 
 class Averager(LinearTransform):
@@ -212,18 +221,18 @@ class Delay(LinearTransform):
     """ Delays signal in units of [second].
     """
     def __init__(self,delay, norm_type = None, norm_range = None,recalculate_always = False):
-        self.delay = delay
+        self._delay = delay
         super(self.__class__, self).__init__(norm_type, norm_range, 'fully_diagonal', recalculate_always = recalculate_always)
 
     def response_function(self, ref_bin_mid, ref_bin_from, ref_bin_to, bin_mid, bin_from, bin_to):
 
-        return self.CDF(bin_to, ref_bin_from, ref_bin_to) - self.CDF(bin_from, ref_bin_from, ref_bin_to)
+        return self.__CDF(bin_to, ref_bin_from, ref_bin_to) - self.__CDF(bin_from, ref_bin_from, ref_bin_to)
 
-    def CDF(self,x,ref_bin_from, ref_bin_to):
-        if (x-self.delay*c) <= ref_bin_from:
+    def __CDF(self,x,ref_bin_from, ref_bin_to):
+        if (x-self._delay*c) <= ref_bin_from:
             return 0.
-        elif (x-self.delay*c) < ref_bin_to:
-            return ((x-self.delay*c)-ref_bin_from)/float(ref_bin_to-ref_bin_from)
+        elif (x-self._delay*c) < ref_bin_to:
+            return ((x-self._delay*c)-ref_bin_from)/float(ref_bin_to-ref_bin_from)
         else:
             return 1.
 
@@ -232,16 +241,16 @@ class LinearTransformFromFile(LinearTransform):
     """ Interpolates matrix columns by using inpulse response data from a file. """
 
     def __init__(self,filename, x_axis = 'time', norm_type = 'max_column', norm_range = None):
-        self.filename = filename
-        self.x_axis = x_axis
-        self.data = np.loadtxt(self.filename)
-        if self.x_axis == 'time':
-            self.data[:, 0]=self.data[:, 0]*c
+        self._filename = filename
+        self._x_axis = x_axis
+        self._data = np.loadtxt(self._filename)
+        if self._x_axis == 'time':
+            self._data[:, 0]=self._data[:, 0]*c
 
         super(self.__class__, self).__init__(norm_type, norm_range)
 
     def response_function(self, ref_bin_mid, ref_bin_from, ref_bin_to, bin_mid, bin_from, bin_to):
-            return np.interp(bin_mid - ref_bin_mid, self.data[:, 0], self.data[:, 1])
+            return np.interp(bin_mid - ref_bin_mid, self._data[:, 0], self._data[:, 1])
 
 
 class Filter(LinearTransform):
@@ -258,18 +267,18 @@ class Filter(LinearTransform):
         :param filter_type: Options are:
                 'lowpass'
                 'highpass'
-        :param f_cutoff: cut-off frequency of the filter [Hz]
+        :param f_cutoff: cut-off frequency of the filter [Hz], which is done by cutting the tuo
         :param delay: Delay in units of seconds
         :param f_cutoff_2nd:
         :param norm_type:
         :param norm_range:
         """
 
-        self.f_cutoff = f_cutoff
-        self.delay_z = delay * c
-        self.filter_type = filter_type
+        self._f_cutoff = f_cutoff
+        self._delay_z = delay * c
+        self._filter_type = filter_type
 
-        self.impulse_response = self.impulse_response_generator(f_cutoff_2nd)
+        self._impulse_response = self.__impulse_response_generator(f_cutoff_2nd)
         super(Filter, self).__init__(norm_type, norm_range, 'fully_diagonal')
 
 
@@ -281,14 +290,14 @@ class Filter(LinearTransform):
         """
         pass
 
-    def impulse_response_generator(self,f_cutoff_2nd):
+    def __impulse_response_generator(self,f_cutoff_2nd):
         """ A function which generates the response function from the raw impulse response. If 2nd cut-off frequency
             is given, the value of the raw impulse response is set to constant at the time scale below that.
             The integral over the response function is normalized to value 1.
         """
 
         if f_cutoff_2nd is not None:
-            threshold_tau = (2.*pi * self.f_cutoff) / (2.*pi * f_cutoff_2nd)
+            threshold_tau = (2.*pi * self._f_cutoff) / (2.*pi * f_cutoff_2nd)
             threshold_val_neg = self.raw_impulse_response(-1.*threshold_tau)
             threshold_val_pos = self.raw_impulse_response(threshold_tau)
             integral_neg, _ = integrate.quad(self.raw_impulse_response, -100., -1.*threshold_tau)
@@ -313,12 +322,12 @@ class Filter(LinearTransform):
         # Frequency scaling must be done by scaling integral limits, because integration by substitution doesn't work
         # with np.quad (see quad_problem.ipynbl). An ugly way, which could be fixed.
 
-        scaling = 2.*pi*self.f_cutoff/c
-        temp, _ = integrate.quad(self.impulse_response, scaling * (bin_from - (ref_bin_mid+self.delay_z)),
-                       scaling * (bin_to - (ref_bin_mid+self.delay_z)))
+        scaling = 2.*pi*self._f_cutoff/c
+        temp, _ = integrate.quad(self._impulse_response, scaling * (bin_from - (ref_bin_mid+self._delay_z)),
+                       scaling * (bin_to - (ref_bin_mid+self._delay_z)))
 
         if ref_bin_mid == bin_mid:
-            if self.filter_type == 'highpass':
+            if self._filter_type == 'highpass':
                 temp += 1.
 
         return temp
@@ -391,54 +400,54 @@ class Multiplication(object):
         :param: recalculate_weight: if True, the weight is recalculated every time when process() is called
         """
 
-        self.seed = seed
-        self.normalization = normalization
-        self.recalculate_multiplier = recalculate_multiplier
+        self._seed = seed
+        self._normalization = normalization
+        self._recalculate_multiplier = recalculate_multiplier
 
-        self.multiplier = None
+        self._multiplier = None
 
         self.required_variables = ['z_bins']
 
-        if self.seed not in ['bin_length','bin_midpoint','signal']:
-            self.required_variables.append(self.seed)
+        if self._seed not in ['bin_length','bin_midpoint','signal']:
+            self.required_variables.append(self._seed)
 
     @abstractmethod
     def multiplication_function(self, seed):
         pass
 
-    def process(self,signal,slice_set):
+    def process(self,signal,slice_set, *args):
 
-        if (self.multiplier is None) or self.recalculate_multiplier:
-            self.calculate_multiplier(signal,slice_set)
+        if (self._multiplier is None) or self._recalculate_multiplier:
+            self.__calculate_multiplier(signal,slice_set)
 
-        return self.multiplier*signal
+        return self._multiplier*signal
 
-    def calculate_multiplier(self,signal,slice_set):
-        if self.seed == 'bin_length':
+    def __calculate_multiplier(self,signal,slice_set):
+        if self._seed == 'bin_length':
             bin_set = slice_set.z_bins
-            self.multiplier = np.array([(j-i) for i, j in zip(bin_set, bin_set[1:])])
-        elif self.seed == 'bin_midpoint':
+            self._multiplier = np.array([(j-i) for i, j in zip(bin_set, bin_set[1:])])
+        elif self._seed == 'bin_midpoint':
             bin_set = slice_set.z_bins
-            self.multiplier = np.array([(i+j)/2. for i, j in zip(bin_set, bin_set[1:])])
-        elif self.seed == 'signal':
-            self.multiplier = np.array(signal)
+            self._multiplier = np.array([(i+j)/2. for i, j in zip(bin_set, bin_set[1:])])
+        elif self._seed == 'signal':
+            self._multiplier = np.array(signal)
         else:
-            self.multiplier = np.array(getattr(slice_set,self.seed))
+            self._multiplier = np.array(getattr(slice_set,self._seed))
 
-        self.multiplier = self.multiplication_function(self.multiplier)
+        self._multiplier = self.multiplication_function(self._multiplier)
 
-        if self.normalization == 'total_weight':
-            norm_coeff = float(np.sum(self.multiplier))
-        elif self.normalization == 'average_weight':
-            norm_coeff = float(np.sum(self.multiplier))/float(len(self.multiplier))
-        elif self.normalization == 'maximum_weight':
-            norm_coeff = float(np.max(self.multiplier))
-        elif self.normalization == 'minimum_weight':
-            norm_coeff = float(np.min(self.multiplier))
-        elif self.normalization == None:
+        if self._normalization == 'total_weight':
+            norm_coeff = float(np.sum(self._multiplier))
+        elif self._normalization == 'average_weight':
+            norm_coeff = float(np.sum(self._multiplier))/float(len(self._multiplier))
+        elif self._normalization == 'maximum_weight':
+            norm_coeff = float(np.max(self._multiplier))
+        elif self._normalization == 'minimum_weight':
+            norm_coeff = float(np.min(self._multiplier))
+        elif self._normalization == None:
             norm_coeff = 1.
 
-        self.multiplier = self.multiplier / norm_coeff
+        self._multiplier /= norm_coeff
 
 
 class ChargeWeighter(Multiplication):
@@ -462,14 +471,14 @@ class EdgeWeighter(Multiplication):
         :param bunch_decay_length: slope of the function on the edge of the bunch. Smaller value, steeper slope.
         :param maximum_weight: maximum value of the weight
         """
-        self.bunch_length = bunch_length
-        self.bunch_decay_length = bunch_decay_length
-        self.maximum_weight=maximum_weight
+        self._bunch_length = bunch_length
+        self._bunch_decay_length = bunch_decay_length
+        self._maximum_weight=maximum_weight
         super(self.__class__, self).__init__('bin_midpoint', 'minimum_weight')
 
     def multiplication_function(self,weight):
-        weight = np.exp((np.absolute(weight)-self.bunch_length/2.)/float(self.bunch_decay_length))+ 1.
-        weight = np.clip(weight,1.,self.maximum_weight)
+        weight = np.exp((np.absolute(weight)-self._bunch_length/2.)/float(self._bunch_decay_length))+ 1.
+        weight = np.clip(weight,1.,self._maximum_weight)
         return weight
 
 
@@ -479,23 +488,23 @@ class NoiseGate(Multiplication):
 
     def __init__(self,threshold, operator = 'greater', threshold_ref = 'amplitude'):
 
-        self.threshold = threshold
-        self.operator = operator
-        self.threshold_ref = threshold_ref
+        self._threshold = threshold
+        self._operator = operator
+        self._threshold_ref = threshold_ref
         super(self.__class__, self).__init__('signal', None,recalculate_multiplier = True)
 
     def multiplication_function(self, seed):
         multiplier = np.zeros(len(seed))
 
-        if self.threshold_ref == 'amplitude':
+        if self._threshold_ref == 'amplitude':
             comparable = np.abs(seed)
-        elif self.threshold_ref == 'absolute':
+        elif self._threshold_ref == 'absolute':
             comparable = seed
 
-        if self.operator == 'greater':
-            multiplier[comparable > self.threshold] = 1
-        elif self.operator == 'less':
-            multiplier[comparable < self.threshold] = 1
+        if self._operator == 'greater':
+            multiplier[comparable > self._threshold] = 1
+        elif self._operator == 'less':
+            multiplier[comparable < self._threshold] = 1
 
         return multiplier
 
@@ -509,14 +518,14 @@ class MultiplicationFromFile(Multiplication):
 
     def __init__(self,filename, x_axis='time', seed='bin_midpoint',normalization = None, recalculate_multiplier = False):
         super(self.__class__, self).__init__(seed, normalization, recalculate_multiplier)
-        self.filename = filename
-        self.x_axis = x_axis
-        self.data = np.loadtxt(self.filename)
-        if self.x_axis == 'time':
-            self.data[:, 0] = self.data[:, 0] * c
+        self._filename = filename
+        self._x_axis = x_axis
+        self._data = np.loadtxt(self._filename)
+        if self._x_axis == 'time':
+            self._data[:, 0] = self._data[:, 0] * c
 
     def multiplication_function(self, seed):
-        return np.interp(seed, self.data[:, 0], self.data[:, 1])
+        return np.interp(seed, self._data[:, 0], self._data[:, 1])
 
 
 class Addition(object):
@@ -538,54 +547,54 @@ class Addition(object):
         :param: recalculate_weight: if True, the weight is recalculated every time when process() is called
         """
 
-        self.seed = seed
-        self.normalization = normalization
-        self.recalculate_addend = recalculate_addend
+        self._seed = seed
+        self._normalization = normalization
+        self._recalculate_addend = recalculate_addend
 
-        self.addend = None
+        self._addend = None
 
         self.required_variables=['z_bins']
 
-        if self.seed not in ['bin_length','bin_midpoint','signal']:
-            self.required_variables.append(self.seed)
+        if self._seed not in ['bin_length','bin_midpoint','signal']:
+            self.required_variables.append(self._seed)
 
     @abstractmethod
     def addend_function(self, seed):
         pass
 
-    def process(self,signal,slice_set):
+    def process(self,signal,slice_set, *args):
 
-        if (self.addend is None) or self.recalculate_addend:
-            self.calculate_addend(signal,slice_set)
+        if (self._addend is None) or self._recalculate_addend:
+            self.__calculate_addend(signal,slice_set)
 
-        return signal + self.addend
+        return signal + self._addend
 
-    def calculate_addend(self,signal,slice_set):
-        if self.seed == 'bin_length':
+    def __calculate_addend(self,signal,slice_set):
+        if self._seed == 'bin_length':
             bin_set = slice_set.z_bins
-            self.addend = np.array([(j-i) for i, j in zip(bin_set, bin_set[1:])])
-        elif self.seed == 'bin_midpoint':
+            self._addend = np.array([(j-i) for i, j in zip(bin_set, bin_set[1:])])
+        elif self._seed == 'bin_midpoint':
             bin_set = slice_set.z_bins
-            self.addend = np.array([(i+j)/2. for i, j in zip(bin_set, bin_set[1:])])
-        elif self.seed == 'signal':
-            self.addend = np.array(signal)
+            self._addend = np.array([(i+j)/2. for i, j in zip(bin_set, bin_set[1:])])
+        elif self._seed == 'signal':
+            self._addend = np.array(signal)
         else:
-            self.addend = np.array(getattr(slice_set,self.seed))
+            self._addend = np.array(getattr(slice_set,self._seed))
 
-        self.addend = self.addend_function(self.addend)
+        self._addend = self.addend_function(self._addend)
 
-        if self.normalization == 'total':
-            norm_coeff = float(np.sum(self.addend))
-        elif self.normalization == 'average':
-            norm_coeff = float(np.sum(self.addend))/float(len(self.addend))
-        elif self.normalization == 'maximum':
-            norm_coeff = float(np.max(self.addend))
-        elif self.normalization == 'minimum':
-            norm_coeff = float(np.min(self.addend))
+        if self._normalization == 'total':
+            norm_coeff = float(np.sum(self._addend))
+        elif self._normalization == 'average':
+            norm_coeff = float(np.sum(self._addend))/float(len(self._addend))
+        elif self._normalization == 'maximum':
+            norm_coeff = float(np.max(self._addend))
+        elif self._normalization == 'minimum':
+            norm_coeff = float(np.min(self._addend))
         else:
             norm_coeff = 1.
 
-        self.addend = self.addend / norm_coeff
+        self._addend /= norm_coeff
 
 
 class NoiseGenerator(Addition):
@@ -597,9 +606,9 @@ class NoiseGenerator(Addition):
 
     def __init__(self,RMS_noise_level,reference_level = 'absolute', distribution = 'normal'):
 
-        self.RMS_noise_level = RMS_noise_level
-        self.reference_level = reference_level
-        self.distribution = distribution
+        self._RMS_noise_level = RMS_noise_level
+        self._reference_level = reference_level
+        self._distribution = distribution
 
         super(self.__class__, self).__init__('signal', None, True)
 
@@ -607,17 +616,17 @@ class NoiseGenerator(Addition):
 
         randoms = np.zeros(len(seed))
 
-        if self.distribution == 'normal' or self.distribution is None:
+        if self._distribution == 'normal' or self._distribution is None:
             randoms = np.random.randn(len(seed))
-        elif self.distribution == 'uniform':
+        elif self._distribution == 'uniform':
             randoms = 1./0.577263*(-1.+2.*np.random.rand(len(seed)))
 
-        if self.reference_level == 'absolute':
-            addend = self.RMS_noise_level*randoms
-        elif self.reference_level == 'maximum':
-            addend = self.RMS_noise_level*np.max(seed)*randoms
-        elif self.reference_level == 'local':
-            addend = seed*self.RMS_noise_level*randoms
+        if self._reference_level == 'absolute':
+            addend = self._RMS_noise_level*randoms
+        elif self._reference_level == 'maximum':
+            addend = self._RMS_noise_level*np.max(seed)*randoms
+        elif self._reference_level == 'local':
+            addend = seed*self._RMS_noise_level*randoms
 
         return addend
 
@@ -629,14 +638,14 @@ class AdditionFromFile(Addition):
 
     def __init__(self,filename, x_axis='time', seed='bin_midpoint',normalization = None, recalculate_multiplier = False):
         super(self.__class__, self).__init__(seed, normalization, recalculate_multiplier)
-        self.filename = filename
-        self.x_axis = x_axis
-        self.data = np.loadtxt(self.filename)
-        if self.x_axis == 'time':
-            self.data[:, 0] = self.data[:, 0] * c
+        self._filename = filename
+        self._x_axis = x_axis
+        self._data = np.loadtxt(self._filename)
+        if self._x_axis == 'time':
+            self._data[:, 0] = self._data[:, 0] * c
 
     def addend_function(self, seed):
-        return np.interp(seed, self.data[:, 0], self.data[:, 1])
+        return np.interp(seed, self._data[:, 0], self._data[:, 1])
 
 class Register(object):
     __metaclass__ = ABCMeta
@@ -654,7 +663,7 @@ class Register(object):
 
     """
 
-    def __init__(self, n_avg, tune, delay, phase_advance, n_slices, in_processor_chain):
+    def __init__(self, n_avg, tune, delay, n_slices, phase_advance, in_processor_chain):
         """
         :param delay: a delay between storing to reading values  in turns
         :param avg_length: a number of register values are averaged
@@ -663,22 +672,23 @@ class Register(object):
         :param n_slices: a length of a signal, which is returned if the register is empty
         :param in_processor_chain: if True, process() returns a signal
         """
-        self.delay = delay
-        self.n_avg = n_avg
-        self.phase_shift_per_turn = 2.*pi * tune
-        self.phase_advance = phase_advance
-        self.in_processor_chain = in_processor_chain
+        self._delay = delay
+        self._n_avg = n_avg
+        self._phase_shift_per_turn = 2.*pi * tune
+        self._phase_advance = phase_advance
+        self._in_processor_chain = in_processor_chain
+        self.combination = None
 
 
-        self.max_reg_length = self.delay+self.n_avg
-        self.register = deque()
+        self._max_reg_length = self._delay+self._n_avg
+        self._register = deque()
 
-        self.n_iter_left = -1
+        self._n_iter_left = -1
 
-        self.reader_position = None
+        self._reader_position = None
 
         if n_slices is not None:
-            self.register.append(np.zeros(n_slices))
+            self._register.append(np.zeros(n_slices))
 
         self.required_variables = None
 
@@ -686,42 +696,45 @@ class Register(object):
         # calculates a maximum number of iterations. If there is no enough values in the register, sets -1, which
         # indicates that next() can return zero value
 
-        self.n_iter_left =  len(self)
-        if self.n_iter_left == 0:
-            self.n_iter_left = -1
+        self._n_iter_left =  len(self)
+        if self._n_iter_left == 0:
+            self._n_iter_left = -1
         return self
 
     def __len__(self):
         # returns a number of signals in the register after delay
-        return max((len(self.register) - self.delay), 0)
+        return max((len(self._register) - self._delay), 0)
 
     def next(self):
-        if self.n_iter_left == 0:
+        if self._n_iter_left == 0:
             raise StopIteration
-        elif self.n_iter_left == -1:
-            self.n_iter_left = 0
-            return (np.zeros(len(self.register[0])),None,0,self.phase_advance)
+        elif self._n_iter_left == -1:
+            self._n_iter_left = 0
+            return (np.zeros(len(self._register[0])),None,0,self._phase_advance)
         else:
-            delay = -1. * (len(self.register) - self.n_iter_left) * self.phase_shift_per_turn
-            self.n_iter_left -= 1
-            return (self.register[self.n_iter_left],None,delay,self.phase_advance)
+            delay = -1. * (len(self._register) - self._n_iter_left) * self._phase_shift_per_turn
+            self._n_iter_left -= 1
+            return (self._register[self._n_iter_left],None,delay,self._phase_advance)
 
-    def process(self,signal, *args):
+    def process(self,signal, data_phase_advance ,*args):
 
-        self.register.append(signal)
+        if self._phase_advance is None:
+            self._phase_advance = data_phase_advance
 
-        if len(self.register) > self.max_reg_length:
-            self.register.popleft()
+        self._register.append(signal)
 
-        if self.in_processor_chain == True:
+        if len(self._register) > self._max_reg_length:
+            self._register.popleft()
+
+        if self._in_processor_chain == True:
             temp_signal = np.zeros(len(signal))
             if len(self) > 0:
-                prev = (np.zeros(len(self.register[0])),None,0,self.phase_advance)
+                prev = (np.zeros(len(self._register[0])),None,0,self._phase_advance)
 
                 for value in self:
                     combined = self.combine(value,prev,None)
                     prev = value
-                    temp_signal += combined[0] / float(len(self))
+                    temp_signal += combined / float(len(self))
 
             return temp_signal
 
@@ -734,7 +747,7 @@ class Register(object):
 class VectorSumRegister(Register):
 
     def __init__(self, n_avg, tune, delay = 0, phase_advance=None, n_slices=None, in_processor_chain=True):
-        self.type = 'plain'
+        self.combination = 'combined'
         super(self.__class__, self).__init__(n_avg, tune, delay, phase_advance, n_slices, in_processor_chain)
         self.required_variables = []
 
@@ -745,7 +758,7 @@ class VectorSumRegister(Register):
         if (x1[3] is not None) and (x1[3] != x2[3]):
             phi_x1_x2 = x1[3]-x2[3]
         else:
-            phi_x1_x2 = -1. * self.phase_shift_per_turn
+            phi_x1_x2 = -1. * self._phase_shift_per_turn
 
         s = np.sin(phi_x1_x2)
         c = np.cos(phi_x1_x2)
@@ -758,14 +771,16 @@ class VectorSumRegister(Register):
             delta_position = x1[3] - reader_phase_advance
             delta_phi += delta_position
             if delta_position > 0:
-                delta_phi -= self.phase_shift_per_turn
+                delta_phi -= self._phase_shift_per_turn
             if x_to_xp == True:
                 delta_phi -= pi/2.
 
         s = np.sin(delta_phi)
         c = np.cos(delta_phi)
 
-        return np.array([c*re-s*im,s*re+c*im])
+        # return np.array([c*re-s*im,s*re+c*im])
+
+        return c*re-s*im
 
 
 class CosineSumRegister(Register):
@@ -777,20 +792,32 @@ class CosineSumRegister(Register):
         the parameter avg_length)
     """
     def __init__(self, n_avg, tune, delay = 0, phase_advance=None, n_slices=None, in_processor_chain=True):
-        self.type = 'cosine'
+
+        self.combination = 'individual'
+
         super(self.__class__, self).__init__(n_avg, tune, delay, phase_advance, n_slices, in_processor_chain)
         self.required_variables = []
 
     def combine(self,x1,x2,reader_phase_advance,x_to_xp = False):
         delta_phi = x1[2]
         if reader_phase_advance is not None:
-            delta_position = self.phase_advance - reader_phase_advance
+            delta_position = self._phase_advance - reader_phase_advance
             delta_phi += delta_position
             if delta_position > 0:
-                delta_phi -= self.phase_shift_per_turn
+                delta_phi -= self._phase_shift_per_turn
             if x_to_xp == True:
                 delta_phi -= pi/2.
 
-        return np.array([2.*math.cos(delta_phi)*x1[0],None])
+        return 2.*math.cos(delta_phi)*x1[0]
 
 
+class Bypass(object):
+    """ A fast bypass processor, whichi does not modify the signal. A black sheep, which does not fit for
+        the abstract classes.
+    """
+
+    def __init__(self):
+        self.required_variables = []
+
+    def process(self,signal, *args):
+        return signal
