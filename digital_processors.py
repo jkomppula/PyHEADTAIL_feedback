@@ -84,6 +84,7 @@ class Resampler(object):
         self._matrix = None
 
     def process(self,signal,slice_set, *args):
+
         z_bins_input = None
         z_bins_output = None
 
@@ -97,51 +98,59 @@ class Resampler(object):
 
             self.__generate_matrix(z_bins_input, z_bins_output)
 
-        # print self._matrix.shape
-        # print len(signal)
         return np.dot(self._matrix, signal)
 
 
-class Digitizer(object):
+class Quantizer(object):
     def __init__(self,n_bits,input_range):
 
-        """ Rounds signal to discrete steps determined by the number of bits.
-        :param n_bitss: the signal is rounded to 2^n_bits steps
-        :param input_range: the range in which 2^n_bits steps are
+        """ Quantizates signal to discrete levels determined by the number of bits and input range.
+        :param n_bits: the signal is quantized (rounded) to 2^n_bits levels
+        :param input_range: the maximum and minimum values for the levels in the units of input signal
         """
+
         self._n_bits = n_bits
-        self._max_integer = np.power(2,self._n_bits)-1.
+        self._n_steps = np.power(2,self._n_bits)-1.
         self._input_range = input_range
+        self._step_size = (self._input_range[1]-self._input_range[0])/float(self._n_steps)
         self.required_variables = []
 
     def process(self, signal, *args):
-        signal -= self._input_range[0]
-        signal *= self._max_integer/(self._input_range[1]-self._input_range[0])
-        signal = np.round(signal)
+        signal = self._step_size*np.floor(signal/self._step_size+0.5)
 
-        signal[signal < 0.] = 0.
-        signal[signal > self._max_integer] = 0.
-
-        signal /= self._max_integer / (self._input_range[1] - self._input_range[0])
-        signal += self._input_range[0]
+        signal[signal < self._input_range[0]] = self._input_range[0]
+        signal[signal > self._input_range[1]] = self._input_range[1]
 
         return signal
 
 
 class ADC(object):
     def __init__(self,sampling_rate, n_bits = None, input_range = None, sync_method = 'round'):
-        """ A model for an analog to digital converter.
-        :param sampling_rate:
-        :param n_bits:
-        :param input_range:
-        :param sync_method:
+        """ A model for an analog to digital converter, which changes a length of the input signal to correspond to
+            the number of slices in the PyHEADTAIL. If parameters for the quantizer are given, it quantizes also
+            the input signal to discrete levels.
+        :param sampling_rate: sampling rate of the ADC [Hz]
+        :param n_bits: the number of bits where to input signal is quantized. If the value is None, the input signal
+                is not quantizated. The default value is None.
+        :param input_range: the range for for the quantizer. If the value is None, the input signal is not quantizated.
+                The default value is None.
+        :param sync_method: The time range of the input signal might not correspond to an integer number of
+            samples determined by sampling rate.
+                'rounded': The time range of the input signal is divided to number of samples, which correspons to
+                    the closest integer of samples determined by the sampling rate (defaul)
+                'rising_edge': the exact value of the sampling rate is used, but there are empty space in the end
+                    of the signal
+                'falling_edge': the exact value of the sampling rate is used, but there are empty space in the beginning
+                    of the signal
+                'middle': the exact value of the sampling rate is used, but there are an equal amount of empty space
+                    in the beginning and end of the signal
         """
         self._resampler = Resampler('ADC', sampling_rate, sync_method)
         self.required_variables = copy.copy(self._resampler.required_variables)
 
         self._digitizer = None
         if (n_bits is not None) and (input_range is not None):
-            self._digitizer = Digitizer(n_bits,input_range)
+            self._digitizer = Quantizer(n_bits,input_range)
             self.required_variables += self._digitizer.required_variables
 
     def process(self,signal,slice_set, *args):
@@ -155,18 +164,31 @@ class ADC(object):
 
 class DAC(object):
     def __init__(self,sampling_rate, n_bits = None, output_range = None, sync_method = 'round'):
-        """ A model for an digital to analog converter.
-        :param sampling_rate:
-        :param n_bits:
-        :param input_range:
-        :param sync_method:
+        """ A model for an digital to analog converter, which changes a length of the input signal to correspond to
+            the number of slices in the PyHEADTAIL. If parameters for the quantizer are given, it quantizes also
+            the input signal to discrete levels.
+        :param sampling_rate: sampling rate of the ADC [Hz]
+        :param n_bits: the number of bits where to input signal is quantized. If the value is None, the input signal
+                is not quantizated. The default value is None.
+        :param input_range: the range for for the quantizer. If the value is None, the input signal is not quantizated.
+                The default value is None.
+        :param sync_method: The time range of the input signal might not correspond to an integer number of
+            samples determined by sampling rate.
+                'rounded': The time range of the input signal is divided to number of samples, which correspons to
+                    the closest integer of samples determined by the sampling rate (defaul)
+                'rising_edge': the exact value of the sampling rate is used, but there are empty space in the end
+                    of the signal
+                'falling_edge': the exact value of the sampling rate is used, but there are empty space in the beginning
+                    of the signal
+                'middle': the exact value of the sampling rate is used, but there are an equal amount of empty space
+                    in the beginning and end of the signal
         """
         self._resampler = Resampler('DAC', sampling_rate, sync_method)
         self.required_variables = copy.copy(self._resampler.required_variables)
 
         self._digitizer = None
         if (n_bits is not None) and (output_range is not None):
-            self._digitizer = Digitizer(n_bits,output_range)
+            self._digitizer = Quantizer(n_bits,output_range)
             self.required_variables += self._digitizer.required_variables
 
     def process(self,signal,slice_set, *args):
@@ -181,6 +203,9 @@ class DAC(object):
 
 class DigitalFilter(object):
     def __init__(self,coefficients):
+        """ Filters the signal by convolving the signal and the input array of filter (FIR) coefficients
+        :param coefficients: A numpy array of filter (convolution) coefficients
+        """
         self._coefficients = coefficients
         self.required_variables = []
 
@@ -188,17 +213,21 @@ class DigitalFilter(object):
         return np.convolve(np.array(signal), np.array(self._coefficients), mode='same')
 
 
-class BypassFIR(DigitalFilter):
-
-    def __init__(self):
-        coefficients = [1.]
-
-        super(self.__class__, self).__init__(coefficients)
-
-
 class FIR_Filter(DigitalFilter):
-
     def __init__(self,n_taps, f_cutoffs, sampling_rate):
+
+        """ A digital FIR (finite impulse response) filter, which uses firwin function from SciPy library to determine
+            filter coefficients. Note that the set value of the cut-off frequency corresponds to the real cut-off
+            frequency of the filter only when length of the signal is on the same order of longer than an period of
+            the cut off frequency and sampling rate is ("significantly") higher than the cut-off frequency. In other
+            words, do not trust too much to set value of the cut-off frequency,
+
+        :param n_taps: length of the filter (number of coefficients, i.e. the filter order + 1).
+            Odd number is recommended, when
+        :param f_cutoffs: cut-off frequencies of the filter. Multiple values are allowed as explained in
+            the documentation of firwin-function in SciPy
+        :param sampling_rate: sampling rate of the ADC (or a number of slices per seconds)
+        """
 
         self._n_taps = n_taps
         self._f_cutoffs = f_cutoffs
@@ -210,22 +239,37 @@ class FIR_Filter(DigitalFilter):
 
 
 class FIR_Register(Register):
-    def __init__(self, n_taps, tune, delay, zero_idx, position, n_slices, in_processor_chain):
+    def __init__(self, n_taps, tune, delay, zero_idx, phase_advance, n_slices, in_processor_chain):
+        """ A general class for the register object, which uses FIR (finite impulse response) method to calculate
+            a correct signal for kick from the register values. Because the register can be used for multiple kicker
+            (in different locations), the filter coefficients are calculated in every call with
+            the function namely coeff_generator.
+
+        :param n_taps: length of the register (and length of filter)
+        :param tune: tune of the accelerator
+        :param delay: delay in turns
+        :param zero_idx: location of the zero index of the filter coeffients
+            'middle': an index of middle value in the register is 0. Values which have spend less time than that
+                    in the register have negative indexes and vice versa
+        :param phase_advance: location of the register (pickup) in radians of betatron motion
+        :param n_slices: number of slices in the input signal
+        :param in_processor_chain: if True, process() returns a signal, if False saves computing time
+        """
         self.type = 'FIR'
         self._zero_idx = zero_idx
         self._n_taps = n_taps
 
-        super(FIR_Register, self).__init__(n_taps, tune, delay, position, n_slices, in_processor_chain)
+        super(FIR_Register, self).__init__(n_taps, tune, delay, phase_advance, n_slices, in_processor_chain)
         self.required_variables = []
 
-    def combine(self,x1,x2,reader_position,x_to_xp = False):
+    def combine(self,x1,x2,reader_phase_advance,x_to_xp = False):
         delta_phi = -1. * float(self.delay) * self.phase_shift_per_turn
 
         if self._zero_idx == 'middle':
             delta_phi -= float(self._n_taps/2) * self.phase_shift_per_turn
 
-        if reader_position is not None:
-            delta_position = self.position - reader_position
+        if reader_phase_advance is not None:
+            delta_position = self.phase_advance - reader_phase_advance
             delta_phi += delta_position
             if delta_position > 0:
                 delta_phi -= self.phase_shift_per_turn
@@ -245,10 +289,18 @@ class FIR_Register(Register):
         return np.array([h*x1[0],None])
 
     def coeff_generator(self, n, delta_phi):
+        """ Calculates filter coefficients
+        :param n: index of the value
+        :param delta_phi: total phase advance to the kicker for the value which index is 0
+        :return: filter coefficient h
+        """
         return 0.
 
 
 class HilbertPhaseShiftRegister(FIR_Register):
+    """ A register used in some damper systems at CERN. The correct signal is calculated by using FIR phase shifter,
+    which is based on the Hilbert transform. It is recommended to use odd number of taps (e.g. 7) """
+
     def __init__(self,n_taps, tune, delay = 0, position=None, n_slices=None, in_processor_chain=True):
         super(self.__class__, self).__init__(n_taps, tune, delay, 'middle', position, n_slices, in_processor_chain)
 

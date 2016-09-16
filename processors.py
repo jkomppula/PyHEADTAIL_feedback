@@ -195,18 +195,6 @@ class LinearTransform(object):
 
         self.matrix = self.matrix / float(self.norm_coeff)
 
-class BypassLinearTransform(LinearTransform):
-    """ A test processor for testing the abstract class of linear transform. The response function produces
-        an unit matrix
-    """
-    def __init__(self,norm_type = None, norm_range = None):
-        super(self.__class__, self).__init__(norm_type, norm_range)
-
-    def response_function(self, ref_bin_mid, ref_bin_from, ref_bin_to, bin_mid, bin_from, bin_to):
-        if ref_bin_mid == bin_mid:
-            return 1
-        else:
-            return 0
 
 class Averager(LinearTransform):
     """ Returns a signal, which consists an average value of the input signal. A sums of the rows in the matrix
@@ -218,6 +206,7 @@ class Averager(LinearTransform):
 
     def response_function(self, ref_bin_mid, ref_bin_from, ref_bin_to, bin_mid, bin_from, bin_to):
         return 1
+
 
 class Delay(LinearTransform):
     """ Delays signal in units of [second].
@@ -237,6 +226,7 @@ class Delay(LinearTransform):
             return ((x-self.delay*c)-ref_bin_from)/float(ref_bin_to-ref_bin_from)
         else:
             return 1.
+
 
 class LinearTransformFromFile(LinearTransform):
     """ Interpolates matrix columns by using inpulse response data from a file. """
@@ -335,9 +325,10 @@ class Filter(LinearTransform):
 
 
 class Sinc(Filter):
-    """ Classical first order lowpass filter (e.g. a RC filter), which impulse response can be described as exponential
-        decay.
+    """ An ideal lowpass filter (Sinc filter), implemented  by utilizing Blackman window, which width is 5*2*pi*f_c
         """
+    # TODO: Add an opition for different window types and window widths
+
     def __init__(self, f_cutoff, delay=0., f_cutoff_2nd=None, norm_type=None, norm_range=None):
         super(self.__class__, self).__init__('lowpass', f_cutoff, delay, f_cutoff_2nd, norm_type, norm_range)
 
@@ -448,16 +439,6 @@ class Multiplication(object):
             norm_coeff = 1.
 
         self.multiplier = self.multiplier / norm_coeff
-
-class BypassMultiplication(Multiplication):
-    """
-    A test processor for testing the abstract class of multiplication
-    """
-    def __init__(self, normalization = 'maximum_weight'):
-        super(self.__class__, self).__init__('signal', normalization)
-
-    def multiplication_function(self,weight):
-        return 1.
 
 
 class ChargeWeighter(Multiplication):
@@ -607,14 +588,6 @@ class Addition(object):
         self.addend = self.addend / norm_coeff
 
 
-class BypassAddition(Addition):
-    def __init__(self, normalization = 'maximum_weight'):
-        super(self.__class__, self).__init__('signal', normalization)
-
-    def addend_function(self,weight):
-        return 0.
-
-
 class NoiseGenerator(Addition):
     """ Adds noise to a signal. The noise level is given as RMS value of the absolute level (reference_level = 'absolute'),
         a relative RMS level to the maximum signal (reference_level = 'maximum') or a relative RMS level to local
@@ -681,19 +654,19 @@ class Register(object):
 
     """
 
-    def __init__(self, n_avg, tune, delay, position, n_slices, in_processor_chain):
+    def __init__(self, n_avg, tune, delay, phase_advance, n_slices, in_processor_chain):
         """
         :param delay: a delay between storing to reading values  in turns
         :param avg_length: a number of register values are averaged
         :param phase_shift_per_turn: a betatron phase shift per turn
-        :param position: a betatron position (angle) of the register from a reference point
+        :param phase_advance: a betatron position (angle) of the register from a reference point
         :param n_slices: a length of a signal, which is returned if the register is empty
         :param in_processor_chain: if True, process() returns a signal
         """
         self.delay = delay
         self.n_avg = n_avg
         self.phase_shift_per_turn = 2.*pi * tune
-        self.position = position
+        self.phase_advance = phase_advance
         self.in_processor_chain = in_processor_chain
 
 
@@ -727,11 +700,11 @@ class Register(object):
             raise StopIteration
         elif self.n_iter_left == -1:
             self.n_iter_left = 0
-            return (np.zeros(len(self.register[0])),None,0,self.position)
+            return (np.zeros(len(self.register[0])),None,0,self.phase_advance)
         else:
             delay = -1. * (len(self.register) - self.n_iter_left) * self.phase_shift_per_turn
             self.n_iter_left -= 1
-            return (self.register[self.n_iter_left],None,delay,self.position)
+            return (self.register[self.n_iter_left],None,delay,self.phase_advance)
 
     def process(self,signal, *args):
 
@@ -743,7 +716,7 @@ class Register(object):
         if self.in_processor_chain == True:
             temp_signal = np.zeros(len(signal))
             if len(self) > 0:
-                prev = (np.zeros(len(self.register[0])),None,0,self.position)
+                prev = (np.zeros(len(self.register[0])),None,0,self.phase_advance)
 
                 for value in self:
                     combined = self.combine(value,prev,None)
@@ -760,12 +733,12 @@ class Register(object):
 
 class VectorSumRegister(Register):
 
-    def __init__(self, n_avg, tune, delay = 0, position=None, n_slices=None, in_processor_chain=True):
+    def __init__(self, n_avg, tune, delay = 0, phase_advance=None, n_slices=None, in_processor_chain=True):
         self.type = 'plain'
-        super(self.__class__, self).__init__(n_avg, tune, delay, position, n_slices, in_processor_chain)
+        super(self.__class__, self).__init__(n_avg, tune, delay, phase_advance, n_slices, in_processor_chain)
         self.required_variables = []
 
-    def combine(self,x1,x2,reader_position,x_to_xp = False):
+    def combine(self,x1,x2,reader_phase_advance,x_to_xp = False):
         # determines a complex number representation from two signals (e.g. from two pickups or different turns), by using
         # knowledge about phase advance between signals. After this turns the vector to the reader's phase
         # TODO: Why not x2[3]-x1[3]?
@@ -781,8 +754,8 @@ class VectorSumRegister(Register):
 
         # turns the vector to the reader's position
         delta_phi = x1[2]
-        if reader_position is not None:
-            delta_position = x1[3] - reader_position
+        if reader_phase_advance is not None:
+            delta_position = x1[3] - reader_phase_advance
             delta_phi += delta_position
             if delta_position > 0:
                 delta_phi -= self.phase_shift_per_turn
@@ -803,16 +776,15 @@ class CosineSumRegister(Register):
         The function process() returns a value, which is an average of the register values (after delay determined by
         the parameter avg_length)
     """
-    def __init__(self, n_avg, tune, delay = 0, position=None, n_slices=None, in_processor_chain=True):
+    def __init__(self, n_avg, tune, delay = 0, phase_advance=None, n_slices=None, in_processor_chain=True):
         self.type = 'cosine'
-        super(self.__class__, self).__init__(n_avg, tune, delay, position, n_slices, in_processor_chain)
+        super(self.__class__, self).__init__(n_avg, tune, delay, phase_advance, n_slices, in_processor_chain)
         self.required_variables = []
 
-    def combine(self,x1,x2,reader_position,x_to_xp = False):
-        #print "x_to_xp: " + str(x_to_xp)
+    def combine(self,x1,x2,reader_phase_advance,x_to_xp = False):
         delta_phi = x1[2]
-        if reader_position is not None:
-            delta_position = self.position - reader_position
+        if reader_phase_advance is not None:
+            delta_position = self.phase_advance - reader_phase_advance
             delta_phi += delta_position
             if delta_position > 0:
                 delta_phi -= self.phase_shift_per_turn

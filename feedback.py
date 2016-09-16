@@ -217,38 +217,68 @@ class Kicker(object):
         bunch.yp[p_idx] -= correction_yp[s_idx]
 
 
-class FIRRegister(Register):
+class Combiner(object):
+    """ The simplest possible signal combiner, which calculates an average of
+        signals from different registers.
+    """
 
-    def __init__(self,delay, tune, avg_length, position=None, n_slices=None, in_processor_chain=True):
-        self.type = 'plain'
-        super(self.__class__, self).__init__(delay, tune, avg_length, position, n_slices, in_processor_chain)
-        self.required_variables = []
+    def __init__(self, phase_conv_coeff, x_to_xp = True):
+        """
+        :param phase_conv_coeff: a ratio of amplitudes between x/y and xp/yp
+        :param x_to_xp: if True, the mixer convert values from x/y axis to xp/yp axis
+        """
+        self.phase_conv_coeff = phase_conv_coeff
+        self.x_to_xp = x_to_xp
 
-    def combine(self,x1,x2,reader_position,x_to_xp = False):
-        # determines a complex number representation from two signals (e.g. from two pickups or different turns), by using
-        # knowledge about phase advance between signals. After this turns the vector to the reader's phase
-        # TODO: Why not x2[3]-x1[3]?
-        if (x1[3] is not None) and (x1[3] != x2[3]):
-            phi_x1_x2 = x1[3]-x2[3]
+    def mix(self,registers,reader_phase_advance):
+
+        total_signal = None
+        n_signals = 0
+
+        # TODO: if only two registers, no loop?
+
+        if len(registers)>1:
+
+            prev_register = registers[-1]
+            for register in registers:
+                for signal_1, signal_2 in zip(prev_register,register):
+                    if total_signal is None:
+                        total_signal = np.array([np.zeros(len(signal_1[0])),np.zeros(len(signal_1[0]))])
+                    temp_signal = prev_register.combine(signal_1,signal_2,reader_phase_advance,x_to_xp = self.x_to_xp)
+                    if temp_signal[1] is not None:
+                        total_signal = total_signal + temp_signal
+                    else:
+                        total_signal[0] = total_signal[0] + temp_signal[0]
+                    n_signals += 1
+                prev_register = register
+
+        # if len(registers) == 2:
+        #
+        #     for signal_1, signal_2 in zip(registers[0], registers[1]):
+        #         if total_signal is None:
+        #             total_signal = np.array([np.zeros(len(signal_1[0])), np.zeros(len(signal_1[0]))])
+        #         temp_signal = registers[0].combine(signal_1, signal_2, reader_position, x_to_xp=self.x_to_xp)
+        #         if temp_signal[1] is not None:
+        #             total_signal = total_signal + temp_signal
+        #         else:
+        #             total_signal[0] = total_signal[0] + temp_signal[0]
+        #         n_signals += 1
         else:
-            phi_x1_x2 = -1. * self.phase_shift_per_turn
+            prev_signal = None
+            for signal in registers[0]:
+                if total_signal is None:
+                    prev_signal = signal
+                    total_signal = np.array([np.zeros(len(signal[0])), np.zeros(len(signal[0]))])
+                temp_signal = registers[0].combine(signal, prev_signal,reader_phase_advance,x_to_xp = self.x_to_xp)
+                if temp_signal[1] is not None:
+                    total_signal = total_signal + temp_signal
+                else:
+                    total_signal[0] = total_signal[0] + temp_signal[0]
+                n_signals += 1
+                prev_signal = signal
 
-        s = np.sin(phi_x1_x2)
-        c = np.cos(phi_x1_x2)
-        re = x1[0]
-        im = (c*x1[0]-x2[0])/float(s)
+        return_signal = total_signal[0]/float(n_signals)
+        if self.x_to_xp == True:
+            return_signal *= self.phase_conv_coeff
 
-        # turns the vector to the reader's position
-        delta_phi = x1[2]
-        if reader_position is not None:
-            delta_position = x1[3] - reader_position
-            delta_phi += delta_position
-            if delta_position > 0:
-                delta_phi -= self.phase_shift_per_turn
-            if x_to_xp == True:
-                delta_phi -= pi/2.
-
-        s = np.sin(delta_phi)
-        c = np.cos(delta_phi)
-
-        return np.array([c*re-s*im,s*re+c*im])
+        return return_signal
