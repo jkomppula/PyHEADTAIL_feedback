@@ -251,7 +251,7 @@ class FIR_Filter(DigitalFilter):
 
 
 class FIR_Register(Register):
-    def __init__(self, n_taps, tune, delay, zero_idx, phase_advance, n_slices, in_processor_chain):
+    def __init__(self, n_taps, tune, delay, zero_idx, in_processor_chain):
         """ A general class for the register object, which uses FIR (finite impulse response) method to calculate
             a correct signal for kick from the register values. Because the register can be used for multiple kicker
             (in different locations), the filter coefficients are calculated in every call with
@@ -268,10 +268,11 @@ class FIR_Register(Register):
         :param in_processor_chain: if True, process() returns a signal, if False saves computing time
         """
         self.combination = 'individual'
+        # self.combination = 'combined'
         self._zero_idx = zero_idx
         self._n_taps = n_taps
 
-        super(FIR_Register, self).__init__(n_taps, tune, delay, phase_advance, n_slices, in_processor_chain)
+        super(FIR_Register, self).__init__(n_taps, tune, delay, in_processor_chain)
         self.required_variables = []
 
     def combine(self,x1,x2,reader_phase_advance,x_to_xp = False):
@@ -292,11 +293,11 @@ class FIR_Register(Register):
 
         if self._zero_idx == 'middle':
             n -= self._n_taps/2
-
+        # print delta_phi
         h = self.coeff_generator(n, delta_phi)
         h *= self._n_taps
 
-        # print str(len(self)/2) + 'n: ' + str(n) + ' -> ' + str(h)  + ' (phi = ' + str(delta_phi) + ')'
+        # print str(len(self)/2) + 'n: ' + str(n) + ' -> ' + str(h)  + ' (phi = ' + str(delta_phi) + ') from ' + str(self._phase_advance) + ' to ' + str(reader_phase_advance)
 
         return h*x1[0]
 
@@ -313,8 +314,8 @@ class HilbertPhaseShiftRegister(FIR_Register):
     """ A register used in some damper systems at CERN. The correct signal is calculated by using FIR phase shifter,
     which is based on the Hilbert transform. It is recommended to use odd number of taps (e.g. 7) """
 
-    def __init__(self,n_taps, tune, delay = 0, position=None, n_slices=None, in_processor_chain=True):
-        super(self.__class__, self).__init__(n_taps, tune, delay, 'middle', position, n_slices, in_processor_chain)
+    def __init__(self,n_taps, tune, delay = 0, in_processor_chain=True):
+        super(self.__class__, self).__init__(n_taps, tune, delay, 'middle', in_processor_chain)
 
     def coeff_generator(self, n, delta_phi):
         h = 0.

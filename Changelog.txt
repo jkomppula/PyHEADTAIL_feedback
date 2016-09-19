@@ -1,6 +1,7 @@
 # Changelog
 
-## v0.1.0
+## v0.0.3 -> v0.1.0
+    * critical changes in API!
     * statistical variable check has been add to feedback classes in feedback.py file
         * Calculations of the statistical variables in the Slicer of PyHEADTAIL are heavy. In earlier versions
           the option All was used for required variables in the Slicer. In this version required variables are
@@ -25,6 +26,15 @@
             LinearTransform, Addition, Multiplication or Register
           * derived_processes.py includes processors which are based on the procesessors in processors.py
     * clear_matrix() method included to LinearTransform class
+    * mixers.py is removed and method namely combiner is included to kicker class
+        * Need for multiple mixer/combiner types was not found -> simplifier code and usage
+    * location (phase advance) as a input argument for register is removed
+        * location is now given as a input argument for pickup object
+        * process(*args) of the signal processors carries now also the location of the pickup
+            -> is saved to register, when process(...) is called first time
+    * the name of position/location of the pickup and kicker objects is changed to phase_advance
+    * sinc filter
+
 
     * combiner to feedback.py
     * position -> phase_advance

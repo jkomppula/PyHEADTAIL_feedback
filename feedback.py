@@ -1,5 +1,6 @@
 import numpy as np
 import collections
+import itertools
 
 """
     This file contains modules, which can be used as a feedback module/object in PyHEADTAIL. Actual signal processing is
@@ -129,10 +130,10 @@ class OneboxFeedback(object):
             signal_y = np.array([s for s in slice_set.mean_y])
 
         for processor in self._processors_x:
-            signal_x = processor.process(signal_x,slice_set)
+            signal_x = processor.process(signal_x,slice_set, None)
 
         for processor in self._processors_y:
-            signal_y = processor.process(signal_y,slice_set)
+            signal_y = processor.process(signal_y,slice_set, None)
 
         correction_x = self._gain_x*signal_x
         correction_y = self._gain_y*signal_y
@@ -240,7 +241,7 @@ class Kicker(object):
         self._xp_per_x = xp_per_x
         self._yp_per_y = yp_per_y
 
-        self.statistical_variables = None
+        self._statistical_variables = None
 
     def track(self,bunch):
 
@@ -250,25 +251,27 @@ class Kicker(object):
             self._statistical_variables = get_statistical_variables(self._processors_y, self._statistical_variables)
 
         slice_set = bunch.get_slices(self._slicer, statistics=self._statistical_variables)
-
-        signal_x = self.__combine(self._registers_x,self._phase_advance_x, self._xp_per_x)
-        signal_y = self.__combine(self._registers_y,self._phase_advance_y, self._yp_per_y)
-
-        for processor in self._processors_x:
-            signal_x = processor.process(signal_x,slice_set)
-
-        for processor in self._processors_y:
-            signal_y = processor.process(signal_y,slice_set)
-
-        correction_xp = self._gain_x*signal_x
-        correction_yp = self._gain_y*signal_y
-
         # Reads a particle index and a slice index for each macroparticle
         p_idx = slice_set.particles_within_cuts
         s_idx = slice_set.slice_index_of_particle.take(p_idx)
 
-        bunch.xp[p_idx] -= correction_xp[s_idx]
-        bunch.yp[p_idx] -= correction_yp[s_idx]
+        signal_x = self.__combine(self._registers_x,self._phase_advance_x, self._xp_per_x)
+        signal_y = self.__combine(self._registers_y,self._phase_advance_y, self._yp_per_y)
+
+        if signal_x is not None:
+            for processor in self._processors_x:
+                signal_x = processor.process(signal_x,slice_set,self._phase_advance_x)
+
+            correction_xp = self._gain_x * signal_x
+            bunch.xp[p_idx] -= correction_xp[s_idx]
+
+        if signal_y is not None:
+            for processor in self._processors_y:
+                signal_y = processor.process(signal_y,slice_set,self._phase_advance_y)
+
+            correction_yp = self._gain_y*signal_y
+            bunch.yp[p_idx] -= correction_yp[s_idx]
+
 
     def __combine(self,registers,reader_phase_advance,phase_conv_coeff):
         # This function picks signals from different registers and turns and calculates an average of them.
@@ -287,33 +290,35 @@ class Kicker(object):
                 if total_signal is None:
                     prev_signal = signal
                     total_signal = np.zeros(len(signal[0]))
-
                 total_signal += registers[0].combine(signal, prev_signal,reader_phase_advance, True)
                 n_signals += 1
                 prev_signal = signal
 
         else:
-            if len(registers) == 2 and registers[0].combination == 'combined':
+            # if len(registers) == 2 and registers[0].combination == 'combined':
+
+            if registers[0].combination == 'combined':
                 # If there are only two register and the combination requires signals from two register, there is only
                 # one pair of registers
-
                 prev_register = registers[0]
                 first_iterable = 1
             else:
-                # In other cases, for loop can go through all register pairs
+                # In other cases, loop can go through all successive register pairs
                 prev_register = registers[-1]
                 first_iterable = 0
 
             for register in registers[first_iterable:]:
-                for signal_1, signal_2 in zip(prev_register,register):
+                # print prev_register
+                # print register
+                for signal_1, signal_2 in itertools.izip(prev_register,register):
                     if total_signal is None:
                         total_signal = np.zeros(len(signal_1[0]))
-
-                    total_signal += registers[0].combine(signal_1,signal_2,reader_phase_advance, True)
+                    total_signal += prev_register.combine(signal_1,signal_2,reader_phase_advance, True)
                     n_signals += 1
                 prev_register = register
 
-        total_signal /= float(n_signals)
-        total_signal *= phase_conv_coeff
+        if total_signal is not None:
+            total_signal /= float(n_signals)
+            total_signal *= phase_conv_coeff
 
         return total_signal

@@ -663,19 +663,21 @@ class Register(object):
 
     """
 
-    def __init__(self, n_avg, tune, delay, n_slices, phase_advance, in_processor_chain):
+    def __init__(self, n_avg, tune, delay, in_processor_chain):
         """
         :param delay: a delay between storing to reading values  in turns
         :param avg_length: a number of register values are averaged
         :param phase_shift_per_turn: a betatron phase shift per turn
-        :param phase_advance: a betatron position (angle) of the register from a reference point
+        :param phase_advance: a betatron position (angle) of the register from a reference point.
+                Note! if there are both a pickup and a register in the same position, the code assumes that
+                the pickup is before the kicker!
         :param n_slices: a length of a signal, which is returned if the register is empty
         :param in_processor_chain: if True, process() returns a signal
         """
         self._delay = delay
         self._n_avg = n_avg
         self._phase_shift_per_turn = 2.*pi * tune
-        self._phase_advance = phase_advance
+        self._phase_advance = None
         self._in_processor_chain = in_processor_chain
         self.combination = None
 
@@ -687,8 +689,8 @@ class Register(object):
 
         self._reader_position = None
 
-        if n_slices is not None:
-            self._register.append(np.zeros(n_slices))
+        # if n_slices is not None:
+        #     self._register.append(np.zeros(n_slices))
 
         self.required_variables = None
 
@@ -698,6 +700,7 @@ class Register(object):
 
         self._n_iter_left =  len(self)
         if self._n_iter_left == 0:
+            # return None
             self._n_iter_left = -1
         return self
 
@@ -706,17 +709,14 @@ class Register(object):
         return max((len(self._register) - self._delay), 0)
 
     def next(self):
-        if self._n_iter_left == 0:
+        if self._n_iter_left < 1:
             raise StopIteration
-        elif self._n_iter_left == -1:
-            self._n_iter_left = 0
-            return (np.zeros(len(self._register[0])),None,0,self._phase_advance)
         else:
             delay = -1. * (len(self._register) - self._n_iter_left) * self._phase_shift_per_turn
             self._n_iter_left -= 1
             return (self._register[self._n_iter_left],None,delay,self._phase_advance)
 
-    def process(self,signal, data_phase_advance ,*args):
+    def process(self,signal, slice_set, data_phase_advance ,*args):
 
         if self._phase_advance is None:
             self._phase_advance = data_phase_advance
@@ -746,27 +746,36 @@ class Register(object):
 
 class VectorSumRegister(Register):
 
-    def __init__(self, n_avg, tune, delay = 0, phase_advance=None, n_slices=None, in_processor_chain=True):
+    def __init__(self, n_avg, tune, delay = 0, in_processor_chain=True):
         self.combination = 'combined'
-        super(self.__class__, self).__init__(n_avg, tune, delay, phase_advance, n_slices, in_processor_chain)
+        super(self.__class__, self).__init__(n_avg, tune, delay, in_processor_chain)
         self.required_variables = []
 
     def combine(self,x1,x2,reader_phase_advance,x_to_xp = False):
         # determines a complex number representation from two signals (e.g. from two pickups or different turns), by using
         # knowledge about phase advance between signals. After this turns the vector to the reader's phase
         # TODO: Why not x2[3]-x1[3]?
+
         if (x1[3] is not None) and (x1[3] != x2[3]):
             phi_x1_x2 = x1[3]-x2[3]
+            if phi_x1_x2 < 0:
+                # print "correction"
+                phi_x1_x2 += self._phase_shift_per_turn
         else:
             phi_x1_x2 = -1. * self._phase_shift_per_turn
 
-        s = np.sin(phi_x1_x2)
-        c = np.cos(phi_x1_x2)
-        re = x1[0]
-        im = (c*x1[0]-x2[0])/float(s)
+        print "Delta phi: " + str(phi_x1_x2*360./(2*pi)%360.)
 
-        # turns the vector to the reader's position
-        delta_phi = x1[2]
+        s = np.sin(phi_x1_x2/2.)
+        c = np.cos(phi_x1_x2/2.)
+
+        re = 0.5 * (x1[0] + x2[0]) * (c + s * s / c)
+        im = -s * x2[0] + c / s * (re - c * x2[0])
+
+        # print str(re) + ' from ' + str(x1[0]) + ' and ' + str(x2[0])
+
+        delta_phi = x1[2]-phi_x1_x2/2.
+
         if reader_phase_advance is not None:
             delta_position = x1[3] - reader_phase_advance
             delta_phi += delta_position
@@ -783,6 +792,39 @@ class VectorSumRegister(Register):
         return c*re-s*im
 
 
+
+
+        # if (x1[3] is not None) and (x1[3] != x2[3]):
+        #     phi_x1_x2 = x1[3]-x2[3]
+        #     if phi_x1_x2 < 0:
+        #         # print "correction"
+        #         phi_x1_x2 += self._phase_shift_per_turn
+        # else:
+        #     phi_x1_x2 = -1. * self._phase_shift_per_turn
+        #
+        # s = np.sin(phi_x1_x2)
+        # c = np.cos(phi_x1_x2)
+        # re = x1[0]
+        # im = (c*x1[0]-x2[0])/float(s)
+        #
+        # # turns the vector to the reader's position
+        # delta_phi = x1[2]
+        # if reader_phase_advance is not None:
+        #     delta_position = x1[3] - reader_phase_advance
+        #     delta_phi += delta_position
+        #     if delta_position > 0:
+        #         delta_phi -= self._phase_shift_per_turn
+        #     if x_to_xp == True:
+        #         delta_phi -= pi/2.
+        #
+        # s = np.sin(delta_phi)
+        # c = np.cos(delta_phi)
+        #
+        # # return np.array([c*re-s*im,s*re+c*im])
+        #
+        # return c*re-s*im
+
+
 class CosineSumRegister(Register):
     """ Returns register values by multiplying the values with a cosine of the betatron phase angle from the reader.
         If there are multiple values in different phases, the sum approaches a value equal to half of the displacement
@@ -791,11 +833,11 @@ class CosineSumRegister(Register):
         The function process() returns a value, which is an average of the register values (after delay determined by
         the parameter avg_length)
     """
-    def __init__(self, n_avg, tune, delay = 0, phase_advance=None, n_slices=None, in_processor_chain=True):
+    def __init__(self, n_avg, tune, delay = 0, in_processor_chain=True):
 
         self.combination = 'individual'
 
-        super(self.__class__, self).__init__(n_avg, tune, delay, phase_advance, n_slices, in_processor_chain)
+        super(self.__class__, self).__init__(n_avg, tune, delay, in_processor_chain)
         self.required_variables = []
 
     def combine(self,x1,x2,reader_phase_advance,x_to_xp = False):
