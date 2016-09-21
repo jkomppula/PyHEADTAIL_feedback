@@ -447,7 +447,7 @@ class Multiplication(object):
         elif self._normalization == None:
             norm_coeff = 1.
 
-        self._multiplier /= norm_coeff
+        self._multiplier =  self._multiplier / norm_coeff
 
 
 class ChargeWeighter(Multiplication):
@@ -594,7 +594,7 @@ class Addition(object):
         else:
             norm_coeff = 1.
 
-        self._addend /= norm_coeff
+        self._addend = self._addend / norm_coeff
 
 
 class NoiseGenerator(Addition):
@@ -665,13 +665,10 @@ class Register(object):
 
     def __init__(self, n_avg, tune, delay, in_processor_chain):
         """
+        :param n_avg: a number of register values (in turns) have been stored after the delay
+        :param tune: a real number value of a betatron tune (e.g. 59.28 in horizontal or 64.31 in vertical direction
+                for LHC)
         :param delay: a delay between storing to reading values  in turns
-        :param avg_length: a number of register values are averaged
-        :param phase_shift_per_turn: a betatron phase shift per turn
-        :param phase_advance: a betatron position (angle) of the register from a reference point.
-                Note! if there are both a pickup and a register in the same position, the code assumes that
-                the pickup is before the kicker!
-        :param n_slices: a length of a signal, which is returned if the register is empty
         :param in_processor_chain: if True, process() returns a signal
         """
         self._delay = delay
@@ -772,8 +769,6 @@ class VectorSumRegister(Register):
         re = 0.5 * (x1[0] + x2[0]) * (c + s * s / c)
         im = -s * x2[0] + c / s * (re - c * x2[0])
 
-        # print str(re) + ' from ' + str(x1[0]) + ' and ' + str(x2[0])
-
         delta_phi = x1[2]-phi_x1_x2/2.
 
         if reader_phase_advance is not None:
@@ -787,13 +782,12 @@ class VectorSumRegister(Register):
         s = np.sin(delta_phi)
         c = np.cos(delta_phi)
 
-        # return np.array([c*re-s*im,s*re+c*im])
 
         return c*re-s*im
 
-
-
-
+        # An old piece. It should work as well as the code above, but it has different forbidden values for phi_x1_x2
+        # (where re or im variables go to infinity). Thus it is stored to here, so that it can be found easily but it
+        # will be probably removed later.
         # if (x1[3] is not None) and (x1[3] != x2[3]):
         #     phi_x1_x2 = x1[3]-x2[3]
         #     if phi_x1_x2 < 0:
@@ -829,9 +823,6 @@ class CosineSumRegister(Register):
     """ Returns register values by multiplying the values with a cosine of the betatron phase angle from the reader.
         If there are multiple values in different phases, the sum approaches a value equal to half of the displacement
         in the reader's position.
-
-        The function process() returns a value, which is an average of the register values (after delay determined by
-        the parameter avg_length)
     """
     def __init__(self, n_avg, tune, delay = 0, in_processor_chain=True):
 

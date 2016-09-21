@@ -13,8 +13,7 @@ import itertools
 """
 
 def get_statistical_variables(processors, variables = None):
-    """
-    Function which checks statistical variables required by signal processors
+    """Function which checks statistical variables required by signal processors
 
     :param processors: a list of signal processors
     :param variables: a list of statistical variables determined earlier
@@ -274,10 +273,11 @@ class Kicker(object):
 
 
     def __combine(self,registers,reader_phase_advance,phase_conv_coeff):
-        # This function picks signals from different registers and turns and calculates an average of them.
-        # Actual phase shift in betatron phase is done in a combine method written to the registers. The combine
-        # method might or might not require multiple signals (from different turns or different registers) depending
-        # on the register. Thus, two signals are givens as a argument for combine method.
+        # This function picks signals from different registers, turns them to correct phase advance and
+        # calculates an average of them after that. Actual phase shift in betatron phase is done in a combine method
+        # written to the registers. The combine method might or might not require multiple signals (from different turns
+        # or different registers) depending on the register. Thus, two signals are givens as a argument for combine
+        # method of the register object.
 
         total_signal = None
         n_signals = 0

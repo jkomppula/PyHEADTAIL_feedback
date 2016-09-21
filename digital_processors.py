@@ -258,13 +258,12 @@ class FIR_Register(Register):
             the function namely coeff_generator.
 
         :param n_taps: length of the register (and length of filter)
-        :param tune: tune of the accelerator
-        :param delay: delay in turns
+        :param tune: a real number value of a betatron tune (e.g. 59.28 in horizontal or 64.31 in vertical direction
+                for LHC)
+        :param delay: a delay between storing to reading values  in turns
         :param zero_idx: location of the zero index of the filter coeffients
             'middle': an index of middle value in the register is 0. Values which have spend less time than that
                     in the register have negative indexes and vice versa
-        :param phase_advance: location of the register (pickup) in radians of betatron motion
-        :param n_slices: number of slices in the input signal
         :param in_processor_chain: if True, process() returns a signal, if False saves computing time
         """
         self.combination = 'individual'
