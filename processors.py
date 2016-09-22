@@ -447,6 +447,8 @@ class Multiplication(object):
         elif self._normalization == None:
             norm_coeff = 1.
 
+        # TODO: try to figure out why this can not be written
+        # self._multiplier /= norm_coeff
         self._multiplier =  self._multiplier / norm_coeff
 
 
