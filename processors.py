@@ -179,7 +179,7 @@ class LinearTransform(object):
                             counter += 1
                             self._matrix[j][i] = self.response_function(midpoint_i,bin_set[i],bin_set[i+1],midpoint_j,bin_set[j]
                                                                    ,bin_set[j+1])
-            print str(counter) + ' elements is calculated'
+            # print str(counter) + ' elements is calculated'
 
 
         if self._norm_type == 'bunch_average':
