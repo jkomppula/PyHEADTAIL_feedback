@@ -7,7 +7,7 @@ from PyHEADTAIL.trackers.simple_long_tracking import LinearMap
 from PyHEADTAIL.particles.slicing import UniformBinSlicer
 
 class Machine():
-    def __init__(self):
+    def __init__(self,Q_x = 64.28,Q_y = 59.31,Q_s = 0.0020443):
         self._intensity = 1.05e11
         self._sigma_z = 0.059958
         self._gamma = 3730.26
@@ -17,9 +17,9 @@ class Machine():
         self._beta_x_inj = 66.0064
         self._beta_y_inj = 71.5376
 
-        self._Q_x = 64.28
-        self._Q_y = 59.31
-        self._Q_s = 0.000000000001
+        self._Q_x = Q_x
+        self._Q_y = Q_y
+        self._Q_s = Q_s
 
         self._C = 26658.883
 
@@ -90,9 +90,7 @@ class Machine():
 
 
 
-def generate_bunch(n_macroparticles, long_map):
-
-    machine = Machine()
+def generate_bunch(machine, n_macroparticles, long_map):
 
     beta_z = (long_map.eta(dp=0, gamma=machine.gamma) * long_map.circumference /
               (2 * np.pi * long_map.Qs))
@@ -109,8 +107,7 @@ def generate_bunch(n_macroparticles, long_map):
     return bunch
 
 
-def generate_objects(n_macroparticles,n_segments, n_slices,n_sigma_z):
-    machine = Machine()
+def generate_objects(machine,n_macroparticles,n_segments, n_slices,n_sigma_z):
     s = np.arange(0, n_segments + 1) * machine.C / n_segments
 
 
@@ -125,7 +122,7 @@ def generate_objects(n_macroparticles,n_segments, n_slices,n_sigma_z):
     trans_map = TransverseMap(s, alpha_x, beta_x, D_x, alpha_y, beta_y, D_y, machine.Q_x, machine.Q_y)
     long_map = LinearMap(machine.alpha_0, machine.C, machine.Q_s)
 
-    bunch = generate_bunch(n_macroparticles, long_map)
+    bunch = generate_bunch(machine, n_macroparticles, long_map)
 
     slicer = UniformBinSlicer(n_slices=n_slices, n_sigma_z=n_sigma_z)
 
