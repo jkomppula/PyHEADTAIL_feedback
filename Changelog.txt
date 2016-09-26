@@ -39,6 +39,7 @@
         (ADC, DAC, FIR filters, FIR registers)
     * test_tools.py has been written, which includes tools for testing the signal processors
     * a set of examples has been written
+    * etc...
 
 
 
