@@ -218,7 +218,7 @@ class Averager(LinearTransform):
 
 
 class Delay(LinearTransform):
-    """ Delays signal in units of [second].
+    """ Delays signal in the units of [second].
     """
     def __init__(self,delay, norm_type = None, norm_range = None,recalculate_always = False):
         self._delay = delay
@@ -267,11 +267,12 @@ class Filter(LinearTransform):
         :param filter_type: Options are:
                 'lowpass'
                 'highpass'
-        :param f_cutoff: cut-off frequency of the filter [Hz], which is done by cutting the tuo
-        :param delay: Delay in units of seconds
-        :param f_cutoff_2nd:
-        :param norm_type:
-        :param norm_range:
+        :param f_cutoff: a cut-off frequency of the filter [Hz]
+        :param delay: a delay in the units of seconds
+        :param f_cutoff_2nd: a second cutoff frequency [Hz], which is implemented by cutting the tip of the impulse
+                    response function
+        :param norm_type: see class LinearTransform
+        :param norm_range: see class LinearTransform
         """
 
         self._f_cutoff = f_cutoff
@@ -334,18 +335,37 @@ class Filter(LinearTransform):
 
 
 class Sinc(Filter):
-    """ An ideal lowpass filter (Sinc filter), implemented  by utilizing Blackman window, which width is 5*2*pi*f_c
-        """
-    # TODO: Add an opition for different window types and window widths
+    """ A nearly ideal lowpass filter, i.e. a windowed Sinc filter.
+    """
 
-    def __init__(self, f_cutoff, delay=0., f_cutoff_2nd=None, norm_type=None, norm_range=None):
-        super(self.__class__, self).__init__('lowpass', f_cutoff, delay, f_cutoff_2nd, norm_type, norm_range)
+    def __init__(self, f_cutoff, delay=0., window_length = 3., window_type = 'blackman' , norm_type=None, norm_range=None):
+        """
+        :param f_cutoff: a cutoff frequency of the filter
+        :param delay: a delay of the filter [s]
+        :param window_length: a length of the window applied to Sinc filter [2*pi*f_c]
+        :param window_type: a shape of the window, blackman or hamming
+        :param norm_type: see class LinearTransform
+        :param norm_range: see class LinearTransform
+        """
+        self.window_length = float(window_length)
+        self.window_type = window_type
+        super(self.__class__, self).__init__('lowpass', f_cutoff, delay, None, norm_type, norm_range)
 
     def raw_impulse_response(self, x):
-        if np.abs(x/pi) > 5.:
+        if np.abs(x/pi) > self.window_length:
             return 0.
         else:
-            return np.sinc(x/pi)*(0.42-0.5*np.cos(2.*pi*(x/pi+5.)/(10.))+0.08*np.cos(4.*pi*(x/pi+5.)/(10.)))
+            if self.window_type == 'blackman':
+                return np.sinc(x/pi)*self.blackman_window(x)
+            elif self.window_type == 'hamming':
+                return np.sinc(x/pi)*self.hamming_window(x)
+
+    def blackman_window(self,x):
+        return 0.42-0.5*np.cos(2.*pi*(x/pi+self.window_length)/(2.*self.window_length))\
+               +0.08*np.cos(4.*pi*(x/pi+self.window_length)/(2.*self.window_length))
+
+    def hamming_window(self, x):
+        return 0.54-0.46*np.cos(2.*pi*(x/pi+self.window_length)/(2.*self.window_length))
 
 
 class Lowpass(Filter):

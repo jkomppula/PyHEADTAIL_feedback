@@ -16,7 +16,7 @@
           is reduced by averaging signal by cutting the tip of the impulse responses
     * bypass processors implemented by using every abstract class of signal processors
         * helps testing
-    * parameter phase per turn changed to tune in register classes
+    * the parameter phase per turn changed to tune in the register classes
     * generation of the matrix in LinearTransform processors is optimized
         * the abstract class includes parameter matrix_symmetry which tells about unique elements in the matrix
         * at the moment only option 'fully_diagonal' is implemented, which speeds up the generation of the matrix
@@ -25,38 +25,22 @@
           * processors.py includes also processors which are based on classses of
             LinearTransform, Addition, Multiplication or Register
           * derived_processes.py includes processors which are based on the procesessors in processors.py
+          * test_processors.py includes processors used mainly for testing
     * clear_matrix() method included to LinearTransform class
     * mixers.py is removed and method namely combiner is included to kicker class
-        * Need for multiple mixer/combiner types was not found -> simplifier code and usage
+        * Need for multiple mixer/combiner types was not found -> simpler code and usage
     * location (phase advance) as a input argument for register is removed
         * location is now given as a input argument for pickup object
         * process(*args) of the signal processors carries now also the location of the pickup
             -> is saved to register, when process(...) is called first time
     * the name of position/location of the pickup and kicker objects is changed to phase_advance
-    * sinc filter
+    * a sinc filter has been added to processors.py
+    * digital_processors.py has been added, which includes signal processors emulating digtal signal processing
+        (ADC, DAC, FIR filters, FIR registers)
+    * test_tools.py has been written, which includes tools for testing the signal processors
+    * a set of examples has been written
 
 
-    * combiner to feedback.py
-    * position -> phase_advance
-    * position to pickup instead of register
-
-
-""" Change log:
-        * delay is included to filters
-        * parameter check included to feedbacks
-            *processors must include a variable required_variables
-        * processors divided to processors and derived processors
-        * LowpassFilter -> Lowpass
-        * HighpassFilter -> Highpass
-        * tau cut filters
-        * BypassTests
-        * Change tune to registers
-        * Symmetric matrix
-
-
-    TODO:
-        * reset
-"""
 
 
 
