@@ -1,22 +1,26 @@
+'''
+
+'''
 import itertools
 import math
 import copy
 from collections import deque
 from abc import ABCMeta, abstractmethod
-
 import numpy as np
 from scipy.constants import c, pi
 import scipy.integrate as integrate
 import scipy.special as special
-import scipy.signal as signal
 
 
-""" This file contains signal processors which can be used in the feedback module in PyHEADTAIL.
+"""
+    This file contains signal processors which can be used in the feedback module in PyHEADTAIL.
 
     A general requirement for the signal processor is that it is a class object containing a function, namely,
-    process(signal, slice_set). The input parameters for the function process(signal, slice_set) are a numpy array
-    'signal' and a slice_set object of PyHEADTAIL. The function must return a numpy array with equal length to
-    the input array.
+    process (signal, slice_set, phase_advance). The input parameters for the function process(signal, slice_set) are
+    a numpy array 'signal',  a slice_set object of PyHEADTAIL and a phase advance of the signal in the units of absolute
+    angle of betatron motion from the reference point of the accelerator. The function must return a numpy array with
+    equal length to the input array. The other requirement is that the class object contains a list variable, namely
+    'required_variables', which includes required variables for slicet_objects.
 
     The signals processors in this file are based on four abstract classes;
         1) in LinearTransform objects the input signal is multiplied with a matrix.
@@ -29,97 +33,58 @@ import scipy.signal as signal
             b) the object contains a function namely combine(*args), which combines two signals returned by iteration
                together
 
+    @author Jani Komppula
+    @date 16/09/2016
+    @copyright CERN
+
 """
-
-class  PickUpProcessor(object):
-    """ A signal processor, which models a realistic two plates pickup system, which has a finite noise level and
-        bandwidth. The model assumes that signals from the plates vary to opposite polarities from the reference signal
-        level. The signals of both plates pass separately ChargeWeighter, NoiseGenerator and LowpassFilter in order to
-        simulate realistic levels of signal, noise and frequency response. The output signal is calculated from
-        the ratio of a difference and sum signals of the plates. Signals below a given threshold level is set to zero
-        in order to avoid high noise level at low input signal levels
-
-        If the cut off frequency of the LowpassFilter is higher than 'the sampling rate', a signal passes this model
-        without changes. In other cases, a step response is faster than by using only a LowpassFilter but still finite.
-    """
-
-    def __init__(self,RMS_noise,f_cutoff, threshold, reference = 1e-3):
-        """
-        :param RMS_noise: an absolute RMS noise level in the signal [m]
-        :param f_cutoff: a cutoff frequency for a signal from a single plate
-        :param threshold: a relative level of the one plate signal, below which the signal is set to be zero. The reference
-            level is given in the parameter reference
-        :param reference: a reference signal level, when beam moves in the middle of the beam tube
-        """
-
-        self.threshold = threshold
-        self.reference = reference
-
-        self.threshold_level = 2. * self.threshold * self.reference
-
-        self.noise_generator = NoiseGenerator(RMS_noise)
-        self.filter = LowpassFilter(f_cutoff)
-        self.charge_weighter = ChargeWeighter()
-
-    def process(self,signal,slice_set):
-
-        signal_A = (self.reference + np.array(signal))
-        signal_A = self.charge_weighter.process(signal_A,slice_set)
-        signal_A = self.noise_generator.process(signal_A,slice_set)
-        signal_A = self.filter.process(signal_A,slice_set)
-
-        signal_B = (self.reference - np.array(signal))
-        signal_B = self.charge_weighter.process(signal_B,slice_set)
-        signal_B = self.noise_generator.process(signal_B,slice_set)
-        signal_B = self.filter.process(signal_B,slice_set)
-
-        # sets signals below the threshold level to 0. Multiplier 2 to the threshold level comes the fact that
-        # the signal difference is two times the original level and the threshold level refers to the original signal
-        signal_diff = signal_A - signal_B
-        signal_sum = signal_A + signal_B
-
-        signal_diff[np.absolute(signal_sum) < self.threshold_level] = 0.
-
-        # in order to avoid 0/0, also sum signals below the threshold level have been set to 1
-        signal_sum[np.absolute(signal_sum) < self.threshold_level] = 1.
-
-
-        return self.reference * signal_diff / signal_sum
 
 class LinearTransform(object):
     __metaclass__ = ABCMeta
     """ An abstract class for signal processors which are based on linear transformation. The signal is processed by
         calculating a dot product of a transfer matrix and a signal. The transfer matrix is produced with an abstract
-        method, namely response_function(*args), which returns an elements of the matrix (a ref_bin affection to a bin)
+        method, namely response_function(*args), which returns an elements of the matrix (an effect of
+        the ref_bin to the bin)
     """
 
-    def __init__(self, norm_type=None, norm_range=None, bin_check = False, bin_middle = 'bin'):
+    def __init__(self, norm_type=None, norm_range=None, matrix_symmetry = 'none', bin_check = False,
+                 bin_middle = 'bin', recalculate_always = False):
         """
 
-        :param norm_type: Describes a normalization method for the transfer matrix
-            'bunch_average': an average value over the bunch is equal to 1
-            'fixed_average': an average value over a range given in a parameter norm_range is equal to 1
-            'bunch_integral': an integral over the bunch is equal to 1
-            'fixed_integral': an integral over a fixed range given in a parameter norm_range is equal to 1
-            'matrix_sum': a sum over elements in the middle column of the matrix is equal to 1
-            None: no normalization
-        :param norm_range: Normalization length in cases of self.norm_type == 'fixed_length_average' or
+        :param norm_type: Describes normalization method for the transfer matrix
+            'bunch_average':    an average value over the bunch is equal to 1
+            'fixed_average':    an average value over a range given in a parameter norm_range is equal to 1
+            'bunch_integral':   an integral over the bunch is equal to 1
+            'fixed_integral':   an integral over a fixed range given in a parameter norm_range is equal to 1
+            'matrix_sum':       a sum over elements in the middle column of the matrix is equal to 1
+            None:               no normalization
+        :param norm_range: Normalization length in cases of self.norm_type == 'fi
+        xed_length_average' or
             self.norm_type == 'fixed_length_integral'
+        :param matrix_symmetry: symmetry of the matrix is used for minimizing the number of calculable elements
+            in the matrix. Implemented options are:
+            'none':             all elements are calculated separately
+            'fully_diagonal':   all elements are identical in diagonal direction
         :param bin_check: if True, a change of the bin_set is checked every time process() is called and matrix is
             recalculated if any change is found
         :param bin_middle: defines if middle points of the bins are determined by a middle point of the bin
             (bin_middle = 'bin') or an average place of macro particles (bin_middle = 'particles')
         """
 
-        self.norm_type = norm_type
-        self.norm_range = norm_range
-        self.bin_check = bin_check
-        self.bin_middle = bin_middle
+        self._norm_type = norm_type
+        self._norm_range = norm_range
+        self._bin_check = bin_check
+        self._bin_middle = bin_middle
+        self._matrix_symmetry = matrix_symmetry
 
-        self.z_bin_set = None
-        self.matrix = None
 
-        self.recalculate_matrix = True
+        self._z_bin_set = None
+        self._matrix = None
+
+        self._recalculate_matrix = True
+        self._recalculate_matrix_always = recalculate_always
+
+        self.required_variables = ['z_bins','mean_z']
 
     @abstractmethod
     def response_function(self, ref_bin_mid, ref_bin_from, ref_bin_to, bin_mid, bin_from, bin_to):
@@ -129,78 +94,120 @@ class LinearTransform(object):
     def process(self,signal,slice_set, *args):
 
         # check if the bin set is changed
-        if self.bin_check:
-            self.recalculate_matrix = self.check_bin_set(slice_set.z_bins)
+        if self._bin_check:
+            self._recalculate_matrix = self.__check_bin_set(slice_set.z_bins)
 
         # recalculte the matrix if necessary
-        if self.recalculate_matrix:
-            self.recalculate_matrix = False
-            if self.bin_middle == 'particles':
+        if self._recalculate_matrix:
+            if self._recalculate_matrix_always == False:
+                self._recalculate_matrix = False
+            if self._bin_middle == 'particles':
                 bin_midpoints = np.array(copy.copy(slice_set.mean_z))
-            elif self.bin_middle == 'bin':
+            elif self._bin_middle == 'bin':
                 bin_midpoints = np.array([(i+j)/2. for i, j in zip(slice_set.z_bins, slice_set.z_bins[1:])])
 
-            self.generate_matrix(slice_set.z_bins,bin_midpoints)
+            self.__generate_matrix(slice_set.z_bins,bin_midpoints)
 
         # process the signal
-        return np.dot(self.matrix,signal)
+        return np.dot(self._matrix,signal)
 
-    def check_bin_set(self,z_bin_set):
+    def clear_matrix(self):
+        self._matrix = np.array([])
+        self._recalculate_matrix = True
 
-        if self.z_bin_set is None:
-            self.z_bin_set = copy.copy(z_bin_set)
+    def __check_bin_set(self,z_bin_set):
+
+        if self._z_bin_set is None:
+            self._z_bin_set = copy.copy(z_bin_set)
             return True
 
         else:
             changed = False
-            for old, new in itertools.izip(self.z_bin_set,z_bin_set):
+            for old, new in itertools.izip(self._z_bin_set,z_bin_set):
                 if old != new:
                     changed = True
-                    self.z_bin_set = copy.copy(z_bin_set)
+                    self._z_bin_set = copy.copy(z_bin_set)
                     break
             return changed
 
     def print_matrix(self):
-        for row in self.matrix:
+        for row in self._matrix:
             print "[",
             for element in row:
                 print "{:6.3f}".format(element),
             print "]"
 
-    def generate_matrix(self,bin_set, bin_midpoints):
+    def __generate_matrix(self,bin_set, bin_midpoints):
 
-        self.matrix = np.identity(len(bin_midpoints))
+        self._matrix = np.identity(len(bin_midpoints))
+        self._matrix *= np.nan
 
-        for i, midpoint_i in enumerate(bin_midpoints):
-            for j, midpoint_j in enumerate(bin_midpoints):
-                    self.matrix[j][i] = self.response_function(midpoint_i,bin_set[i],bin_set[i+1],midpoint_j,bin_set[j]
-                                                               ,bin_set[j+1])
+        bin_widths = []
+        for i,j in zip(bin_set,bin_set[1:]):
+            bin_widths.append(j-i)
 
-        if self.norm_type == 'bunch_average':
-            self.norm_coeff = bin_set[-1] - bin_set[0]
-        elif self.norm_type == 'fixed_average':
-            self.norm_coeff = self.norm_range[1] - self.norm_range[0]
-        elif self.norm_type == 'bunch_integral':
+        bin_widths = np.array(bin_widths)
+        bin_std = np.std(bin_widths)/np.mean(bin_widths)
+
+        if bin_std > 1e-3:
+            'Dynamic slicer -> unoptimized matrix generation!'
+
+        if self._matrix_symmetry == 'fully_diagonal' and bin_std < 1e-3:
+            j = 0
+            midpoint_j = bin_midpoints[0]
+            for i, midpoint_i in enumerate(bin_midpoints):
+                self._matrix[j][i] = self.response_function(midpoint_i, bin_set[i], bin_set[i + 1], midpoint_j,
+                                                           bin_set[j]
+                                                           , bin_set[j + 1])
+                for val in xrange(1,len(bin_midpoints) - max(i,j)):
+                    self._matrix[j + val][i + val] = self._matrix[j][i]
+
+            i = 0
+            midpoint_i = bin_midpoints[0]
+            for j, midpoint_j in enumerate(bin_midpoints[1:], start=1):
+                self._matrix[j][i] = self.response_function(midpoint_i, bin_set[i], bin_set[i + 1], midpoint_j,
+                                                           bin_set[j]
+                                                           , bin_set[j + 1])
+                for val in xrange(1,len(bin_midpoints) - max(i,j)):
+                    self._matrix[j + val][i + val] = self._matrix[j][i]
+
+        else:
+            counter = 0
+            for i, midpoint_i in enumerate(bin_midpoints):
+                for j, midpoint_j in enumerate(bin_midpoints):
+                        if np.isnan(self._matrix[j][i]):
+                            counter += 1
+                            self._matrix[j][i] = self.response_function(midpoint_i,bin_set[i],bin_set[i+1],midpoint_j,bin_set[j]
+                                                                   ,bin_set[j+1])
+            # print str(counter) + ' elements is calculated'
+
+
+        if self._norm_type == 'bunch_average':
+            self._norm_coeff = bin_set[-1] - bin_set[0]
+        elif self._norm_type == 'fixed_average':
+            self._norm_coeff = self._norm_range[1] - self._norm_range[0]
+        elif self._norm_type == 'bunch_integral':
             center_idx = math.floor(len(bin_midpoints) / 2)
-            self.norm_coeff = self.response_function(bin_midpoints[center_idx], bin_set[center_idx],
+            self._norm_coeff = self.response_function(bin_midpoints[center_idx], bin_set[center_idx],
                                                      bin_set[center_idx + 1], bin_midpoints[center_idx],
                                                      bin_set[0], bin_set[-1])
-        elif self.norm_type == 'fixed_integral':
+        elif self._norm_type == 'fixed_integral':
             center_idx = math.floor(len(bin_midpoints) / 2)
-            self.norm_coeff = self.response_function(bin_midpoints[center_idx], bin_set[center_idx],
+            self._norm_coeff = self.response_function(bin_midpoints[center_idx], bin_set[center_idx],
                                                      bin_set[center_idx + 1], bin_midpoints[center_idx],
-                                                     self.norm_range[0], self.norm_range[-1])
-        elif self.norm_type == 'max_column':
-            self.norm_coeff= np.max(np.sum(self.matrix,0))
+                                                     self._norm_range[0], self._norm_range[-1])
+        elif self._norm_type == 'max_column':
+            self._norm_coeff= np.max(np.sum(self._matrix,0))
 
-        elif self.norm_type is None:
-            self.norm_coeff = 1
+        elif self._norm_type is None:
+            self._norm_coeff = 1.
 
-        self.matrix = self.matrix / float(self.norm_coeff)
+        self._matrix /= float(self._norm_coeff)
+
 
 class Averager(LinearTransform):
     """ Returns a signal, which consists an average value of the input signal. A sums of the rows in the matrix
-    are normalized to be one (i.e. a sum of the input signal doesn't change).
+        are normalized to be one (i.e. a sum of the input signal doesn't change).
     """
 
     def __init__(self,norm_type = 'max_column', norm_range = None):
@@ -209,132 +216,191 @@ class Averager(LinearTransform):
     def response_function(self, ref_bin_mid, ref_bin_from, ref_bin_to, bin_mid, bin_from, bin_to):
         return 1
 
-class Bypass(LinearTransform):
-    """ Passes a signal without change (an identity matrix).
-    """
-    def __init__(self,norm_type = None, norm_range = None):
-        super(self.__class__, self).__init__(norm_type, norm_range)
-
-    def response_function(self, ref_bin_mid, ref_bin_from, ref_bin_to, bin_mid, bin_from, bin_to):
-        if ref_bin_mid == bin_mid:
-            return 1
-        else:
-            return 0
 
 class Delay(LinearTransform):
-    """ Delays signal in units of [second].
+    """ Delays signal in the units of [second].
     """
-    def __init__(self,delay, norm_type = None, norm_range = None):
-        self.delay = delay
-        super(self.__class__, self).__init__(norm_type, norm_range)
+    def __init__(self,delay, norm_type = None, norm_range = None,recalculate_always = False):
+        self._delay = delay
+        super(self.__class__, self).__init__(norm_type, norm_range, 'fully_diagonal', recalculate_always = recalculate_always)
 
     def response_function(self, ref_bin_mid, ref_bin_from, ref_bin_to, bin_mid, bin_from, bin_to):
 
-        return self.CDF(bin_to, ref_bin_from, ref_bin_to) - self.CDF(bin_from, ref_bin_from, ref_bin_to)
+        return self.__CDF(bin_to, ref_bin_from, ref_bin_to) - self.__CDF(bin_from, ref_bin_from, ref_bin_to)
 
-    def CDF(self,x,ref_bin_from, ref_bin_to):
-        if (x-self.delay*c) <= ref_bin_from:
+    def __CDF(self,x,ref_bin_from, ref_bin_to):
+        if (x-self._delay*c) <= ref_bin_from:
             return 0.
-        elif (x-self.delay*c) < ref_bin_to:
-            return ((x-self.delay*c)-ref_bin_from)/float(ref_bin_to-ref_bin_from)
+        elif (x-self._delay*c) < ref_bin_to:
+            return ((x-self._delay*c)-ref_bin_from)/float(ref_bin_to-ref_bin_from)
         else:
             return 1.
-
-class PhaseLinearizedLowpass(LinearTransform):
-    """ Phase linearized lowpass filter, which can be used to describe a frequency behavior of a kicker. A impulse response
-        of a phase linearized lowpass filter is modified Bessel function of the second kind (np.special.k0).
-        The transfer function has been derived by Gerd Kotzian.
-    """
-
-    def __init__(self, f_cutoff, norm_type = 'max_column', norm_range = None):
-        self.f_cutoff = f_cutoff
-        self.norm_range_coeff = 10
-        super(self.__class__, self).__init__(norm_type, norm_range)
-
-    def response_function(self, ref_bin_mid, ref_bin_from, ref_bin_to, bin_mid, bin_from, bin_to):
-        # Frequency scaling must be done by scaling integral limits, because integration by substitution doesn't work
-        # with np.quad (see quad_problem.ipynbl). An ugly way, which could be fixed.
-        scaling = 2.*pi*self.f_cutoff / c
-        temp, _ = integrate.quad(self.transfer_function, scaling * (bin_from - ref_bin_mid),
-                       scaling * (bin_to - ref_bin_mid))
-        return temp
-
-    def transfer_function(self,x):
-        if x == 0:
-            return 0
-        else:
-            return special.k0(abs(x))
-
-
-class LowpassFilter(LinearTransform):
-    """ Classical first order lowpass filter (e.g. a RC filter), which impulse response can be described as exponential
-        decay.
-    """
-    def __init__(self, f_cutoff, norm_type = 'max_column', norm_range = None):
-        self.f_cutoff = f_cutoff
-        super(self.__class__, self).__init__(norm_type, norm_range)
-
-    def response_function(self, ref_bin_mid, ref_bin_from, ref_bin_to, bin_mid, bin_from, bin_to):
-        # Frequency scaling must be done by scaling integral limits, because integration by substitution doesn't work
-        # with np.quad (see quad_problem.ipynbl). An ugly way, which could be fixed.
-        scaling = 2.*pi*self.f_cutoff/c
-        temp, _ = integrate.quad(self.transfer_function, scaling * (bin_from - ref_bin_mid),
-                       scaling * (bin_to - ref_bin_mid))
-        return temp
-
-    def transfer_function(self,x):
-        if x < 0:
-            return 0
-        else:
-            return math.exp(-1.*x)
-
-class HighpassFilter(LinearTransform):
-    """ Classical first order highpass filter (e.g. a RC filter)
-    """
-    def __init__(self, f_cutoff, norm_type = None, norm_range = None):
-        self.f_cutoff = f_cutoff
-        super(self.__class__, self).__init__(norm_type, norm_range)
-
-    def response_function(self, ref_bin_mid, ref_bin_from, ref_bin_to, bin_mid, bin_from, bin_to):
-        # Frequency scaling must be done by scaling integral limits, because integration by substitution doesn't work
-        # with np.quad (see quad_problem.ipynbl). An ugly way, which could be fixed.
-        scaling = 2.*pi*self.f_cutoff/c
-
-        temp, _ = integrate.quad(self.transfer_function, self.scaling * (bin_from - ref_bin_mid),
-                       self.scaling * (bin_to - ref_bin_mid))
-
-        if ref_bin_mid == bin_mid:
-            temp += 1.
-
-        return temp
-
-    def transfer_function(self,x):
-        if x < 0:
-            return 0
-        else:
-            return -1.*math.exp(-1.*x)
 
 
 class LinearTransformFromFile(LinearTransform):
     """ Interpolates matrix columns by using inpulse response data from a file. """
 
     def __init__(self,filename, x_axis = 'time', norm_type = 'max_column', norm_range = None):
-        self.filename = filename
-        self.x_axis = x_axis
-        self.data = np.loadtxt(self.filename)
-        if self.x_axis == 'time':
-            self.data[:, 0]=self.data[:, 0]*c
+        self._filename = filename
+        self._x_axis = x_axis
+        self._data = np.loadtxt(self._filename)
+        if self._x_axis == 'time':
+            self._data[:, 0]=self._data[:, 0]*c
 
         super(self.__class__, self).__init__(norm_type, norm_range)
 
     def response_function(self, ref_bin_mid, ref_bin_from, ref_bin_to, bin_mid, bin_from, bin_to):
-            return np.interp(bin_mid - ref_bin_mid, self.data[:, 0], self.data[:, 1])
+            return np.interp(bin_mid - ref_bin_mid, self._data[:, 0], self._data[:, 1])
 
 
-class Bypass_Fast(object):
-    def process(self,signal, *args):
-        return signal
+class Filter(LinearTransform):
+    __metaclass__ = ABCMeta
+    """ A general class for (analog) filters. Impulse response of the filter must be determined by overwriting
+        the function raw_impulse_response.
 
+        This processor includes two additional properties.
+
+    """
+
+    def __init__(self, filter_type, f_cutoff, delay, f_cutoff_2nd, norm_type, norm_range):
+        """
+        :param filter_type: Options are:
+                'lowpass'
+                'highpass'
+        :param f_cutoff: a cut-off frequency of the filter [Hz]
+        :param delay: a delay in the units of seconds
+        :param f_cutoff_2nd: a second cutoff frequency [Hz], which is implemented by cutting the tip of the impulse
+                    response function
+        :param norm_type: see class LinearTransform
+        :param norm_range: see class LinearTransform
+        """
+
+        self._f_cutoff = f_cutoff
+        self._delay_z = delay * c
+        self._filter_type = filter_type
+
+        self._impulse_response = self.__impulse_response_generator(f_cutoff_2nd)
+        super(Filter, self).__init__(norm_type, norm_range, 'fully_diagonal')
+
+
+    @abstractmethod
+    def raw_impulse_response(self, x):
+        """ Impulse response of the filter.
+        :param x: normalized time (t*2.*pi*f_c)
+        :return: response at the given time
+        """
+        pass
+
+    def __impulse_response_generator(self,f_cutoff_2nd):
+        """ A function which generates the response function from the raw impulse response. If 2nd cut-off frequency
+            is given, the value of the raw impulse response is set to constant at the time scale below that.
+            The integral over the response function is normalized to value 1.
+        """
+
+        if f_cutoff_2nd is not None:
+            threshold_tau = (2.*pi * self._f_cutoff) / (2.*pi * f_cutoff_2nd)
+            threshold_val_neg = self.raw_impulse_response(-1.*threshold_tau)
+            threshold_val_pos = self.raw_impulse_response(threshold_tau)
+            integral_neg, _ = integrate.quad(self.raw_impulse_response, -100., -1.*threshold_tau)
+            integral_pos, _ = integrate.quad(self.raw_impulse_response, threshold_tau, 100.)
+
+            norm_coeff = np.abs(integral_neg + integral_pos + (threshold_val_neg + threshold_val_pos) * threshold_tau)
+
+            def transfer_function(x):
+                if np.abs(x) < threshold_tau:
+                    return self.raw_impulse_response(np.sign(x)*threshold_tau)
+                else:
+                    return self.raw_impulse_response(x) / norm_coeff
+        else:
+            norm_coeff, _ = integrate.quad(self.raw_impulse_response, -100., 100.)
+            norm_coeff = np.abs(norm_coeff)
+            def transfer_function(x):
+                    return self.raw_impulse_response(x) / norm_coeff
+
+        return transfer_function
+
+    def response_function(self, ref_bin_mid, ref_bin_from, ref_bin_to, bin_mid, bin_from, bin_to):
+        # Frequency scaling must be done by scaling integral limits, because integration by substitution doesn't work
+        # with np.quad (see quad_problem.ipynbl). An ugly way, which could be fixed.
+
+        scaling = 2.*pi*self._f_cutoff/c
+        temp, _ = integrate.quad(self._impulse_response, scaling * (bin_from - (ref_bin_mid+self._delay_z)),
+                       scaling * (bin_to - (ref_bin_mid+self._delay_z)))
+
+        if ref_bin_mid == bin_mid:
+            if self._filter_type == 'highpass':
+                temp += 1.
+
+        return temp
+
+
+class Sinc(Filter):
+    """ A nearly ideal lowpass filter, i.e. a windowed Sinc filter.
+    """
+
+    def __init__(self, f_cutoff, delay=0., window_length = 3., window_type = 'blackman' , norm_type=None, norm_range=None):
+        """
+        :param f_cutoff: a cutoff frequency of the filter
+        :param delay: a delay of the filter [s]
+        :param window_length: a length of the window applied to Sinc filter [2*pi*f_c]
+        :param window_type: a shape of the window, blackman or hamming
+        :param norm_type: see class LinearTransform
+        :param norm_range: see class LinearTransform
+        """
+        self.window_length = float(window_length)
+        self.window_type = window_type
+        super(self.__class__, self).__init__('lowpass', f_cutoff, delay, None, norm_type, norm_range)
+
+    def raw_impulse_response(self, x):
+        if np.abs(x/pi) > self.window_length:
+            return 0.
+        else:
+            if self.window_type == 'blackman':
+                return np.sinc(x/pi)*self.blackman_window(x)
+            elif self.window_type == 'hamming':
+                return np.sinc(x/pi)*self.hamming_window(x)
+
+    def blackman_window(self,x):
+        return 0.42-0.5*np.cos(2.*pi*(x/pi+self.window_length)/(2.*self.window_length))\
+               +0.08*np.cos(4.*pi*(x/pi+self.window_length)/(2.*self.window_length))
+
+    def hamming_window(self, x):
+        return 0.54-0.46*np.cos(2.*pi*(x/pi+self.window_length)/(2.*self.window_length))
+
+
+class Lowpass(Filter):
+    """ Classical first order lowpass filter (e.g. a RC filter), which impulse response can be described as exponential
+        decay.
+        """
+    def __init__(self, f_cutoff, delay=0., f_cutoff_2nd=None, norm_type=None, norm_range=None):
+        super(self.__class__, self).__init__('lowpass', f_cutoff, delay, f_cutoff_2nd, norm_type, norm_range)
+
+    def raw_impulse_response(self, x):
+        if x < 0:
+            return 0
+        else:
+            return math.exp(-1. * x)
+
+class Highpass(Filter):
+    """The classical version of a highpass filter, which """
+    def __init__(self, f_cutoff, delay=0., f_cutoff_2nd=None, norm_type=None, norm_range=None):
+        super(self.__class__, self).__init__('highpass', f_cutoff, delay, f_cutoff_2nd, norm_type, norm_range)
+
+    def raw_impulse_response(self, x):
+        if x < 0:
+            return 0
+        else:
+            return -1.*math.exp(-1. * x)
+
+class PhaseLinearizedLowpass(Filter):
+    def __init__(self, f_cutoff, delay=0., f_cutoff_2nd=None, norm_type=None, norm_range=None):
+        super(self.__class__, self).__init__('lowpass', f_cutoff, delay, f_cutoff_2nd, norm_type, norm_range)
+
+    def raw_impulse_response(self, x):
+        if x == 0:
+            return 0
+        else:
+            return special.k0(abs(x))
 
 class Multiplication(object):
     __metaclass__ = ABCMeta
@@ -354,49 +420,56 @@ class Multiplication(object):
         :param: recalculate_weight: if True, the weight is recalculated every time when process() is called
         """
 
-        self.seed = seed
-        self.normalization = normalization
-        self.recalculate_multiplier = recalculate_multiplier
+        self._seed = seed
+        self._normalization = normalization
+        self._recalculate_multiplier = recalculate_multiplier
 
-        self.multiplier = None
+        self._multiplier = None
+
+        self.required_variables = ['z_bins']
+
+        if self._seed not in ['bin_length','bin_midpoint','signal']:
+            self.required_variables.append(self._seed)
 
     @abstractmethod
     def multiplication_function(self, seed):
         pass
 
-    def process(self,signal,slice_set):
+    def process(self,signal,slice_set, *args):
 
-        if (self.multiplier is None) or self.recalculate_multiplier:
-            self.calculate_multiplier(signal,slice_set)
+        if (self._multiplier is None) or self._recalculate_multiplier:
+            self.__calculate_multiplier(signal,slice_set)
 
-        return self.multiplier*signal
+        return self._multiplier*signal
 
-    def calculate_multiplier(self,signal,slice_set):
-        if self.seed == 'bin_length':
+    def __calculate_multiplier(self,signal,slice_set):
+        if self._seed == 'bin_length':
             bin_set = slice_set.z_bins
-            self.multiplier = np.array([(j-i) for i, j in zip(bin_set, bin_set[1:])])
-        elif self.seed == 'bin_midpoint':
+            self._multiplier = np.array([(j-i) for i, j in zip(bin_set, bin_set[1:])])
+        elif self._seed == 'bin_midpoint':
             bin_set = slice_set.z_bins
-            self.multiplier = np.array([(i+j)/2. for i, j in zip(bin_set, bin_set[1:])])
-        elif self.seed == 'signal':
-            self.multiplier = np.array(signal)
+            self._multiplier = np.array([(i+j)/2. for i, j in zip(bin_set, bin_set[1:])])
+        elif self._seed == 'signal':
+            self._multiplier = np.array(signal)
         else:
-            self.multiplier = np.array(getattr(slice_set,self.seed))
+            self._multiplier = np.array(getattr(slice_set,self._seed))
 
-        self.multiplier = self.multiplication_function(self.multiplier)
+        self._multiplier = self.multiplication_function(self._multiplier)
 
-        if self.normalization == 'total_weight':
-            norm_coeff = float(np.sum(self.multiplier))
-        elif self.normalization == 'average_weight':
-            norm_coeff = float(np.sum(self.multiplier))/float(len(self.multiplier))
-        elif self.normalization == 'maximum_weight':
-            norm_coeff = float(np.max(self.multiplier))
-        elif self.normalization == 'minimum_weight':
-            norm_coeff = float(np.min(self.multiplier))
-        elif self.normalization == None:
+        if self._normalization == 'total_weight':
+            norm_coeff = float(np.sum(self._multiplier))
+        elif self._normalization == 'average_weight':
+            norm_coeff = float(np.sum(self._multiplier))/float(len(self._multiplier))
+        elif self._normalization == 'maximum_weight':
+            norm_coeff = float(np.max(self._multiplier))
+        elif self._normalization == 'minimum_weight':
+            norm_coeff = float(np.min(self._multiplier))
+        elif self._normalization == None:
             norm_coeff = 1.
 
-        self.multiplier = self.multiplier / norm_coeff
+        # TODO: try to figure out why this can not be written
+        # self._multiplier /= norm_coeff
+        self._multiplier =  self._multiplier / norm_coeff
 
 
 class ChargeWeighter(Multiplication):
@@ -420,40 +493,40 @@ class EdgeWeighter(Multiplication):
         :param bunch_decay_length: slope of the function on the edge of the bunch. Smaller value, steeper slope.
         :param maximum_weight: maximum value of the weight
         """
-        self.bunch_length = bunch_length
-        self.bunch_decay_length = bunch_decay_length
-        self.maximum_weight=maximum_weight
+        self._bunch_length = bunch_length
+        self._bunch_decay_length = bunch_decay_length
+        self._maximum_weight=maximum_weight
         super(self.__class__, self).__init__('bin_midpoint', 'minimum_weight')
 
     def multiplication_function(self,weight):
-        weight = np.exp((np.absolute(weight)-self.bunch_length/2.)/float(self.bunch_decay_length))+ 1.
-        weight = np.clip(weight,1.,self.maximum_weight)
+        weight = np.exp((np.absolute(weight)-self._bunch_length/2.)/float(self._bunch_decay_length))+ 1.
+        weight = np.clip(weight,1.,self._maximum_weight)
         return weight
 
 
 class NoiseGate(Multiplication):
-    """ Passes a signal which level is greater/less than the threshold level.
+    """ Passes a signal which is greater/less than the threshold level.
     """
 
     def __init__(self,threshold, operator = 'greater', threshold_ref = 'amplitude'):
 
-        self.threshold = threshold
-        self.operator = operator
-        self.threshold_ref = threshold_ref
+        self._threshold = threshold
+        self._operator = operator
+        self._threshold_ref = threshold_ref
         super(self.__class__, self).__init__('signal', None,recalculate_multiplier = True)
 
     def multiplication_function(self, seed):
         multiplier = np.zeros(len(seed))
 
-        if self.threshold_ref == 'amplitude':
+        if self._threshold_ref == 'amplitude':
             comparable = np.abs(seed)
-        elif self.threshold_ref == 'absolute':
+        elif self._threshold_ref == 'absolute':
             comparable = seed
 
-        if self.operator == 'greater':
-            multiplier[comparable > self.threshold] = 1
-        elif self.operator == 'less':
-            multiplier[comparable < self.threshold] = 1
+        if self._operator == 'greater':
+            multiplier[comparable > self._threshold] = 1
+        elif self._operator == 'less':
+            multiplier[comparable < self._threshold] = 1
 
         return multiplier
 
@@ -467,14 +540,14 @@ class MultiplicationFromFile(Multiplication):
 
     def __init__(self,filename, x_axis='time', seed='bin_midpoint',normalization = None, recalculate_multiplier = False):
         super(self.__class__, self).__init__(seed, normalization, recalculate_multiplier)
-        self.filename = filename
-        self.x_axis = x_axis
-        self.data = np.loadtxt(self.filename)
-        if self.x_axis == 'time':
-            self.data[:, 0] = self.data[:, 0] * c
+        self._filename = filename
+        self._x_axis = x_axis
+        self._data = np.loadtxt(self._filename)
+        if self._x_axis == 'time':
+            self._data[:, 0] = self._data[:, 0] * c
 
     def multiplication_function(self, seed):
-        return np.interp(seed, self.data[:, 0], self.data[:, 1])
+        return np.interp(seed, self._data[:, 0], self._data[:, 1])
 
 
 class Addition(object):
@@ -496,49 +569,55 @@ class Addition(object):
         :param: recalculate_weight: if True, the weight is recalculated every time when process() is called
         """
 
-        self.seed = seed
-        self.normalization = normalization
-        self.recalculate_addend = recalculate_addend
+        self._seed = seed
+        self._normalization = normalization
+        self._recalculate_addend = recalculate_addend
 
-        self.addend = None
+        self._addend = None
+
+        self.required_variables=['z_bins']
+
+        if self._seed not in ['bin_length','bin_midpoint','signal']:
+            self.required_variables.append(self._seed)
 
     @abstractmethod
     def addend_function(self, seed):
         pass
 
-    def process(self,signal,slice_set):
+    def process(self,signal,slice_set, *args):
 
-        if (self.addend is None) or self.recalculate_addend:
-            self.calculate_addend(signal,slice_set)
+        if (self._addend is None) or self._recalculate_addend:
+            self.__calculate_addend(signal,slice_set)
 
-        return signal + self.addend
+        return signal + self._addend
 
-    def calculate_addend(self,signal,slice_set):
-        if self.seed == 'bin_length':
+    def __calculate_addend(self,signal,slice_set):
+        if self._seed == 'bin_length':
             bin_set = slice_set.z_bins
-            self.addend = np.array([(j-i) for i, j in zip(bin_set, bin_set[1:])])
-        elif self.seed == 'bin_midpoint':
+            self._addend = np.array([(j-i) for i, j in zip(bin_set, bin_set[1:])])
+        elif self._seed == 'bin_midpoint':
             bin_set = slice_set.z_bins
-            self.addend = np.array([(i+j)/2. for i, j in zip(bin_set, bin_set[1:])])
-        elif self.seed == 'signal':
-            self.addend = np.array(signal)
+            self._addend = np.array([(i+j)/2. for i, j in zip(bin_set, bin_set[1:])])
+        elif self._seed == 'signal':
+            self._addend = np.array(signal)
         else:
-            self.addend = np.array(getattr(slice_set,self.seed))
+            self._addend = np.array(getattr(slice_set,self._seed))
 
-        self.addend = self.addend_function(self.addend)
+        self._addend = self.addend_function(self._addend)
 
-        if self.normalization == 'total':
-            norm_coeff = float(np.sum(self.addend))
-        elif self.normalization == 'average':
-            norm_coeff = float(np.sum(self.addend))/float(len(self.addend))
-        elif self.normalization == 'maximum':
-            norm_coeff = float(np.max(self.addend))
-        elif self.normalization == 'minimum':
-            norm_coeff = float(np.min(self.addend))
+        if self._normalization == 'total':
+            norm_coeff = float(np.sum(self._addend))
+        elif self._normalization == 'average':
+            norm_coeff = float(np.sum(self._addend))/float(len(self._addend))
+        elif self._normalization == 'maximum':
+            norm_coeff = float(np.max(self._addend))
+        elif self._normalization == 'minimum':
+            norm_coeff = float(np.min(self._addend))
         else:
             norm_coeff = 1.
 
-        self.addend = self.addend / norm_coeff
+        self._addend = self._addend / norm_coeff
+
 
 class NoiseGenerator(Addition):
     """ Adds noise to a signal. The noise level is given as RMS value of the absolute level (reference_level = 'absolute'),
@@ -549,9 +628,9 @@ class NoiseGenerator(Addition):
 
     def __init__(self,RMS_noise_level,reference_level = 'absolute', distribution = 'normal'):
 
-        self.RMS_noise_level = RMS_noise_level
-        self.reference_level = reference_level
-        self.distribution = distribution
+        self._RMS_noise_level = RMS_noise_level
+        self._reference_level = reference_level
+        self._distribution = distribution
 
         super(self.__class__, self).__init__('signal', None, True)
 
@@ -559,17 +638,17 @@ class NoiseGenerator(Addition):
 
         randoms = np.zeros(len(seed))
 
-        if self.distribution == 'normal' or self.distribution is None:
+        if self._distribution == 'normal' or self._distribution is None:
             randoms = np.random.randn(len(seed))
-        elif self.distribution == 'uniform':
+        elif self._distribution == 'uniform':
             randoms = 1./0.577263*(-1.+2.*np.random.rand(len(seed)))
 
-        if self.reference_level == 'absolute':
-            addend = self.RMS_noise_level*randoms
-        elif self.reference_level == 'maximum':
-            addend = self.RMS_noise_level*np.max(seed)*randoms
-        elif self.reference_level == 'local':
-            addend = seed*self.RMS_noise_level*randoms
+        if self._reference_level == 'absolute':
+            addend = self._RMS_noise_level*randoms
+        elif self._reference_level == 'maximum':
+            addend = self._RMS_noise_level*np.max(seed)*randoms
+        elif self._reference_level == 'local':
+            addend = seed*self._RMS_noise_level*randoms
 
         return addend
 
@@ -581,14 +660,14 @@ class AdditionFromFile(Addition):
 
     def __init__(self,filename, x_axis='time', seed='bin_midpoint',normalization = None, recalculate_multiplier = False):
         super(self.__class__, self).__init__(seed, normalization, recalculate_multiplier)
-        self.filename = filename
-        self.x_axis = x_axis
-        self.data = np.loadtxt(self.filename)
-        if self.x_axis == 'time':
-            self.data[:, 0] = self.data[:, 0] * c
+        self._filename = filename
+        self._x_axis = x_axis
+        self._data = np.loadtxt(self._filename)
+        if self._x_axis == 'time':
+            self._data[:, 0] = self._data[:, 0] * c
 
     def addend_function(self, seed):
-        return np.interp(seed, self.data[:, 0], self.data[:, 1])
+        return np.interp(seed, self._data[:, 0], self._data[:, 1])
 
 class Register(object):
     __metaclass__ = ABCMeta
@@ -606,72 +685,75 @@ class Register(object):
 
     """
 
-    def __init__(self,delay, avg_length, phase_shift_per_turn, position, n_slices, in_processor_chain):
+    def __init__(self, n_avg, tune, delay, in_processor_chain):
         """
+        :param n_avg: a number of register values (in turns) have been stored after the delay
+        :param tune: a real number value of a betatron tune (e.g. 59.28 in horizontal or 64.31 in vertical direction
+                for LHC)
         :param delay: a delay between storing to reading values  in turns
-        :param avg_length: a number of register values are averaged
-        :param phase_shift_per_turn: a betatron phase shift per turn
-        :param position: a betatron position (angle) of the register from a reference point
-        :param n_slices: a length of a signal, which is returned if the register is empty
         :param in_processor_chain: if True, process() returns a signal
         """
-        self.delay = delay
-        self.avg_length = avg_length
-        self.phase_shift_per_turn = phase_shift_per_turn
-        self.position = position
-        self.in_processor_chain = in_processor_chain
+        self._delay = delay
+        self._n_avg = n_avg
+        self._phase_shift_per_turn = 2.*pi * tune
+        self._phase_advance = None
+        self._in_processor_chain = in_processor_chain
+        self.combination = None
 
 
-        self.max_reg_length = self.delay+self.avg_length
-        self.register = deque()
+        self._max_reg_length = self._delay+self._n_avg
+        self._register = deque()
 
-        self.n_iter_left = -1
+        self._n_iter_left = -1
 
-        self.reader_position = None
+        self._reader_position = None
 
-        if n_slices is not None:
-            self.register.append(np.zeros(n_slices))
+        # if n_slices is not None:
+        #     self._register.append(np.zeros(n_slices))
+
+        self.required_variables = None
 
     def __iter__(self):
         # calculates a maximum number of iterations. If there is no enough values in the register, sets -1, which
-        # indicates that next() might return zero value
+        # indicates that next() can return zero value
 
-        self.n_iter_left =  len(self)
-        if self.n_iter_left == 0:
-            self.n_iter_left = -1
+        self._n_iter_left =  len(self)
+        if self._n_iter_left == 0:
+            # return None
+            self._n_iter_left = -1
         return self
 
     def __len__(self):
         # returns a number of signals in the register after delay
-        return max((len(self.register) - self.delay), 0)
+        return max((len(self._register) - self._delay), 0)
 
     def next(self):
-        if self.n_iter_left == 0:
+        if self._n_iter_left < 1:
             raise StopIteration
-        elif self.n_iter_left == -1:
-            self.n_iter_left = 0
-            return (np.zeros(len(self.register[0])),None,0,self.position)
         else:
-            delay = -1. * (len(self.register) - self.n_iter_left) * self.phase_shift_per_turn
-            self.n_iter_left -= 1
-            return (self.register[self.n_iter_left],None,delay,self.position)
+            delay = -1. * (len(self._register) - self._n_iter_left) * self._phase_shift_per_turn
+            self._n_iter_left -= 1
+            return (self._register[self._n_iter_left],None,delay,self._phase_advance)
 
-    def process(self,signal, *args):
+    def process(self,signal, slice_set, data_phase_advance ,*args):
 
-        self.register.append(signal)
+        if self._phase_advance is None:
+            self._phase_advance = data_phase_advance
 
-        if len(self.register) > self.max_reg_length:
-            self.register.popleft()
+        self._register.append(signal)
 
-        if self.in_processor_chain == True:
+        if len(self._register) > self._max_reg_length:
+            self._register.popleft()
+
+        if self._in_processor_chain == True:
             temp_signal = np.zeros(len(signal))
             if len(self) > 0:
-                prev = (np.zeros(len(self.register[0])),None,0,self.position)
+                prev = (np.zeros(len(self._register[0])),None,0,self._phase_advance)
 
                 for value in self:
                     combined = self.combine(value,prev,None)
                     prev = value
-                    temp_signal += combined[0] / float(len(self))
+                    temp_signal += combined / float(len(self))
 
             return temp_signal
 
@@ -683,153 +765,114 @@ class Register(object):
 
 class VectorSumRegister(Register):
 
-    def __init__(self,delay, avg_length, phase_shift_per_turn, position=None, n_slices=None, in_processor_chain=True):
-        self.type = 'plain'
-        super(self.__class__, self).__init__(delay, avg_length, phase_shift_per_turn, position, n_slices, in_processor_chain)
+    def __init__(self, n_avg, tune, delay = 0, in_processor_chain=True):
+        self.combination = 'combined'
+        super(self.__class__, self).__init__(n_avg, tune, delay, in_processor_chain)
+        self.required_variables = []
 
-    def combine(self,x1,x2,reader_position,x_to_xp = False):
+    def combine(self,x1,x2,reader_phase_advance,x_to_xp = False):
         # determines a complex number representation from two signals (e.g. from two pickups or different turns), by using
         # knowledge about phase advance between signals. After this turns the vector to the reader's phase
         # TODO: Why not x2[3]-x1[3]?
+
         if (x1[3] is not None) and (x1[3] != x2[3]):
             phi_x1_x2 = x1[3]-x2[3]
+            if phi_x1_x2 < 0:
+                # print "correction"
+                phi_x1_x2 += self._phase_shift_per_turn
         else:
-            phi_x1_x2 = -1. * self.phase_shift_per_turn
+            phi_x1_x2 = -1. * self._phase_shift_per_turn
 
-        s = np.sin(phi_x1_x2)
-        c = np.cos(phi_x1_x2)
-        re = x1[0]
-        im = (c*x1[0]-x2[0])/float(s)
+        print "Delta phi: " + str(phi_x1_x2*360./(2*pi)%360.)
 
-        # turns the vector to the reader's position
-        delta_phi = x1[2]
-        if reader_position is not None:
-            delta_position = x1[3] - reader_position
+        s = np.sin(phi_x1_x2/2.)
+        c = np.cos(phi_x1_x2/2.)
+
+        re = 0.5 * (x1[0] + x2[0]) * (c + s * s / c)
+        im = -s * x2[0] + c / s * (re - c * x2[0])
+
+        delta_phi = x1[2]-phi_x1_x2/2.
+
+        if reader_phase_advance is not None:
+            delta_position = x1[3] - reader_phase_advance
             delta_phi += delta_position
             if delta_position > 0:
-                delta_phi -= self.phase_shift_per_turn
+                delta_phi -= self._phase_shift_per_turn
             if x_to_xp == True:
                 delta_phi -= pi/2.
 
         s = np.sin(delta_phi)
         c = np.cos(delta_phi)
 
-        return np.array([c*re-s*im,s*re+c*im])
+
+        return c*re-s*im
+
+        # An old piece. It should work as well as the code above, but it has different forbidden values for phi_x1_x2
+        # (where re or im variables go to infinity). Thus it is stored to here, so that it can be found easily but it
+        # will be probably removed later.
+        # if (x1[3] is not None) and (x1[3] != x2[3]):
+        #     phi_x1_x2 = x1[3]-x2[3]
+        #     if phi_x1_x2 < 0:
+        #         # print "correction"
+        #         phi_x1_x2 += self._phase_shift_per_turn
+        # else:
+        #     phi_x1_x2 = -1. * self._phase_shift_per_turn
+        #
+        # s = np.sin(phi_x1_x2)
+        # c = np.cos(phi_x1_x2)
+        # re = x1[0]
+        # im = (c*x1[0]-x2[0])/float(s)
+        #
+        # # turns the vector to the reader's position
+        # delta_phi = x1[2]
+        # if reader_phase_advance is not None:
+        #     delta_position = x1[3] - reader_phase_advance
+        #     delta_phi += delta_position
+        #     if delta_position > 0:
+        #         delta_phi -= self._phase_shift_per_turn
+        #     if x_to_xp == True:
+        #         delta_phi -= pi/2.
+        #
+        # s = np.sin(delta_phi)
+        # c = np.cos(delta_phi)
+        #
+        # # return np.array([c*re-s*im,s*re+c*im])
+        #
+        # return c*re-s*im
 
 
 class CosineSumRegister(Register):
     """ Returns register values by multiplying the values with a cosine of the betatron phase angle from the reader.
         If there are multiple values in different phases, the sum approaches a value equal to half of the displacement
         in the reader's position.
-
-        The function process() returns a value, which is an average of the register values (after delay determined by
-        the parameter avg_length)
     """
-    def __init__(self,delay, avg_length, phase_shift_per_turn, position=None, n_slices=None, in_processor_chain=True):
-        self.type = 'cosine'
-        super(self.__class__, self).__init__(delay, avg_length, phase_shift_per_turn, position, n_slices, in_processor_chain)
+    def __init__(self, n_avg, tune, delay = 0, in_processor_chain=True):
 
-    def combine(self,x1,x2,reader_position,x_to_xp = False):
-        #print "x_to_xp: " + str(x_to_xp)
+        self.combination = 'individual'
+
+        super(self.__class__, self).__init__(n_avg, tune, delay, in_processor_chain)
+        self.required_variables = []
+
+    def combine(self,x1,x2,reader_phase_advance,x_to_xp = False):
         delta_phi = x1[2]
-        if reader_position is not None:
-            delta_position = self.position - reader_position
+        if reader_phase_advance is not None:
+            delta_position = self._phase_advance - reader_phase_advance
             delta_phi += delta_position
             if delta_position > 0:
-                delta_phi -= self.phase_shift_per_turn
+                delta_phi -= self._phase_shift_per_turn
             if x_to_xp == True:
                 delta_phi -= pi/2.
 
-        return np.array([2.*math.cos(delta_phi)*x1[0],None])
+        return 2.*math.cos(delta_phi)*x1[0]
 
 
-class HilbertRegister(Register):
-    # uses Hilbert transform to calculate a complex number representation for each value in the register. After this
-    # turns all vectors to same direction and returns an average of these vectors. Note that avg_length must be
-    # sufficient (e.g. >= 7) in order to do a reliable calculations.
+class Bypass(object):
+    """ A fast bypass processor, whichi does not modify the signal. A black sheep, which does not fit for
+        the abstract classes.
+    """
 
-    # DEV NOTES: phase rotation is messy thing. I don't understand exactly (yet) why this is working, but probably
-    # because of beam phase rotation and Hilbert transform use different coordinate systems. Thus, there is a minus sign
-    # in the front of the imaginary part of the outgoing vector and the vector has been rotated to different directions,
-    # when average of vectors is calculated in next() and combine() functions.
+    def __init__(self):
+        self.required_variables = []
 
-
-    def __init__(self,delay, avg_length, phase_shift_per_turn, position=None, n_slices=None, in_processor_chain=True):
-        super(self.__class__, self).__init__(delay, avg_length, phase_shift_per_turn, position, n_slices, in_processor_chain)
-
-    def __len__(self):
-        # returns a number of signals in the register after delay
-        if (len(self.register) - self.delay) > 0:
-            return 1
-        else:
-            return 0
-
-    def next(self):
-
-        signal_length = len(self.register[0])
-        if self.n_iter_left == 0:
-            raise StopIteration
-        elif len(self.register) < self.max_reg_length:
-            self.n_iter_left = 0
-            return (np.zeros(signal_length),np.zeros(signal_length),0,self.position)
-        else:
-            self.n_iter_left = 0
-
-            if self.delay == 0:
-                temp_data = np.array(self.register)
-            else:
-                temp_data = np.array(self.register)[:-1*self.delay]
-
-            re = []
-            im = []
-
-            for i in range(signal_length):
-                h = signal.hilbert(temp_data[:, i])
-                re.append(np.real(h))
-                im.append(np.imag(h))
-
-            re = np.array(re)
-            im = np.array(im)
-
-            total_re = np.zeros(len(re))
-            total_im = np.zeros(len(re))
-
-            counter = 0
-
-            edge_skip = 0
-
-            for i in range(edge_skip,(len(re[0])-edge_skip)):
-
-                delay = 1. * float(self.avg_length-i-1) * self.phase_shift_per_turn
-                s = np.sin(delay)
-                c = np.cos(delay)
-                re_t = re[:,i]
-                im_t = im[:,i]
-                total_re += c * re_t - s * im_t
-                total_im += s * re_t + s * im_t
-                counter +=1
-
-            total_re /= float(counter)
-            total_im /= float(counter)
-
-            delay = -1. * float(self.delay) * self.phase_shift_per_turn
-            return (total_re, -1.*total_im, delay, self.position)
-
-    def combine(self,x1,x2,reader_position,x_to_xp = False):
-        # turns vector x1 to the readers phase
-
-        re = x1[0]
-        im = x1[1]
-        delta_phi = x1[2]
-        if reader_position is not None:
-            delta_position = x1[3] - reader_position
-            delta_phi += delta_position
-            if delta_position > 0:
-                delta_phi -= self.phase_shift_per_turn
-            if x_to_xp == True:
-                delta_phi -= pi / 2.
-
-        s = np.sin(delta_phi)
-        c = np.cos(delta_phi)
-
-        return np.array([c * re - s * im, s * re + c * im])
+    def process(self,signal, *args):
+        return signal
