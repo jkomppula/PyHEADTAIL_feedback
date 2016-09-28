@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.1.0 -> v0.1.1
+    * np.dot slowed down the calculations in LSF by a factor of two or more. It has been solved by using a solution which
+      utilizes Gemm function from BLAS (scipy.linalg.get_blas_funcs("gemm"))
+    * Minor modifications to the comments
+
 ## v0.0.3 -> v0.1.0
     * critical changes in API!
     * statistical variable check has been add to feedback classes in feedback.py file
