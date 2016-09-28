@@ -1,6 +1,3 @@
-'''
-
-'''
 import itertools
 import math
 import copy
@@ -10,7 +7,14 @@ import numpy as np
 from scipy.constants import c, pi
 import scipy.integrate as integrate
 import scipy.special as special
+from scipy import linalg
 
+
+# An alternative for np.dot because it slows down the calculations in LSF by a factor of two or more
+gemm = linalg.get_blas_funcs("gemm")
+
+def dot(A,B):
+    return np.squeeze(gemm(1, A, B))
 
 """
     This file contains signal processors which can be used in the feedback module in PyHEADTAIL.
@@ -77,7 +81,6 @@ class LinearTransform(object):
         self._bin_middle = bin_middle
         self._matrix_symmetry = matrix_symmetry
 
-
         self._z_bin_set = None
         self._matrix = None
 
@@ -85,6 +88,7 @@ class LinearTransform(object):
         self._recalculate_matrix_always = recalculate_always
 
         self.required_variables = ['z_bins','mean_z']
+
 
     @abstractmethod
     def response_function(self, ref_bin_mid, ref_bin_from, ref_bin_to, bin_mid, bin_from, bin_to):
@@ -109,7 +113,10 @@ class LinearTransform(object):
             self.__generate_matrix(slice_set.z_bins,bin_midpoints)
 
         # process the signal
-        return np.dot(self._matrix,signal)
+        return dot(self._matrix, signal)
+
+        # np.dot can't be used, because it slows down the calculations in LSF by a factor of two or more
+        # return np.dot(self._matrix,signal)
 
     def clear_matrix(self):
         self._matrix = np.array([])
@@ -202,7 +209,7 @@ class LinearTransform(object):
         elif self._norm_type is None:
             self._norm_coeff = 1.
 
-        self._matrix /= float(self._norm_coeff)
+        self._matrix = self._matrix / float(self._norm_coeff)
 
 
 class Averager(LinearTransform):
@@ -335,24 +342,31 @@ class Filter(LinearTransform):
 
 
 class Sinc(Filter):
-    """ A nearly ideal lowpass filter, i.e. a windowed Sinc filter.
+    """ A nearly ideal lowpass filter, i.e. a windowed Sinc filter. The impulse response of the ideal lowpass filter
+        is Sinc function, but because it is infinite length in both positive and negative time directions, it can not be
+        used directly. Thus, the length of the impulse response is limited by using windowing. Properties of the filter
+        depend on the width of the window and the type of the windows and must be written down. Too long window causes
+        ripple to the signal in the time domain and too short window decreases the slope of the filter in the frequency
+        domain. The default values are a good compromise. More details about windowing can be found from
+        http://www.dspguide.com/ch16.htm and different options for the window can be visualized, for example, by using
+        code in example/test 004_analog_signal_processors.ipynb
     """
 
-    def __init__(self, f_cutoff, delay=0., window_length = 3., window_type = 'blackman' , norm_type=None, norm_range=None):
+    def __init__(self, f_cutoff, delay=0., window_width = 3, window_type = 'blackman' , norm_type=None, norm_range=None):
         """
         :param f_cutoff: a cutoff frequency of the filter
         :param delay: a delay of the filter [s]
-        :param window_length: a length of the window applied to Sinc filter [2*pi*f_c]
+        :param window_width: a (half) width of the window in the units of zeros of Sinc(x) [2*pi*f_c]
         :param window_type: a shape of the window, blackman or hamming
         :param norm_type: see class LinearTransform
         :param norm_range: see class LinearTransform
         """
-        self.window_length = float(window_length)
+        self.window_width = float(window_width)
         self.window_type = window_type
         super(self.__class__, self).__init__('lowpass', f_cutoff, delay, None, norm_type, norm_range)
 
     def raw_impulse_response(self, x):
-        if np.abs(x/pi) > self.window_length:
+        if np.abs(x/pi) > self.window_width:
             return 0.
         else:
             if self.window_type == 'blackman':
@@ -361,11 +375,11 @@ class Sinc(Filter):
                 return np.sinc(x/pi)*self.hamming_window(x)
 
     def blackman_window(self,x):
-        return 0.42-0.5*np.cos(2.*pi*(x/pi+self.window_length)/(2.*self.window_length))\
-               +0.08*np.cos(4.*pi*(x/pi+self.window_length)/(2.*self.window_length))
+        return 0.42-0.5*np.cos(2.*pi*(x/pi+self.window_width)/(2.*self.window_width))\
+               +0.08*np.cos(4.*pi*(x/pi+self.window_width)/(2.*self.window_width))
 
     def hamming_window(self, x):
-        return 0.54-0.46*np.cos(2.*pi*(x/pi+self.window_length)/(2.*self.window_length))
+        return 0.54-0.46*np.cos(2.*pi*(x/pi+self.window_width)/(2.*self.window_width))
 
 
 class Lowpass(Filter):
@@ -656,7 +670,6 @@ class AdditionFromFile(Addition):
     """ Adds an array to the signal, which is produced by interpolation from the loaded data. Note the seed for
         the interpolation can be any of those presented in the abstract function.
     """
-
 
     def __init__(self,filename, x_axis='time', seed='bin_midpoint',normalization = None, recalculate_multiplier = False):
         super(self.__class__, self).__init__(seed, normalization, recalculate_multiplier)

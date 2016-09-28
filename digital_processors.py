@@ -5,6 +5,14 @@ import numpy as np
 from scipy.constants import c, pi
 from itertools import izip, count
 from processors import Register
+from scipy import linalg
+
+# An alternative for np.dot because it slows down the calculations in LSF by a factor of two or more
+gemm = linalg.get_blas_funcs("gemm")
+
+def dot(A,B):
+    return np.squeeze(gemm(1, A, B))
+
 
 """
     This file contains signal processors which can be used for emulating digital signal processing in the feedback
@@ -16,7 +24,6 @@ from processors import Register
     @copyright CERN
 
 """
-
 
 class Resampler(object):
     def __init__(self,type, sampling_rate, sync_method):
@@ -45,6 +52,7 @@ class Resampler(object):
         self._matrix = None
 
         self.required_variables = ['z_bins']
+
 
     def __generate_matrix(self, z_bins_input, z_bins_output):
         self._matrix = np.zeros((len(z_bins_output)-1, len(z_bins_input)-1))
@@ -110,7 +118,9 @@ class Resampler(object):
 
             self.__generate_matrix(z_bins_input, z_bins_output)
 
-        return np.dot(self._matrix, signal)
+        return dot(self._matrix, signal)
+        # np.dot can't be used, because it slows down the calculations in LSF by a factor of two or three
+        # return np.dot(self._matrix, signal)
 
 
 class Quantizer(object):
