@@ -4,7 +4,7 @@ cimport cython
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-def cython_dot(double[:, ::1] matrix not None, double[::1] vector not None):
+def cython_dot_p(double[:, ::1] matrix not None, double[::1] vector not None):
 
     cdef np.intp_t i, j, n_samples
     n_samples = matrix.shape[0]

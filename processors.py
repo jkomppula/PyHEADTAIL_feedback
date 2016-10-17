@@ -8,7 +8,8 @@ from scipy.constants import c, pi
 import scipy.integrate as integrate
 import scipy.special as special
 from scipy import linalg
-from cython_dot import cython_dot
+import pyximport; pyximport.install()
+import cython_dot
 
 # An alternative for np.dot because it slows down the calculations in LSF by a factor of two or more
 gemm = linalg.get_blas_funcs("gemm")
@@ -113,7 +114,7 @@ class LinearTransform(object):
             self.__generate_matrix(slice_set.z_bins,bin_midpoints)
 
         # process the signal
-        return cython_dot(self._matrix, signal)
+        return np.array(cython_dot.cython_dot_p(self._matrix, signal))
 
         # np.dot can't be used, because it slows down the calculations in LSF by a factor of two or more
         # return np.dot(self._matrix,signal)
