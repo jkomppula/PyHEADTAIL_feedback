@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.1.1 -> v0.1.2
+    * The previous solution to the np.dot performance issue in LSF did not work with all python versions. Thus in this
+      version matrix product has been written in Cython which seems to be a stable solution to the problem.
+
 ## v0.1.0 -> v0.1.1
     * np.dot slowed down the calculations in LSF by a factor of two or more. It has been solved by using a solution which
       utilizes Gemm function from BLAS (scipy.linalg.get_blas_funcs("gemm"))
