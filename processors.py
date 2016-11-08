@@ -310,7 +310,7 @@ class Filter(LinearTransform):
 
             def transfer_function(x):
                 if np.abs(x) < threshold_tau:
-                    return self.raw_impulse_response(np.sign(x)*threshold_tau)
+                    return self.raw_impulse_response(np.sign(x)*threshold_tau)/ norm_coeff
                 else:
                     return self.raw_impulse_response(x) / norm_coeff
         else:
