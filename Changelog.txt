@@ -1,5 +1,8 @@
 # Changelog
 
+## v0.1.2 -> v0.1.3
+    * Bug fix: Impulse response was not properly normalized, when the second cut off frequency was set to filters
+
 ## v0.1.1 -> v0.1.2
     * The previous solution to the np.dot performance issue in LSF did not work with all python versions. Thus in this
       version matrix product has been written in Cython which seems to be a stable solution to the problem.
