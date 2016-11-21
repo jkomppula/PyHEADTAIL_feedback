@@ -1,7 +1,8 @@
 import numpy as np
 import collections
 import itertools
-
+import copy
+from PyHEADTAIL_for_mpi.mpi import mpi_data
 """
     This file contains modules, which can be used as a feedback module/object in PyHEADTAIL. Actual signal processing is
     done by using signal processors written to files processors.py and digital_processors.py. A list of signal
@@ -12,7 +13,7 @@ import itertools
     @copyright CERN
 """
 
-def get_statistical_variables(processors, variables = None):
+def get_processor_variables(processors, required_variables = None):
     """Function which checks statistical variables required by signal processors
 
     :param processors: a list of signal processors
@@ -21,22 +22,23 @@ def get_statistical_variables(processors, variables = None):
     the signal processors
     """
 
-    if variables is None:
-        variables = []
+    if required_variables is None:
+        required_variables = []
 
     for processor in processors:
-        variables.extend(processor.required_variables)
+        required_variables.extend(processor.required_variables)
 
-    variables = list(set(variables))
+    required_variables = list(set(required_variables))
 
-    if 'z_bins' in variables:
-        variables.remove('z_bins')
+    if 'z_bins' in required_variables:
+        required_variables.remove('z_bins')
 
-    if 'n_macroparticles_per_slice' in variables:
-        variables.remove('n_macroparticles_per_slice')
+    statistical_variables = copy.deepcopy(required_variables)
 
+    if 'n_macroparticles_per_slice' in statistical_variables:
+        statistical_variables.remove('n_macroparticles_per_slice')
 
-    return variables
+    return required_variables, statistical_variables
 
 
 class IdealBunchFeedback(object):
@@ -106,14 +108,70 @@ class OneboxFeedback(object):
 
     def track(self,bunch):
 
-        if self._statistical_variables is None:
-            if self._axis == 'divergence':
-                self._statistical_variables = ['mean_xp', 'mean_yp']
-            elif self._axis == 'displacement':
-                self._statistical_variables = ['mean_x', 'mean_y']
+        if self._mpi:
+            self._mpi_track(bunch)
+        else:
+            self._normal_track(bunch)
 
-            self._statistical_variables = get_statistical_variables(self._processors_x, self._statistical_variables)
-            self._statistical_variables = get_statistical_variables(self._processors_y, self._statistical_variables)
+    def _mpi_track(self,superbunch):
+        # this is the new code required by the multi bunch feedback
+
+        # creates a mpi gatherer, if it has not been created earlier
+        if self._mpi_gatherer is None:
+            self._mpi_gatherer = mpi_data.MpiGatherer(self._slicer, self._required_variables)
+
+        # gathers data from all bunches
+        self._mpi_gatherer.gather(superbunch)
+
+        signal_x = np.array([])
+        signal_y = np.array([])
+
+        # slice set data from all bunches in all processors can be found from under mpi_gatherer.total_data object
+        if self._axis == 'divergence':
+            signal_x = np.array([s for s in self._mpi_gatherer.total_data.mean_xp])
+            signal_y = np.array([s for s in self._mpi_gatherer.total_data.mean_yp])
+
+        elif self._axis == 'displacement':
+            signal_x = np.array([s for s in self._mpi_gatherer.total_data.mean_x])
+            signal_y = np.array([s for s in self._mpi_gatherer.total_data.mean_y])
+
+
+        # the object mpi_gatherer.total_data can be used as a normal slice_set object expect that bin_set is slightly different
+        for processor in self._processors_x:
+            signal_x = processor.process(signal_x,self._mpi_gatherer.total_data, None, mpi = True)
+
+        for processor in self._processors_y:
+            signal_y = processor.process(signal_y,self._mpi_gatherer.total_data, None, mpi = True)
+
+        # mpi_gatherer.gather(...) splits the superbunch, so it is efficient to use same bunch list
+        for i, b in enumerate(self._mpi_gatherer.bunch_list):
+
+            # the slice set data from all bunches in all processors pass the signal processors. Here, the correction
+            # signals for the bunches tracked in this processors are picked by using indexes found from
+            # mpi_gatherer.total_data.local_data_locations
+            idx_from = self._mpi_gatherer.total_data.local_data_locations[i][0]
+            idx_to = self._mpi_gatherer.total_data.local_data_locations[i][1]
+
+            correction_x = self._gain_x*signal_x[idx_from:idx_to]
+            correction_y = self._gain_y*signal_y[idx_from:idx_to]
+
+            # mpi_gatherer has also slice set list, which can be used for applying the kicks
+            p_idx = self._mpi_gatherer.slice_set_list[i].particles_within_cuts
+            s_idx = self._mpi_gatherer.slice_set_list[i].slice_index_of_particle.take(p_idx)
+
+            if self._axis == 'divergence':
+                b.xp[p_idx] -= correction_x[s_idx]
+                b.yp[p_idx] -= correction_y[s_idx]
+
+            elif self._axis == 'displacement':
+                b.x[p_idx] -= correction_x[s_idx]
+                b.y[p_idx] -= correction_y[s_idx]
+
+        # at the end the superbunch must be rebunched. Without that the kicks do not apply to the next turn
+        self._mpi_gatherer.rebunch(superbunch)
+
+    def _normal_track(self, bunch):
+
 
         slice_set = bunch.get_slices(self._slicer, statistics=self._statistical_variables)
 
