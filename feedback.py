@@ -2,7 +2,8 @@ import numpy as np
 import collections
 import itertools
 import copy
-from PyHEADTAIL_for_mpi.mpi import mpi_data
+import timeit
+from PyHEADTAIL.mpi import mpi_data
 """
     This file contains modules, which can be used as a feedback module/object in PyHEADTAIL. Actual signal processing is
     done by using signal processors written to files processors.py and digital_processors.py. A list of signal
@@ -88,7 +89,17 @@ class OneboxFeedback(object):
         the signal processors. Axes (xp/yp or x/y) can be chosen by giving input parameter axis='divergence' for xp/yp
         and axis='displacement' for x/y. The default axis is divergence.
     """
-    def __init__(self, gain, slicer, processors_x, processors_y, axis='divergence'):
+    def __init__(self, gain, slicer, processors_x, processors_y, axis='divergence', mpi = False, extra_statistics = None):
+        """
+
+        :param gain:
+        :param slicer:
+        :param processors_x:
+        :param processors_y:
+        :param axis:
+        :param mpi: if True, data are gathered from the processors
+        :param extra_statistics: variable for debugging mpi and plotting the gathered data. It will be removed
+        """
 
         if isinstance(gain, collections.Container):
             self._gain_x = gain[0]
@@ -104,8 +115,19 @@ class OneboxFeedback(object):
 
         self._axis = axis
 
-        self._statistical_variables = None
+        if self._axis == 'divergence':
+            self._required_variables = ['mean_xp', 'mean_yp']
+        elif self._axis == 'displacement':
+            self._required_variables = ['mean_x', 'mean_y']
 
+        if extra_statistics is not None:
+            self._required_variables += extra_statistics
+
+        self._required_variables, self._statistical_variables = get_processor_variables(self._processors_x, self._required_variables)
+        self._required_variables, self._statistical_variables = get_processor_variables(self._processors_y, self._required_variables)
+
+        self._mpi = mpi
+        self._mpi_gatherer = None
     def track(self,bunch):
 
         if self._mpi:
@@ -135,13 +157,16 @@ class OneboxFeedback(object):
             signal_x = np.array([s for s in self._mpi_gatherer.total_data.mean_x])
             signal_y = np.array([s for s in self._mpi_gatherer.total_data.mean_y])
 
-
+        t1 = timeit.default_timer()
         # the object mpi_gatherer.total_data can be used as a normal slice_set object expect that bin_set is slightly different
         for processor in self._processors_x:
-            signal_x = processor.process(signal_x,self._mpi_gatherer.total_data, None, mpi = True)
+            signal_x = processor.process(signal_x,self._mpi_gatherer.total_data, None, self._mpi_gatherer.bunch_by_bunch_data)
 
         for processor in self._processors_y:
-            signal_y = processor.process(signal_y,self._mpi_gatherer.total_data, None, mpi = True)
+            signal_y = processor.process(signal_y,self._mpi_gatherer.total_data, None, self._mpi_gatherer.bunch_by_bunch_data)
+
+        t2 = timeit.default_timer()
+        print 'total signal processing time: ' + str(t2-t1)
 
         # mpi_gatherer.gather(...) splits the superbunch, so it is efficient to use same bunch list
         for i, b in enumerate(self._mpi_gatherer.bunch_list):
