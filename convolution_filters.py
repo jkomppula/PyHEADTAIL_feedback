@@ -5,8 +5,13 @@ from scipy.constants import c, pi
 import scipy.integrate as integrate
 import timeit
 
+# TODO: signal extension to the harmonic sampling rate
 
 class BunchImpulse(object):
+    """
+
+    """
+
     def __init__(self,bunch_idx, signal_bin_set, impulse_response_bin_set, impulse_response_value, impulse_parameters
                  , tot_n_bunches):
 
@@ -18,7 +23,7 @@ class BunchImpulse(object):
         self._impulse_response_view = memoryview(self._impulse_response_value)
 
         self._zero_bin = impulse_parameters[0]
-        print 'self._zero_bin: '+ str(self._zero_bin)
+
         self._bin_spacing = impulse_parameters[1]
 
         self._total_impulse = np.zeros(len(impulse_response_value) + len(signal_bin_set) - 2)
@@ -27,15 +32,10 @@ class BunchImpulse(object):
         self._total_impulse_view = memoryview(self._total_impulse)
 
         self._signal_edges = (signal_bin_set[0], signal_bin_set[-1])
-        print 'self._signal_edges: '+ str(self._signal_edges)
         self._n_slices = len(signal_bin_set) - 1
-        # TODO: Think this!
-        # TODO: Add signal edges
+
         self._impulse_edges = (self._signal_edges[0] + impulse_response_bin_set[0],
                                self._signal_edges[1] + impulse_response_bin_set[-1])
-
-
-        print 'self._impulse_edges: '+ str(self._impulse_edges)
 
         self._signal_length = len(signal_bin_set) - 1
         self.impulse_mem_views = []
@@ -45,84 +45,40 @@ class BunchImpulse(object):
         self.signal = np.zeros(self._n_slices)
         self._signal_view = memoryview(self.signal)
 
-        self._reset_signal = True # Flag which indicates that the signal has been ridden and it can be reset
-
     def build_impulse(self,signal):
-        # self._total_impulse.fill(0.)
-        # print 'Signal in build impulse' + str(signal)
-        # print 'impulse_response_value in build impulse' + str(self._impulse_response_value)
         np.copyto(self._total_impulse,np.convolve(self._impulse_response_value,signal))
-        # self._total_impulse = np.convolve(self._impulse_response_value,signal)
-        # print 'total_impulse in build impulse' + str(self._total_impulse)
-
-        # for i in enumerate(self._total_impulse):
-        #     if (i>self._signal_length) and (i<(self._total_impulse_length-self._signal_length)):
-        #         self._total_impulse[i] = np.sum(signal*)
-
-
-        # for i,val in enumerate(signal):
-        #     idx_from = i
-        #     idx_to = idx_from + self._impulse_response_length
-        #
-        #     self._total_impulse[idx_from:idx_to] = val*self._impulse_response_value
-
 
     def check_if_target(self,target_idx,bunch_impulse_target):
+
+
         signal_edges = bunch_impulse_target.signal_edges
         impulse_edges = self._impulse_edges
         max_signal_length = bunch_impulse_target.max_signal_length
         max_impulse_length = self._total_impulse_length
 
-        # TODO: simplify this
+        if not (impulse_edges[1] <= signal_edges[0]) or (impulse_edges[0] >= signal_edges[1]):
 
-        if (impulse_edges[0] <= signal_edges[0]) and (impulse_edges[1] >= signal_edges[1]):
-            # the signal inside the impulse
-            idx_target_from = 0
-            idx_target_to = max_signal_length
-            idx_impulse_from = int((signal_edges[0]-impulse_edges[0])/self._bin_spacing)
-            idx_impulse_to = idx_impulse_from + max_signal_length
-            # self.impulse_mem_views = np.array(self._total_impulse_view[idx_impulse_from:idx_impulse_to], copy=False)
-            self.impulse_mem_views.append(np.array(self._total_impulse_view[idx_impulse_from:idx_impulse_to], copy=False))
-            self.target_bunches.append(target_idx)
-            bunch_impulse_target.add_signal_to_total_signal(self._bunch_idx,idx_target_from,idx_target_to)
+            if impulse_edges[0] <= signal_edges[0]:
+                idx_target_from = 0
+                # TODO: check rounding error here
+                idx_impulse_from = int((signal_edges[0]-impulse_edges[0])/self._bin_spacing)
+            else:
+                # TODO: check rounding error here
+                idx_target_from = int((impulse_edges[0]-signal_edges[0])/self._bin_spacing)
+                idx_impulse_from = 0
 
-        elif (impulse_edges[0] >= signal_edges[0]) and (impulse_edges[1] <= signal_edges[1]):
-            # the impulse inside the signal
-            idx_target_from = int((impulse_edges[0]-signal_edges[0])/self._bin_spacing)
-            idx_target_to = idx_target_from + max_impulse_length
-            idx_impulse_from = 0
-            idx_impulse_to = max_impulse_length
-            # self.impulse_mem_views = np.array(self._total_impulse_view[idx_impulse_from:idx_impulse_to], copy=False)
-            self.impulse_mem_views.append(np.array(self._total_impulse_view[idx_impulse_from:idx_impulse_to], copy=False))
-            self.target_bunches.append(target_idx)
-            bunch_impulse_target.add_signal_to_total_signal(self._bunch_idx,idx_target_from,idx_target_to)
+            if impulse_edges[1] <= signal_edges[1]:
+                idx_impulse_to = max_impulse_length
+                idx_target_to = idx_target_from + idx_impulse_to - idx_impulse_from
+            else:
+                idx_target_to = max_signal_length
+                idx_impulse_to = idx_impulse_from + idx_target_to - idx_target_from
 
-        elif (impulse_edges[1] >= signal_edges[0]) and (impulse_edges[1] <= signal_edges[1]):
-            # the impulse partially before the signal
-            idx_target_from = 0
-            idx_target_to = int((impulse_edges[1]-signal_edges[0])/self._bin_spacing)
-            idx_impulse_from = self.max_signal_length - idx_target_to
-            idx_impulse_to = self.max_signal_length
-            # self.impulse_mem_views = np.array(self._total_impulse_view[idx_impulse_from:idx_impulse_to], copy=False)
-            self.impulse_mem_views.append(np.array(self._total_impulse_view[idx_impulse_from:idx_impulse_to], copy=False))
-            self.target_bunches.append(target_idx)
-            bunch_impulse_target.add_signal_to_total_signal(self._bunch_idx,idx_target_from,idx_target_to)
-
-        elif (impulse_edges[0] >= signal_edges[0]) and (impulse_edges[0] <= signal_edges[1]):
-            # the impulse partially after the signal
-            idx_target_from = max_signal_length - int((signal_edges[0]-impulse_edges[0])/self._bin_spacing)
-            idx_target_to = max_signal_length
-            idx_impulse_from = 0
-            idx_impulse_to = idx_target_to - idx_target_from
-            # self.impulse_mem_views = np.array(self._total_impulse_view[idx_impulse_from:idx_impulse_to], copy=False)
             self.impulse_mem_views.append(np.array(self._total_impulse_view[idx_impulse_from:idx_impulse_to], copy=False))
             self.target_bunches.append(target_idx)
             bunch_impulse_target.add_signal_to_total_signal(self._bunch_idx,idx_target_from,idx_target_to)
 
     def add_signal_to_total_signal(self,bunch_idx,idx_from,idx_to):
-        print 'bunch_idx,idx_from,idx_to: ' + str(bunch_idx) + ' ' + str(idx_from) + ' ' + str(idx_to)
-        print self.signal_mem_views
-        print dir(self._signal_view)
         self.signal_mem_views[bunch_idx] = np.array(self._signal_view[idx_from:idx_to], copy=False)
 
     @property
@@ -164,8 +120,9 @@ class Convolution(object):
 
         self._n_slices = None
 
-        self._impulse_response_z = None
-        self._impulse_response_value = None
+        self._impulse_z_bins = None
+        self._impulse_mean_z = None
+        self._impulse_values = None
 
         self._combiner = None
 
@@ -190,40 +147,28 @@ class Convolution(object):
         if self._output_signal is None:
             self.__init_variables(signal,bunch_set)
 
-        for bunch_impulse in self._bunch_impulses:
-            bunch_impulse.clear_signal()
-
         for i,bunch_impulse in enumerate(self._bunch_impulses):
-            if i< 10:
-                t1 = timeit.default_timer()
 
             data_slot = (i*self._n_slices,(i+1)*self._n_slices)
 
             bunch_impulse.build_impulse(signal[data_slot[0]:data_slot[1]])
-            if i< 10:
-                t2 = timeit.default_timer()
 
-            for j, impulse_mem_view in enumerate(bunch_impulse.impulse_mem_views):
-                target_bunch = bunch_impulse.target_bunches[j]
+            for target_bunch, impulse_mem_view in zip(bunch_impulse.target_bunches, bunch_impulse.impulse_mem_views):
 
                 if self._bunch_impulses[target_bunch].signal_mem_views[i] is not None:
                     np.copyto(self._bunch_impulses[target_bunch].signal_mem_views[i], self._bunch_impulses[target_bunch].signal_mem_views[i] + impulse_mem_view)
                 else:
                     raise ValueError('Memviews are not synchronized!')
 
-            if i< 10:
-                t3 = timeit.default_timer()
-                print 'Impulse: ' + str(t2-t1) + ' and gather ' + str(t3-t2)
 
         self._output_signal.fill(0)
 
         for i,bunch_impulse in enumerate(self._bunch_impulses):
             idx_from = i * self._n_slices
             idx_to = (i + 1) * self._n_slices
-            # if np.sum(bunch_impulse.signal) != 0:
-            #     print 'bunch_impulse.signal: ' + str(bunch_impulse.signal)
             np.copyto(self._output_signal[idx_from:idx_to],bunch_impulse.signal)
-        # print self._output_signal
+            bunch_impulse.clear_signal()
+
         return self._output_signal
 
     def _clear_signals(self):
@@ -245,58 +190,30 @@ class Convolution(object):
 
     def __generate_impulse_response(self,bunch_set):
 
-        # calculates the bin width of the slices from the slice set of the first bunch
-        self._bin_spacing = 0.
-        n_values = 0
-        for i, (mid_1, mid_2) in enumerate(zip(bunch_set[0].z_bins, bunch_set[0].z_bins[1:])):
-            n_values += 1
-            self._bin_spacing += (mid_2-mid_1)
+        self._bin_spacing = np.mean(bunch_set[0].z_bins[1:]-bunch_set[0].z_bins[:-1])
 
-        self._bin_spacing = self._bin_spacing/float(n_values)
-
-        if self._impulse_range[0] > 0.:
-            temp = np.arange(-0.5*self._bin_spacing,self._impulse_range[1],self._bin_spacing)
-            n_outside = len(temp[temp<self._impulse_range[0]])
-            self._impulse_response_edges = temp[n_outside:]
-            self._zero_bin = -1 * n_outside
-
-
-        elif self._impulse_range[1] < 0.:
-            temp = np.arange(-0.5*self._bin_spacing,-1.*self._impulse_range[0],self._bin_spacing)
-            self._impulse_response_edges = -1.*temp[::-1]
-            n_outside = len(self._impulse_response_edges[self._impulse_response_edges>self._impulse_range[1]])
-            self._impulse_response_edges = self._impulse_response_edges[:-1*n_outside]
-            self._zero_bin = len(temp) - 2
-
-        elif self._impulse_range[0] == 0:
-            self._impulse_response_edges = np.arange(-0.5*self._bin_spacing,self._impulse_range[1],self._bin_spacing)
-            self._zero_bin = 0
-
-        elif self._impulse_range[1] == 0:
-            temp = np.arange(-0.5*self._bin_spacing,-1.*self._impulse_range[0],self._bin_spacing)
-            self._impulse_response_edges = -1. * temp[::-1]
-            self._zero_bin = len(self._impulse_response_edges) - 2
-
+        if self._impulse_range[0] < -0.5*self._bin_spacing:
+            temp = np.arange(0.5*self._bin_spacing,-1.*self._impulse_range[0],self._bin_spacing)
+            z_bins_minus = -1.*temp[::-1]
         else:
-            temp_1 = np.arange(0.5*self._bin_spacing,-1.*self._impulse_range[0],self._bin_spacing)
-            temp_1 = -1. * temp_1[::-1]
-            temp_2 = np.arange(0.5*self._bin_spacing,self._impulse_range[1],self._bin_spacing)
-            self._impulse_response_edges = np.append(temp_1, temp_2)
-            self._zero_bin = len(temp_1) - 1
+            z_bins_minus = np.array([-0.5 * self._bin_spacing])
 
-        self._impulse_response_z = []
-        for edge_1, edge_2 in zip(self._impulse_response_edges,self._impulse_response_edges[1:]):
-            self._impulse_response_z.append((edge_2+edge_1)/2.)
+        if self._impulse_range[1] > 0.5*self._bin_spacing:
+            z_bins_plus = np.arange(0.5*self._bin_spacing,self._impulse_range[1],self._bin_spacing)
+        else:
+            z_bins_plus = np.array([0.5*self._bin_spacing])
 
-        self._impulse_response_z = np.array(self._impulse_response_z)
+        self._impulse_z_bins = np.append(z_bins_minus,z_bins_plus)
+        self._impulse_z_bins = self._impulse_z_bins[self._impulse_z_bins >= (self._impulse_range[0] - 0.5*self._bin_spacing)]
+        self._impulse_z_bins = self._impulse_z_bins[self._impulse_z_bins <= (self._impulse_range[1] + 0.5*self._bin_spacing)]
 
-        self._impulse_response_value = self.response_function(self._impulse_response_z,self._impulse_response_edges)
-        print self._impulse_response_edges
-        print self._impulse_response_z
-        print self._impulse_response_value
-        # self._signal_length_increment = max(0,self._zero_bin) + max(0,(len(self._impulse_response_value)-self._zero_bin-1))
+        self._impulse_mean_z = (self._impulse_z_bins[1:]+self._impulse_z_bins[:-1])/2.
 
+        self._impulse_response_value = self.response_function(self._impulse_mean_z,self._impulse_z_bins)
 
+        # print 'self._impulse_z_bins: ' + str(self._impulse_z_bins)
+        # print 'self._impulse_mean_z: ' + str(self._impulse_mean_z)
+        # print 'self._impulse_response_value: ' + str(self._impulse_response_value)
 
     # +-1 bin jitter in impulse response to another bunches
     # TODO: next step:calculate off sets
@@ -306,17 +223,14 @@ class Convolution(object):
 
         impulse_parameters = (self._zero_bin,self._bin_spacing)
 
-
         for i, bunch in enumerate(bunch_set):
-            self._bunch_impulses.append(BunchImpulse(i, bunch.z_bins,self._impulse_response_z,self._impulse_response_value,impulse_parameters,len(bunch_set)))
+            self._bunch_impulses.append(BunchImpulse(i, bunch.z_bins,self._impulse_mean_z,self._impulse_response_value,impulse_parameters,len(bunch_set)))
 
 
         for i, bunch_impulse in enumerate(self._bunch_impulses):
 
             for j, bunch_impulse_target in enumerate(self._bunch_impulses):
                 bunch_impulse.check_if_target(j,bunch_impulse_target)
-
-
 
     @abstractmethod
     def response_function(self, impulse_response_z,impulse_response_edges):
