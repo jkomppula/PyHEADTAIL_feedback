@@ -90,36 +90,31 @@ class LinearTransform(object):
         # Impulse response function of the processor
         pass
 
-    def process(self,signal,slice_set,phase_advance = None,mpi = False):
+    def process(self, signal, slice_sets, phase_advance=None):
 
-        # check if the bin set is changed
-        if self._bin_check and mpi == False: # TODO: mpi check?
-            self._recalculate_matrix = self.__check_bin_set(slice_set.z_bins)
-
-        # recalculte the matrix if necessary
         if self._recalculate_matrix:
-
-            if self._recalculate_matrix_always == False:
-                self._recalculate_matrix = False
-
-            if mpi == False:
-                bin_edges = []
-
-                for i, j in zip(slice_set.z_bins, slice_set.z_bins[1:]):
-                    bin_edges.append((i,j))
-                bin_edges = np.array(bin_edges)
+            if not isinstance(slice_sets, list):
+                mpi = False
+                slice_sets = [slice_sets]
             else:
-                bin_edges = slice_set.bin_edges
-                # print bin_edges
+                mpi = True
 
-            if self._bin_middle == 'particles':
-                bin_midpoints = np.array(copy.copy(slice_set.mean_z))
-            elif self._bin_middle == 'bin':
-                bin_midpoints = np.array([(edges[0]+edges[1]) / 2. for edges in bin_edges])
+            bin_edges = np.array([])
+            bin_midpoints = np.array([])
 
+            for slice_set in slice_sets:
+                edges = []
+                for i, j in zip(slice_set.z_bins, slice_set.z_bins[1:]):
+                    edges.append((i,j))
+                bin_edges = np.append(bin_edges,np.array(edges), axis=0)
 
+                if self._bin_middle == 'particles':
+                    bin_midpoints = np.append(bin_midpoints,slice_set.mean_z)
+                elif self._bin_middle == 'bin':
+                    bin_midpoints = np.append(bin_midpoints,(slice_set.z_bins[1:]+slice_set.z_bins[:-1])/2.)
 
             self.__generate_matrix(bin_edges,bin_midpoints,mpi)
+
 
         # process the signal
         return np.array(cython_matrix_product(self._matrix, signal))
@@ -130,21 +125,6 @@ class LinearTransform(object):
     def clear_matrix(self):
         self._matrix = np.array([])
         self._recalculate_matrix = True
-
-    def __check_bin_set(self,z_bin_set):
-
-        if self._z_bin_set is None:
-            self._z_bin_set = copy.copy(z_bin_set)
-            return True
-
-        else:
-            changed = False
-            for old, new in itertools.izip(self._z_bin_set,z_bin_set):
-                if old != new:
-                    changed = True
-                    self._z_bin_set = copy.copy(z_bin_set)
-                    break
-            return changed
 
     def print_matrix(self):
         for row in self._matrix:
@@ -629,24 +609,42 @@ class Multiplication(object):
     def multiplication_function(self, seed):
         pass
 
-    def process(self,signal,slice_set, *args):
+    def process(self,signal,slice_sets, *args):
 
         if (self._multiplier is None) or self._recalculate_multiplier:
-            self.__calculate_multiplier(signal,slice_set)
+            self.__calculate_multiplier(signal,slice_sets)
 
+        # print 'self._multiplier: ' + str(self._multiplier)
         return self._multiplier*signal
 
-    def __calculate_multiplier(self,signal,slice_set):
+    def __calculate_multiplier(self,signal,slice_sets):
+        if not isinstance(slice_sets, list):
+            slice_sets = [slice_sets]
+
+        if self._multiplier is None:
+            self._multiplier = np.zeros(len(signal))
+
         if self._seed == 'bin_length':
-            bin_set = slice_set.z_bins
-            self._multiplier = np.array([(j-i) for i, j in zip(bin_set, bin_set[1:])])
+            start_idx = 0
+            for slice_set in slice_sets:
+                np.copyto(self._multiplier[start_idx:(start_idx+len(slice_set.z_bins)-1)],(slice_set.z_bins[1:]-slice_set.z_bins[:-1]))
+                start_idx += (len(slice_set.z_bins)-1)
+
         elif self._seed == 'bin_midpoint':
-            bin_set = slice_set.z_bins
-            self._multiplier = np.array([(i+j)/2. for i, j in zip(bin_set, bin_set[1:])])
+            start_idx = 0
+            for slice_set in slice_sets:
+                np.copyto(self._multiplier[start_idx:(start_idx+len(slice_set.z_bins)-1)],(slice_set.z_bins[1:]+slice_set.z_bins[:-1])/2.)
+                start_idx += (len(slice_set.z_bins)-1)
+
         elif self._seed == 'signal':
-            self._multiplier = np.array(signal)
+            np.copyto(self._multiplier,signal)
+
         else:
-            self._multiplier = np.array(getattr(slice_set,self._seed))
+            start_idx = 0
+            for slice_set in slice_sets:
+                seed = getattr(slice_set,self._seed)
+                np.copyto(self._multiplier[start_idx:(start_idx+len(seed))],seed)
+                start_idx += len(seed)
 
         self._multiplier = self.multiplication_function(self._multiplier)
 
@@ -661,6 +659,7 @@ class Multiplication(object):
         elif self._normalization == None:
             norm_coeff = 1.
 
+
         # TODO: try to figure out why this can not be written
         # self._multiplier /= norm_coeff
         self._multiplier =  self._multiplier / norm_coeff
@@ -671,7 +670,7 @@ class ChargeWeighter(Multiplication):
     """
 
     def __init__(self, normalization = 'maximum_weight'):
-        super(self.__class__, self).__init__('n_macroparticles_per_slice', normalization)
+        super(self.__class__, self).__init__('n_macroparticles_per_slice', normalization,recalculate_multiplier = True)
 
     def multiplication_function(self,weight):
         return weight
@@ -780,24 +779,40 @@ class Addition(object):
     def addend_function(self, seed):
         pass
 
-    def process(self,signal,slice_set, *args):
+    def process(self,signal,slice_sets, *args):
 
         if (self._addend is None) or self._recalculate_addend:
-            self.__calculate_addend(signal,slice_set)
+            self.__calculate_addend(signal,slice_sets)
 
         return signal + self._addend
 
-    def __calculate_addend(self,signal,slice_set):
+    def __calculate_addend(self,signal,slice_sets):
+        if not isinstance(slice_sets, list):
+            slice_sets = [slice_sets]
+
+        if self._addend is None:
+            self._addend = np.zeros(len(signal))
+
         if self._seed == 'bin_length':
-            bin_set = slice_set.z_bins
-            self._addend = np.array([(j-i) for i, j in zip(bin_set, bin_set[1:])])
+            start_idx = 0
+            for slice_set in slice_sets:
+                np.copyto(self._addend[start_idx:(start_idx+len(slice_set.z_bins)-1)],(slice_set.z_bins[1:]-slice_set.z_bins[:-1]))
+                start_idx += (len(slice_set.z_bins)-1)
+
         elif self._seed == 'bin_midpoint':
-            bin_set = slice_set.z_bins
-            self._addend = np.array([(i+j)/2. for i, j in zip(bin_set, bin_set[1:])])
+            start_idx = 0
+            for slice_set in slice_sets:
+                np.copyto(self._addend[start_idx:(start_idx+len(slice_set.z_bins)-1)],(slice_set.z_bins[1:]+slice_set.z_bins[:-1])/2.)
+                start_idx += (len(slice_set.z_bins)-1)
+
         elif self._seed == 'signal':
-            self._addend = np.array(signal)
+            np.copyto(self._addend,signal)
+
         else:
-            self._addend = np.array(getattr(slice_set,self._seed))
+            start_idx = 0
+            for slice_set in slice_sets:
+                seed = getattr(slice_set,self._seed)
+                np.copyto(self._addend[start_idx:(start_idx+len(seed))],seed)
 
         self._addend = self.addend_function(self._addend)
 

@@ -1,0 +1,6 @@
+TODO list:
+- sampling rate conversion to harmonic frequencies
+- implement digital processors
+- implement analog filters
+
+
