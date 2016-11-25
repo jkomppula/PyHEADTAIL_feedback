@@ -14,6 +14,16 @@ from PyHEADTAIL_MPI.mpi import mpi_data
     @copyright CERN
 """
 
+"""
+    Must be discussed:
+        - turn by turn varying slice width -> will be forgot
+        - varying slice width in the bunch -> is it necessary
+        - future of matrix filters?
+        -
+
+"""
+
+
 def get_processor_variables(processors, required_variables = None):
     """Function which checks statistical variables required by signal processors
 
@@ -177,10 +187,12 @@ class OneboxFeedback(object):
         # the object mpi_gatherer.total_data can be used as a normal slice_set object expect that bin_set is slightly different
         for processor in self._processors_x:
             # print 'The total signal is: ' + str(self._total_signal_x)
-            self._total_signal_x = processor.process(np.copy(self._total_signal_x),self._mpi_gatherer.bunch_by_bunch_data, None, )
+            self._total_signal_x = processor.process(np.copy(self._total_signal_x),self._mpi_gatherer.bunch_by_bunch_data,
+                                                     phase_advance=None, org_slice_sets = None)
 
         for processor in self._processors_y:
-            self._total_signal_y = processor.process(np.copy(self._total_signal_y),self._mpi_gatherer.bunch_by_bunch_data, None, )
+            self._total_signal_y = processor.process(np.copy(self._total_signal_y),self._mpi_gatherer.bunch_by_bunch_data,
+                                                     phase_advance=None, org_slice_sets = None )
 
 
         t2 = timeit.default_timer()
