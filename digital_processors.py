@@ -22,12 +22,12 @@ from cython_functions import cython_matrix_product
 """
 
 class Resampler(object):
-    def __init__(self,type, sampling_rate, sync, signal_length, copy_data):
+    def __init__(self,type, sampling_rate, sync, signal_length, data_normalization):
         self._type = type
         self._sampling_rate = sampling_rate
         self._sync = sync
         self._signal_length = signal_length*c
-        self._copy_data = copy_data
+        self._data_normalization = data_normalization
 
         self._conversion_matrix = None
 
@@ -86,6 +86,7 @@ class Resampler(object):
                 self._conversion_matrix[i,j] = (self._CDF(i_max, j_min, j_max) -
                                       self._CDF(i_min, j_min, j_max)) * self._input_bin_spacing / self._output_bin_spacing
 
+
     def _generate_slice_sets(self,bin_edges,slice_sets):
 
         self._n_bunches = len(slice_sets)
@@ -97,8 +98,62 @@ class Resampler(object):
         self._input_z_bins = self._input_z_bins - np.mean(self._input_z_bins)
         self._input_bin_spacing = np.mean(bin_edges[0:self._input_n_slices_per_bunch,1]-bin_edges[0:self._input_n_slices_per_bunch,0])
 
-        print 'self._signal_length: ' + str(self._signal_length)
-        print 'self._output_bin_spacing: ' + str(self._output_bin_spacing)
+        if self._type == 'ADC':
+            self._generate_bin_set_for_ADC(bin_edges,slice_sets)
+        elif self._type == 'DAC':
+            self._generate_bin_set_for_DAC(bin_edges,slice_sets)
+        elif self._type == 'FrequencyMultiplier':
+            self._generate_bin_set_for_frequency_multiplier(bin_edges,slice_sets)
+        else:
+            raise ValueError('Unknown value for Resampler._type')
+
+        self._output_bin_edges = np.transpose(np.array([self._output_z_bins[:-1], self._output_z_bins[1:]]))
+
+        self._total_output_bin_edges = None
+        for slice_set in slice_sets:
+            edges = self._output_bin_edges + np.mean(slice_set.z_bins)
+
+            if self._total_output_bin_edges is None:
+                self._total_output_bin_edges = np.copy(edges)
+            else:
+                self._total_output_bin_edges = np.append(self._total_output_bin_edges, edges, axis=0)
+
+        self._output_signal = np.zeros(len(self._total_output_bin_edges))
+
+    def _generate_bin_set_for_DAC(self,bin_edges,slice_sets):
+
+        self._output_z_bins = np.copy(slice_sets[0].z_bins) - np.mean(slice_sets[0].z_bins)
+        self._output_n_slices_per_bunch = len(self._output_z_bins) -1
+        self._output_bin_spacing = (self._output_z_bins[-1] - self._output_z_bins[0]) / float(self._output_n_slices_per_bunch)
+
+
+
+    def _generate_bin_set_for_frequency_multiplier(self,bin_edges,slice_sets):
+
+        if isinstance(self._sampling_rate, int) and self._sampling_rate > 1:
+            self._output_bin_spacing = self._input_bin_spacing/float(self._sampling_rate)
+
+            new_bins = np.arange(0,self._input_bin_spacing-0.1*self._output_bin_spacing,self._output_bin_spacing)
+            self._output_z_bins = np.array([])
+            for z_bin in self._input_z_bins[:-1]:
+                self._output_z_bins = np.append(self._output_z_bins,new_bins*z_bin)
+
+            self._output_z_bins = np.append(self._output_z_bins,self._input_z_bins[-1])
+            self._output_n_slices_per_bunch = len(self._output_z_bins) - 1
+
+
+        elif self._sampling_rate < 1.:
+            skips = int(np.round(self._sampling_rate))
+            self._output_z_bins = self._input_z_bins[::skips]
+
+            self._output_bin_spacing = np.mean(self._output_z_bins[1:]-self._output_z_bins[:-1])
+            self._output_n_slices_per_bunch = len(self._output_z_bins) - 1
+
+        else:
+            raise ValueError('Unknown value for Resampler._sampling_rate')
+
+
+    def _generate_bin_set_for_ADC(self,bin_edges,slice_sets):
 
         if isinstance(self._signal_length, float):
             self._output_n_slices_per_bunch = int(round(self._signal_length/self._output_bin_spacing))
@@ -148,30 +203,9 @@ class Resampler(object):
         else:
             raise ValueError('Unknown value for Resampler._sync')
 
-        # print 'self._output_n_slices_per_bunch: ' + str(self._output_n_slices_per_bunch)
-        print 'z_from: ' + str(z_from)
-        print 'z_to: ' + str(z_to)
+
         self._output_z_bins = np.linspace(z_from, z_to, self._output_n_slices_per_bunch + 1)
 
-        self._output_bin_edges = np.transpose(np.array([self._output_z_bins[:-1], self._output_z_bins[1:]]))
-
-        self._total_output_bin_edges = None
-        print 'self._output_bin_edges:' + str(self._output_bin_edges)
-        for slice_set in slice_sets:
-            a = self._output_bin_edges[:,0] + np.mean(slice_set.z_bins)
-            b = self._output_bin_edges[:,1] + np.mean(slice_set.z_bins)
-            edges = self._output_bin_edges + np.mean(slice_set.z_bins)
-            # edges = np.array([a,b])
-            # print 'edges' + str(edges)
-
-            if self._total_output_bin_edges is None:
-                self._total_output_bin_edges = np.copy(edges)
-            else:
-                self._total_output_bin_edges = np.append(self._total_output_bin_edges, edges, axis=0)
-
-        print 'self._total_output_bin_edges:' + str(self._total_output_bin_edges)
-
-        self._output_signal = np.zeros(self._n_bunches*self._output_n_slices_per_bunch)
 
     def _CDF(self,x,ref_bin_from, ref_bin_to):
             if x <= ref_bin_from:
