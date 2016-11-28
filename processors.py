@@ -90,7 +90,7 @@ class LinearTransform(object):
         # Impulse response function of the processor
         pass
 
-    def process(self, signal, slice_sets, phase_advance=None):
+    def process(self,bin_edges, signal, slice_sets, phase_advance=None):
 
         if self._recalculate_matrix:
             if not isinstance(slice_sets, list):
@@ -99,25 +99,19 @@ class LinearTransform(object):
             else:
                 mpi = True
 
-            bin_edges = np.array([])
-            bin_midpoints = np.array([])
-
-            for slice_set in slice_sets:
-                edges = []
-                for i, j in zip(slice_set.z_bins, slice_set.z_bins[1:]):
-                    edges.append((i,j))
-                bin_edges = np.append(bin_edges,np.array(edges), axis=0)
-
-                if self._bin_middle == 'particles':
-                    bin_midpoints = np.append(bin_midpoints,slice_set.mean_z)
-                elif self._bin_middle == 'bin':
-                    bin_midpoints = np.append(bin_midpoints,(slice_set.z_bins[1:]+slice_set.z_bins[:-1])/2.)
+            if self._bin_middle == 'particles':
+                bin_midpoints = np.array([])
+                for slice_set in slice_sets:
+                    bin_midpoints = np.append(bin_midpoints, slice_set.mean_z)
+            elif self._bin_middle == 'bin':
+                bin_midpoints = (bin_edges[:, 1] + bin_edges[:, 0]) / 2.
+            else:
+                raise ValueError('Unknown value for LinearTransform._bin_middle ')
 
             self.__generate_matrix(bin_edges,bin_midpoints,mpi)
 
-
         # process the signal
-        return np.array(cython_matrix_product(self._matrix, signal))
+        return bin_edges, np.array(cython_matrix_product(self._matrix, signal))
 
         # np.dot can't be used, because it slows down the calculations in LSF by a factor of two or more
         # return np.dot(self._matrix,signal)

@@ -131,6 +131,7 @@ class Convolution(object):
         self.required_variables = ['z_bins','mean_z']
 
         self._n_slices = None
+        self._n_bunches = None
 
         self._impulse_z_bins = None
         self._impulse_mean_z = None
@@ -142,19 +143,19 @@ class Convolution(object):
 
         self._output_signal = None
 
-    def process(self, signal, slice_sets, phase_advance=None):
+    def process(self, bin_edges, signal, slice_sets, phase_advance=None):
 
         # print 'The total signal in the processor is : ' + str(signal)
 
         if isinstance(slice_sets, list):
-            return self.process_mpi(signal, slice_sets)
+            return self.process_mpi(bin_edges,signal, slice_sets)
         else:
-            return self.process_normal(signal, [slice_sets])
+            return self.process_normal(bin_edges,signal, [slice_sets])
 
-    def process_mpi(self, signal, bunch_set):
+    def process_mpi(self, bin_edges, signal, bunch_set):
 
         if self._output_signal is None:
-            self.__init_variables(signal,bunch_set)
+            self.__init_variables(bin_edges,signal,bunch_set)
         else:
             self._output_signal.fill(0.)
 
@@ -175,19 +176,23 @@ class Convolution(object):
 
         # print 'self._output_signal' + str(self._output_signal)
 
-        return self._output_signal
+        return bin_edges, self._output_signal
 
 
-    def process_normal(self, signal, bunch_set):
+    def process_normal(self,bin_edges, signal, bunch_set):
         # TODO
         pass
 
-    def __init_variables(self,signal,bunch_set):
+    def __init_variables(self,bin_edges,signal,bunch_set):
 
         # generates variables
-        self._n_slices = len(bunch_set[0].z_bins) - 1
+        self._n_bunches - len(bunch_set)
+        self._n_slices = len(bin_edges)/self._n_bunches
+        # self._n_slices = len(bunch_set[0].z_bins) - 1
         self._output_signal = np.zeros(len(signal))
-        self._bin_spacing = np.mean(bunch_set[0].z_bins[1:]-bunch_set[0].z_bins[:-1])
+        self._bin_spacing = np.mean(bin_edges[0:self._n_slices,1]-bin_edges[0:self._n_slices,0])
+
+        # self._bin_spacing = np.mean(bunch_set[0].z_bins[1:]-bunch_set[0].z_bins[:-1])
 
         # generates an impulse response
         if self._impulse_range[0] < -0.5*self._bin_spacing:
@@ -212,14 +217,15 @@ class Convolution(object):
         # generates bunch impulses
         self._bunch_impulses = []
 
-        for i, bunch in enumerate(bunch_set):
+        for i,in xrange(self._n_bunches):
             idx_from = i * self._n_slices
             idx_to = (i + 1) * self._n_slices
 
             impulse_edges = (self._impulse_z_bins[0], self._impulse_z_bins[-1])
-            signal_edges = (bunch.z_bins[0], bunch.z_bins[-1])
+            signal_from = bin_edges[self._n_slices * i,0]
+            signal_to = bin_edges[self._n_slices * (i + 1)-1, 0]
 
-            print 'signal_edges: ' + str(signal_edges)
+            signal_edges = (signal_from, signal_to)
 
             self._bunch_impulses.append(BunchImpulse(i,np.array(self._output_signal[idx_from:idx_to], copy=False),
                                                      self._impulse_response_value, signal_edges, impulse_edges,

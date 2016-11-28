@@ -139,8 +139,20 @@ class OneboxFeedback(object):
         self._mpi = mpi
         self._mpi_gatherer = None
 
+
+        self._orginal_bin_edges_x = None
+        self._orginal_bin_edges_x = None
+
         self._total_signal_x = None
         self._total_signal_y = None
+
+        # for debugging
+        self.last_bin_edges_x = None
+        self.last_bin_edges_y = None
+        self.last_signal_x = None
+        self.last_signal_y = None
+
+        self.kick = True
 
     def track(self,bunch):
 
@@ -160,9 +172,25 @@ class OneboxFeedback(object):
         # gathers data from all bunches
         self._mpi_gatherer.gather(superbunch)
 
+
+
         if self._total_signal_x is None:
+            print 'self._mpi_gatherer.total_data.z_bins: ' + str(self._mpi_gatherer.total_data.z_bins)
             self._total_signal_x = np.zeros(self._mpi_gatherer.total_n_slices)
             self._total_signal_y = np.zeros(self._mpi_gatherer.total_n_slices)
+
+            for slice_set in self._mpi_gatherer.bunch_by_bunch_data:
+
+                edges = np.transpose(np.array([slice_set.z_bins[:-1], slice_set.z_bins[1:]]))
+
+                if self._orginal_bin_edges_x is None:
+                    self._orginal_bin_edges_x = np.copy(edges)
+                    self._orginal_bin_edges_y = np.copy(edges)
+                else:
+                    self._orginal_bin_edges_x = np.append(self._orginal_bin_edges_x,edges, axis=0)
+                    self._orginal_bin_edges_y = np.append(self._orginal_bin_edges_y,edges, axis=0)
+
+
 
         # slice set data from all bunches in all processors can be found from under mpi_gatherer.total_data object
         if self._axis == 'divergence':
@@ -185,47 +213,58 @@ class OneboxFeedback(object):
 
         t1 = timeit.default_timer()
         # the object mpi_gatherer.total_data can be used as a normal slice_set object expect that bin_set is slightly different
+
+        bin_edges_x = np.copy(self._orginal_bin_edges_x)
+        signal_x = np.copy(self._total_signal_x)
         for processor in self._processors_x:
             # print 'The total signal is: ' + str(self._total_signal_x)
-            self._total_signal_x = processor.process(np.copy(self._total_signal_x),self._mpi_gatherer.bunch_by_bunch_data,
-                                                     phase_advance=None, org_slice_sets = None)
+            bin_edges_x, signal_x = processor.process(bin_edges_x, signal_x,self._mpi_gatherer.bunch_by_bunch_data,
+                                                     phase_advance=None)
 
+        bin_edges_y = np.copy(self._orginal_bin_edges_y)
+        signal_y = np.copy(self._total_signal_y)
         for processor in self._processors_y:
-            self._total_signal_y = processor.process(np.copy(self._total_signal_y),self._mpi_gatherer.bunch_by_bunch_data,
-                                                     phase_advance=None, org_slice_sets = None )
+            bin_edges_y, signal_y = processor.process(bin_edges_y, signal_y,self._mpi_gatherer.bunch_by_bunch_data,
+                                                     phase_advance=None)
 
 
         t2 = timeit.default_timer()
         print 'total signal processing time: ' + str(t2-t1)
 
+        self.last_bin_edges_x = bin_edges_x
+        self.last_bin_edges_y = bin_edges_y
+        self.last_signal_x = signal_x
+        self.last_signal_y = signal_y
 
+
+        if self.kick:
         # print self._total_signal_x
         # mpi_gatherer.gather(...) splits the superbunch, so it is efficient to use same bunch list
-        for local_idx, (bunch_idx, bunch) in enumerate(zip(self._mpi_gatherer.local_bunch_indexes,self._mpi_gatherer.bunch_list)):
+            for local_idx, (bunch_idx, bunch) in enumerate(zip(self._mpi_gatherer.local_bunch_indexes,self._mpi_gatherer.bunch_list)):
 
-            # the slice set data from all bunches in all processors pass the signal processors. Here, the correction
-            # signals for the bunches tracked in this processors are picked by using indexes found from
-            # mpi_gatherer.total_data.local_data_locations
-            idx_from = bunch_idx * self._mpi_gatherer.n_slices_per_bunch
-            idx_to = (bunch_idx + 1) * self._mpi_gatherer.n_slices_per_bunch
+                # the slice set data from all bunches in all processors pass the signal processors. Here, the correction
+                # signals for the bunches tracked in this processors are picked by using indexes found from
+                # mpi_gatherer.total_data.local_data_locations
+                idx_from = bunch_idx * self._mpi_gatherer.n_slices_per_bunch
+                idx_to = (bunch_idx + 1) * self._mpi_gatherer.n_slices_per_bunch
 
-            correction_x = self._gain_x*self._total_signal_x[idx_from:idx_to]
-            correction_y = self._gain_y*self._total_signal_y[idx_from:idx_to]
+                correction_x = self._gain_x*self._total_signal_x[idx_from:idx_to]
+                correction_y = self._gain_y*self._total_signal_y[idx_from:idx_to]
 
-            # mpi_gatherer has also slice set list, which can be used for applying the kicks
-            p_idx = self._mpi_gatherer.slice_set_list[local_idx].particles_within_cuts
-            s_idx = self._mpi_gatherer.slice_set_list[local_idx].slice_index_of_particle.take(p_idx)
+                # mpi_gatherer has also slice set list, which can be used for applying the kicks
+                p_idx = self._mpi_gatherer.slice_set_list[local_idx].particles_within_cuts
+                s_idx = self._mpi_gatherer.slice_set_list[local_idx].slice_index_of_particle.take(p_idx)
 
-            if self._axis == 'divergence':
-                bunch.xp[p_idx] -= correction_x[s_idx]
-                bunch.yp[p_idx] -= correction_y[s_idx]
+                if self._axis == 'divergence':
+                    bunch.xp[p_idx] -= correction_x[s_idx]
+                    bunch.yp[p_idx] -= correction_y[s_idx]
 
-            elif self._axis == 'displacement':
-                bunch.x[p_idx] -= correction_x[s_idx]
-                bunch.y[p_idx] -= correction_y[s_idx]
+                elif self._axis == 'displacement':
+                    bunch.x[p_idx] -= correction_x[s_idx]
+                    bunch.y[p_idx] -= correction_y[s_idx]
 
-        # at the end the superbunch must be rebunched. Without that the kicks do not apply to the next turn
-        self._mpi_gatherer.rebunch(superbunch)
+            # at the end the superbunch must be rebunched. Without that the kicks do not apply to the next turn
+            self._mpi_gatherer.rebunch(superbunch)
 
     def _normal_track(self, bunch):
 

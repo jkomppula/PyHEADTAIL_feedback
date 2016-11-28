@@ -9,7 +9,6 @@ from processors import Register
 from scipy import linalg
 import pyximport; pyximport.install()
 from cython_functions import cython_matrix_product
-from PyHEADTAIL_MPI.mpi.data_objects import SliceSetEmulator
 
 """
     This file contains signal processors which can be used for emulating digital signal processing in the feedback
@@ -32,33 +31,37 @@ class Resampler(object):
 
         self._conversion_matrix = None
 
+        self._n_bunches = None
+
         self._input_bin_spacing = None
         self._input_n_slices_per_bunch = None
         self._input_z_bins = None
+        self._input_bin_edges = None
 
         self._output_z_bins = None
-        self._output_slice_sets = None
         self._output_n_slices_per_bunch = None
         self._output_bin_spacing = c/sampling_rate
+        self._output_bin_edges = None
+        self._total_output_bin_edges = None
 
         self._output_signal = None
 
         self.required_variables = ['z_bins']
 
 
-    def process(self,signal,slice_sets,phase_advance, org_slice_sets):
+    def process(self,bin_edges,signal,slice_sets,phase_advance):
         # FIXME: single bunch simulations
         # FIXME: old_binset
         if self._conversion_matrix is None:
             print 'I should build the matrix'
-            self._generate_slice_sets(slice_sets)
+            self._generate_slice_sets(bin_edges,slice_sets)
             self._build_conversion_matrices()
 
 
         self._output_signal.fill(0.)
 
-        print 'self._conversion_matrix: ' + str(self._conversion_matrix)
-        print 'signal: ' + str(signal)
+        # print 'self._conversion_matrix: ' + str(self._conversion_matrix)
+        # print 'signal: ' + str(signal)
 
         for i in xrange(len(slice_sets)):
             input_from = i * self._input_n_slices_per_bunch
@@ -69,37 +72,46 @@ class Resampler(object):
             np.copyto(self._output_signal[output_from:output_to],
                       np.array(cython_matrix_product(self._conversion_matrix, np.array(signal[input_from:input_to]))))
 
-        return self._output_signal
+        return self._total_output_bin_edges,self._output_signal
 
     def _build_conversion_matrices(self):
-        print 'I am building the matrix'
-        print 'len(self._input_z_bins): ' + str(len(self._input_z_bins))
-        print 'len(self._output_z_bins): ' + str(len(self._output_z_bins))
+        # print 'I am building the matrix'
+        # print 'len(self._input_z_bins): ' + str(len(self._input_z_bins))
+        # print 'len(self._output_z_bins): ' + str(len(self._output_z_bins))
         self._conversion_matrix = np.zeros((len(self._output_z_bins)-1,len(self._input_z_bins)-1))
 
         for i, (i_min, i_max) in enumerate(zip(self._output_z_bins, self._output_z_bins[1:])):
             for j, (j_min, j_max) in enumerate(zip(self._input_z_bins, self._input_z_bins[1:])):
-                print 'i , j: ' + str(i) + ' ' + str(j)
+                # print 'i , j: ' + str(i) + ' ' + str(j)
                 self._conversion_matrix[i,j] = (self._CDF(i_max, j_min, j_max) -
                                       self._CDF(i_min, j_min, j_max)) * self._input_bin_spacing / self._output_bin_spacing
 
-    def _generate_slice_sets(self,slice_sets):
+    def _generate_slice_sets(self,bin_edges,slice_sets):
 
-        mid_point = np.mean(slice_sets[0].z_bins)
-        self._input_z_bins = slice_sets[0].z_bins - mid_point
-        self._input_bin_spacing = np.mean(slice_sets[0].z_bins[1:]-slice_sets[0].z_bins[:-1])
-        self._input_n_slices_per_bunch = len(slice_sets[0].z_bins) - 1
+        self._n_bunches = len(slice_sets)
+        self._input_n_slices_per_bunch = len(bin_edges)/self._n_bunches
+
+        self._input_bin_edges = np.copy(bin_edges)
+        self._input_z_bins = bin_edges[0:self._input_n_slices_per_bunch,0]
+        self._input_z_bins = np.append(self._input_z_bins,bin_edges[(self._input_n_slices_per_bunch-1),1])
+        self._input_z_bins = self._input_z_bins - np.mean(self._input_z_bins)
+        self._input_bin_spacing = np.mean(bin_edges[0:self._input_n_slices_per_bunch,1]-bin_edges[0:self._input_n_slices_per_bunch,0])
+
+        print 'self._signal_length: ' + str(self._signal_length)
+        print 'self._output_bin_spacing: ' + str(self._output_bin_spacing)
 
         if isinstance(self._signal_length, float):
             self._output_n_slices_per_bunch = int(round(self._signal_length/self._output_bin_spacing))
         elif self._signal_length == 'orginal_round':
-            self._output_n_slices_per_bunch = int(round((slice_sets[0].z_bins[-1]-slice_sets[0].z_bins[0])/self._output_bin_spacing))
+            self._output_n_slices_per_bunch = int(round((self._input_z_bins[-1]-self._input_z_bins[0])/self._output_bin_spacing))
         elif self._signal_length == 'orginal_fit':
-            self._output_n_slices_per_bunch = int(round((slice_sets[0].z_bins[-1]-slice_sets[0].z_bins[0])/self._output_bin_spacing))
-            self._output_bin_spacing = (slice_sets[0].z_bins[-1]-slice_sets[0].z_bins[0])/float(self._output_n_slices_per_bunch)
+            self._output_n_slices_per_bunch = int(round((self._input_z_bins[-1]-self._input_z_bins)/self._output_bin_spacing))
+            self._output_bin_spacing = (self._input_z_bins[-1]-self._input_z_bins[0])/float(self._output_n_slices_per_bunch)
             self._sampling_rate = self._output_bin_spacing/c
         else:
             raise ValueError('Unknown value in Resampler._signal_length')
+
+        print 'self._output_n_slices_per_bunch: ' + str(self._output_n_slices_per_bunch)
 
         if self._sync == 'rising_edge':
             z_from = self._input_z_bins[0]
@@ -114,41 +126,52 @@ class Resampler(object):
             z_to = -0.5 * self._output_n_slices_per_bunch * self._output_bin_spacing
         elif self._sync == 'bin_mid':
             bins_adv = (self._output_n_slices_per_bunch - 1)/ 2
-            z_from = -1. * (0.5 + float(bins_adv)) * self._input_bin_spacing
-            z_to = (0.5 + float(self._output_n_slices_per_bunch - bins_adv - 1)) * self._input_bin_spacing
+            z_from = -1. * (0.5 + float(bins_adv)) * self._output_bin_spacing
+            z_to = (0.5 + float(self._output_n_slices_per_bunch - bins_adv - 1)) * self._output_bin_spacing
 
         elif self._sync == 'bin_mid_advance':
             if self._input_z_bins[-1] > 0.5*self._output_bin_spacing:
                 bins_after = np.ceil((self._input_z_bins[-1] - 0.5 * self._output_bin_spacing)/self._output_bin_spacing)
             else:
                 bins_after = 0.
-            z_from = -1. * (0.5 + float(float(self._output_n_slices_per_bunch) - bins_after - 1.)) * self._input_bin_spacing
-            z_to = (bins_after+0.5) * self._input_bin_spacing
+            z_from = -1. * (0.5 + float(float(self._output_n_slices_per_bunch) - bins_after - 1.)) * self._output_bin_spacing
+            z_to = (bins_after+0.5) * self._output_bin_spacing
 
         elif self._sync == 'bin_mid_delay':
             if self._input_z_bins[0] > -0.5*self._output_bin_spacing:
                 bins_adv = np.ceil((-1.*self._input_z_bins[0] - 0.5 * self._output_bin_spacing)/self._output_bin_spacing)
             else:
                 bins_adv = 0.
-            z_from = -1. * (bins_adv+0.5) * self._input_bin_spacing
-            z_to = (0.5 + float(float(self._output_n_slices_per_bunch) - bins_adv - 1.)) * self._input_bin_spacing
+            z_from = -1. * (bins_adv+0.5) * self._output_bin_spacing
+            z_to = (0.5 + float(float(self._output_n_slices_per_bunch) - bins_adv - 1.)) * self._output_bin_spacing
 
         else:
-            raise ValueError('Unknown value in Resampler._sync')
+            raise ValueError('Unknown value for Resampler._sync')
 
-        print 'self._output_n_slices_per_bunch: ' + str(self._output_n_slices_per_bunch)
+        # print 'self._output_n_slices_per_bunch: ' + str(self._output_n_slices_per_bunch)
         print 'z_from: ' + str(z_from)
         print 'z_to: ' + str(z_to)
         self._output_z_bins = np.linspace(z_from, z_to, self._output_n_slices_per_bunch + 1)
 
-        self._output_slice_sets = []
+        self._output_bin_edges = np.transpose(np.array([self._output_z_bins[:-1], self._output_z_bins[1:]]))
 
+        self._total_output_bin_edges = None
+        print 'self._output_bin_edges:' + str(self._output_bin_edges)
         for slice_set in slice_sets:
-            offset = slice_set.z_bins[0] - self._input_z_bins[0]
-            self._output_slice_sets.append(SliceSetEmulator((self._output_z_bins + offset),
-                                        slice_set.idx, slice_set.local_bunches))
+            a = self._output_bin_edges[:,0] + np.mean(slice_set.z_bins)
+            b = self._output_bin_edges[:,1] + np.mean(slice_set.z_bins)
+            edges = self._output_bin_edges + np.mean(slice_set.z_bins)
+            # edges = np.array([a,b])
+            # print 'edges' + str(edges)
 
-        self._output_signal = np.zeros(len(slice_sets)*self._output_n_slices_per_bunch)
+            if self._total_output_bin_edges is None:
+                self._total_output_bin_edges = np.copy(edges)
+            else:
+                self._total_output_bin_edges = np.append(self._total_output_bin_edges, edges, axis=0)
+
+        print 'self._total_output_bin_edges:' + str(self._total_output_bin_edges)
+
+        self._output_signal = np.zeros(self._n_bunches*self._output_n_slices_per_bunch)
 
     def _CDF(self,x,ref_bin_from, ref_bin_to):
             if x <= ref_bin_from:
