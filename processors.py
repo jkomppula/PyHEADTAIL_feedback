@@ -47,7 +47,7 @@ class LinearTransform(object):
     """
 
     def __init__(self, norm_type=None, norm_range=None, matrix_symmetry = 'none', bin_check = False,
-                 bin_middle = 'bin', recalculate_always = False):
+                 bin_middle = 'bin', recalculate_always = False, store = False):
         """
 
         :param norm_type: Describes normalization method for the transfer matrix
@@ -84,6 +84,15 @@ class LinearTransform(object):
 
         self.required_variables = ['z_bins','mean_z']
 
+        self._store = store
+
+        self.input_signal = None
+        self.input_bin_edges = None
+
+        self.output_signal = None
+        self.output_bin_edges = None
+
+
 
     @abstractmethod
     def response_function(self, ref_bin_mid, ref_bin_from, ref_bin_to, bin_mid, bin_from, bin_to):
@@ -110,8 +119,16 @@ class LinearTransform(object):
 
             self.__generate_matrix(bin_edges,bin_midpoints,mpi)
 
+        output_signal = np.array(cython_matrix_product(self._matrix, signal))
+
+        if self._store:
+            self.input_signal = np.copy(signal)
+            self.input_bin_edges = np.copy(bin_edges)
+            self.output_signal = np.copy(output_signal)
+            self.output_bin_edges = np.copy(bin_edges)
+
         # process the signal
-        return bin_edges, np.array(cython_matrix_product(self._matrix, signal))
+        return bin_edges, output_signal
 
         # np.dot can't be used, because it slows down the calculations in LSF by a factor of two or more
         # return np.dot(self._matrix,signal)
@@ -576,7 +593,7 @@ class Multiplication(object):
         a slice property (determined in the input parameter 'seed') and passing it through the abstract method, namely
         multiplication_function(seed).
     """
-    def __init__(self, seed, normalization = None, recalculate_multiplier = False):
+    def __init__(self, seed, normalization = None, recalculate_multiplier = False, store = False):
         """
         :param seed: 'bin_length', 'bin_midpoint', 'signal' or a property of a slice, which can be found
             from slice_set
@@ -599,17 +616,33 @@ class Multiplication(object):
         if self._seed not in ['bin_length','bin_midpoint','signal']:
             self.required_variables.append(self._seed)
 
+        self._store = store
+
+        self.input_signal = None
+        self.input_bin_edges = None
+
+        self.output_signal = None
+        self.output_bin_edges = None
+
     @abstractmethod
     def multiplication_function(self, seed):
         pass
 
-    def process(self,signal,slice_sets, *args):
+    def process(self,bin_edges, signal, slice_sets, phase_advance=None):
 
         if (self._multiplier is None) or self._recalculate_multiplier:
             self.__calculate_multiplier(signal,slice_sets)
 
-        # print 'self._multiplier: ' + str(self._multiplier)
-        return self._multiplier*signal
+        output_signal =  self._multiplier*signal
+
+        if self._store:
+            self.input_signal = np.copy(signal)
+            self.input_bin_edges = np.copy(bin_edges)
+            self.output_signal = np.copy(output_signal)
+            self.output_bin_edges = np.copy(bin_edges)
+
+        # process the signal
+        return bin_edges, output_signal
 
     def __calculate_multiplier(self,signal,slice_sets):
         if not isinstance(slice_sets, list):
@@ -653,7 +686,6 @@ class Multiplication(object):
         elif self._normalization == None:
             norm_coeff = 1.
 
-
         # TODO: try to figure out why this can not be written
         # self._multiplier /= norm_coeff
         self._multiplier =  self._multiplier / norm_coeff
@@ -663,8 +695,9 @@ class ChargeWeighter(Multiplication):
     """ weights signal with charge (macroparticles) of slices
     """
 
-    def __init__(self, normalization = 'maximum_weight'):
-        super(self.__class__, self).__init__('n_macroparticles_per_slice', normalization,recalculate_multiplier = True)
+    def __init__(self, normalization = 'maximum_weight', store = False):
+        super(self.__class__, self).__init__('n_macroparticles_per_slice', normalization,recalculate_multiplier = True,
+                                             store = store)
 
     def multiplication_function(self,weight):
         return weight
@@ -1075,8 +1108,23 @@ class Bypass(object):
         the abstract classes.
     """
 
-    def __init__(self):
+    def __init__(self, store = False):
         self.required_variables = []
+        self._store = store
 
-    def process(self,signal,slice_set,phase_advance = None,mpi = False):
-        return signal
+        self.input_signal = None
+        self.input_bin_edges = None
+
+        self.output_signal = None
+        self.output_bin_edges = None
+
+
+
+    def process(self,bin_edges, signal, slice_sets, phase_advance=None):
+        if self._store:
+            self.input_signal = np.copy(signal)
+            self.input_bin_edges = np.copy(bin_edges)
+            self.output_signal = np.copy(signal)
+            self.output_bin_edges = np.copy(bin_edges)
+
+        return bin_edges, signal

@@ -22,12 +22,12 @@ from cython_functions import cython_matrix_product
 """
 
 class Resampler(object):
-    def __init__(self,type, sampling_rate, sync, signal_length, data_normalization):
+    def __init__(self,type, sampling_rate, sync, signal_length, normalization = 'bin_average',store = False):
         self._type = type
         self._sampling_rate = sampling_rate
         self._sync = sync
         self._signal_length = signal_length*c
-        self._data_normalization = data_normalization
+        self._normalization = normalization
 
         self._conversion_matrix = None
 
@@ -46,10 +46,21 @@ class Resampler(object):
 
         self._output_signal = None
 
+        self._last_input_signal = None
+
+        self._store = store
+
+        self.input_signal = None
+        self.input_bin_edges = None
+
+        self.output_signal = None
+        self.output_bin_edges = None
+
         self.required_variables = ['z_bins']
 
 
     def process(self,bin_edges,signal,slice_sets,phase_advance):
+        self._last_input_signal = np.copy(signal)
         # FIXME: single bunch simulations
         # FIXME: old_binset
         if self._conversion_matrix is None:
@@ -72,9 +83,35 @@ class Resampler(object):
             np.copyto(self._output_signal[output_from:output_to],
                       np.array(cython_matrix_product(self._conversion_matrix, np.array(signal[input_from:input_to]))))
 
+        if self._store:
+            self.input_signal = np.copy(signal)
+            self.input_bin_edges = np.copy(bin_edges)
+            self.output_signal = np.copy(self._output_signal)
+            self.output_bin_edges = np.copy(self._total_output_bin_edges)
+
         return self._total_output_bin_edges,self._output_signal
 
     def _build_conversion_matrices(self):
+
+        if self._normalization == 'sum':
+            # sums signals from all input slices, i.e. the sums of the integral stays constant
+            normalization_coeff = 1.
+        elif self._normalization == 'integral':
+            # weights the signal sum from difference slices by bin spacinf,
+            # i.e. the time integral of the signals stays constant
+            normalization_coeff = self._input_bin_spacing / self._output_bin_spacing
+        elif self._normalization == 'bin_average':
+            # sets output bin value to an average value of input bins contributing to the output bin
+            normalization_coeff = 1./min(self._output_bin_spacing/ self._input_bin_spacing, float(self._input_n_slices_per_bunch) )
+
+            # normalization_coeff = self._input_bin_spacing / self._output_bin_spacing
+        # elif self._data_normalization == 'min':
+        #     pass
+        # elif self._data_normalization == 'max':
+        #     pass
+        else:
+            raise ValueError('Unknown value for Resampler._data_normalization')
+
         # print 'I am building the matrix'
         # print 'len(self._input_z_bins): ' + str(len(self._input_z_bins))
         # print 'len(self._output_z_bins): ' + str(len(self._output_z_bins))
@@ -84,8 +121,10 @@ class Resampler(object):
             for j, (j_min, j_max) in enumerate(zip(self._input_z_bins, self._input_z_bins[1:])):
                 # print 'i , j: ' + str(i) + ' ' + str(j)
                 self._conversion_matrix[i,j] = (self._CDF(i_max, j_min, j_max) -
-                                      self._CDF(i_min, j_min, j_max)) * self._input_bin_spacing / self._output_bin_spacing
-
+                                      self._CDF(i_min, j_min, j_max)) * normalization_coeff
+                # self._conversion_matrix[i,j] = (self._CDF(j_max, i_min, i_max) -
+                #                       self._CDF(j_min, i_min, i_max)) * normalization_coeff
+        print 'self._conversion_matrix: ' + str(self._conversion_matrix)
 
     def _generate_slice_sets(self,bin_edges,slice_sets):
 
@@ -95,7 +134,7 @@ class Resampler(object):
         self._input_bin_edges = np.copy(bin_edges)
         self._input_z_bins = bin_edges[0:self._input_n_slices_per_bunch,0]
         self._input_z_bins = np.append(self._input_z_bins,bin_edges[(self._input_n_slices_per_bunch-1),1])
-        self._input_z_bins = self._input_z_bins - np.mean(self._input_z_bins)
+        self._input_z_bins = self._input_z_bins - np.mean(slice_sets[0].z_bins) # A re
         self._input_bin_spacing = np.mean(bin_edges[0:self._input_n_slices_per_bunch,1]-bin_edges[0:self._input_n_slices_per_bunch,0])
 
         if self._type == 'ADC':
@@ -193,7 +232,9 @@ class Resampler(object):
             z_to = (bins_after+0.5) * self._output_bin_spacing
 
         elif self._sync == 'bin_mid_delay':
-            if self._input_z_bins[0] > -0.5*self._output_bin_spacing:
+            # print 'self._input_z_bins[0]: ' + str(self._input_z_bins[0])
+            # print '-0.5*self._output_bin_spacing: ' + str(-0.5*self._output_bin_spacing)
+            if self._input_z_bins[0] < -0.5*self._output_bin_spacing:
                 bins_adv = np.ceil((-1.*self._input_z_bins[0] - 0.5 * self._output_bin_spacing)/self._output_bin_spacing)
             else:
                 bins_adv = 0.

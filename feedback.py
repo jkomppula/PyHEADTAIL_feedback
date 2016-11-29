@@ -146,12 +146,6 @@ class OneboxFeedback(object):
         self._total_signal_x = None
         self._total_signal_y = None
 
-        # for debugging
-        self.last_bin_edges_x = None
-        self.last_bin_edges_y = None
-        self.last_signal_x = None
-        self.last_signal_y = None
-
         self.kick = True
 
     def track(self,bunch):
@@ -230,11 +224,6 @@ class OneboxFeedback(object):
 
         t2 = timeit.default_timer()
         print 'total signal processing time: ' + str(t2-t1)
-
-        self.last_bin_edges_x = bin_edges_x
-        self.last_bin_edges_y = bin_edges_y
-        self.last_signal_x = signal_x
-        self.last_signal_y = signal_y
 
 
         if self.kick:

@@ -124,7 +124,7 @@ class Convolution(object):
     """ An abstract class for signal processors which are based on convolution.
     """
 
-    def __init__(self, impulse_range):
+    def __init__(self, impulse_range, store):
 
         self._impulse_range = impulse_range
 
@@ -143,14 +143,32 @@ class Convolution(object):
 
         self._output_signal = None
 
+        self._store = store
+
+        self.input_signal = None
+        self.input_bin_edges = None
+
+        self.output_signal = None
+        self.output_bin_edges = None
+
+
     def process(self, bin_edges, signal, slice_sets, phase_advance=None):
 
         # print 'The total signal in the processor is : ' + str(signal)
 
         if isinstance(slice_sets, list):
-            return self.process_mpi(bin_edges,signal, slice_sets)
+            output_bin_edges, output_signal = self.process_mpi(bin_edges,signal, slice_sets)
         else:
-            return self.process_normal(bin_edges,signal, [slice_sets])
+            output_bin_edges, output_signal = self.process_normal(bin_edges,signal, [slice_sets])
+
+        if self._store:
+            self.input_signal = np.copy(signal)
+            self.input_bin_edges = np.copy(bin_edges)
+            self.output_signal = np.copy(output_signal)
+            self.output_bin_edges = np.copy(output_bin_edges)
+
+        # process the signal
+        return output_bin_edges, output_signal
 
     def process_mpi(self, bin_edges, signal, bunch_set):
 
