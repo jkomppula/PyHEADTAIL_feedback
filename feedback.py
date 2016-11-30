@@ -169,7 +169,7 @@ class OneboxFeedback(object):
 
 
         if self._total_signal_x is None:
-            print 'self._mpi_gatherer.total_data.z_bins: ' + str(self._mpi_gatherer.total_data.z_bins)
+            # print 'self._mpi_gatherer.total_data.z_bins: ' + str(self._mpi_gatherer.total_data.z_bins)
             self._total_signal_x = np.zeros(self._mpi_gatherer.total_n_slices)
             self._total_signal_y = np.zeros(self._mpi_gatherer.total_n_slices)
 

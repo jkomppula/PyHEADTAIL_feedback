@@ -11,6 +11,8 @@ from scipy import linalg
 import pyximport; pyximport.install()
 from cython_functions import cython_matrix_product
 
+# TODO: add Label to as property of the processor
+
 """
     This file contains signal processors which can be used in the feedback module in PyHEADTAIL.
 

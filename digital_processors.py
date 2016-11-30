@@ -64,7 +64,7 @@ class Resampler(object):
         # FIXME: single bunch simulations
         # FIXME: old_binset
         if self._conversion_matrix is None:
-            print 'I should build the matrix'
+            # print 'I should build the matrix'
             self._generate_slice_sets(bin_edges,slice_sets)
             self._build_conversion_matrices()
 
@@ -124,7 +124,7 @@ class Resampler(object):
                                       self._CDF(i_min, j_min, j_max)) * normalization_coeff
                 # self._conversion_matrix[i,j] = (self._CDF(j_max, i_min, i_max) -
                 #                       self._CDF(j_min, i_min, i_max)) * normalization_coeff
-        print 'self._conversion_matrix: ' + str(self._conversion_matrix)
+        # print 'self._conversion_matrix: ' + str(self._conversion_matrix)
 
     def _generate_slice_sets(self,bin_edges,slice_sets):
 
@@ -205,7 +205,7 @@ class Resampler(object):
         else:
             raise ValueError('Unknown value in Resampler._signal_length')
 
-        print 'self._output_n_slices_per_bunch: ' + str(self._output_n_slices_per_bunch)
+        # print 'self._output_n_slices_per_bunch: ' + str(self._output_n_slices_per_bunch)
 
         if self._sync == 'rising_edge':
             z_from = self._input_z_bins[0]
@@ -455,41 +455,97 @@ class Resampler(object):
 #         return signal
 #
 #
-# class DigitalFilter(object):
-#     def __init__(self,coefficients):
-#         """ Filters the signal by convolving the signal and the input array of filter (FIR) coefficients
-#         :param coefficients: A numpy array of filter (convolution) coefficients
-#         """
-#         self._coefficients = coefficients
-#         self.required_variables = []
-#
-#     def process(self, signal, *args):
-#         return np.convolve(np.array(signal), np.array(self._coefficients), mode='same')
-#
-#
-# class FIR_Filter(DigitalFilter):
-#     def __init__(self,n_taps, f_cutoffs, sampling_rate):
-#
-#         """ A digital FIR (finite impulse response) filter, which uses firwin function from SciPy library to determine
-#             filter coefficients. Note that the set value of the cut-off frequency corresponds to the real cut-off
-#             frequency of the filter only when length of the signal is on the same order of longer than an period of
-#             the cut off frequency and sampling rate is ("significantly") higher than the cut-off frequency. In other
-#             words, do not trust too much to set value of the cut-off frequency,
-#
-#         :param n_taps: length of the filter (number of coefficients, i.e. the filter order + 1).
-#             Odd number is recommended, when
-#         :param f_cutoffs: cut-off frequencies of the filter. Multiple values are allowed as explained in
-#             the documentation of firwin-function in SciPy
-#         :param sampling_rate: sampling rate of the ADC (or a number of slices per seconds)
-#         """
-#
-#         self._n_taps = n_taps
-#         self._f_cutoffs = f_cutoffs
-#         self._nyq = sampling_rate / 2.
-#
-#         coefficients = signal.firwin(self._n_taps, self._f_cutoffs, nyq=self._nyq)
-#
-#         super(self.__class__, self).__init__(coefficients)
+class DigitalFilter(object):
+    def __init__(self,coefficients, mode,store):
+        """ Filters the signal by convolving the signal and the input array of filter (FIR) coefficients
+        :param coefficients: A numpy array of filter (convolution) coefficients
+        """
+        self._coefficients = coefficients
+        self.required_variables = []
+        self._mode = mode
+        self._n_slices_per_bunch = None
+        self._n_bunches = None
+        self._bin_check = None
+
+        self._store = store
+
+        self.input_signal = None
+        self.input_bin_edges = None
+
+        self.output_signal = None
+        self.output_bin_edges = None
+
+    def process(self,bin_edges, signal, slice_sets, phase_advance=None):
+
+        if self._n_bunches is None:
+            self._n_bunches = len(slice_sets)
+            self._n_slices_per_bunch = len(slice_sets[0].z_bins) - 1
+            self.output_signal = np.zeros(self._n_bunches*self._n_slices_per_bunch)
+
+        if self._mode == 'bunch_by_bunch':
+            for i in xrange(self._n_bunches):
+                i_from = i * self._n_slices_per_bunch
+                i_to = (i+1) * self._n_slices_per_bunch
+                np.copyto(self.output_signal[i_from:i_to],
+                          np.convolve(np.array(signal[i_from:i_to]), np.array(self._coefficients), mode='same'))
+        elif self._mode == 'continuously':
+            if self._bin_check is None:
+                self._check_bin_spacing(bin_edges)
+
+            if self._bin_check:
+                self.output_signal =  np.convolve(np.array(signal), np.array(self._coefficients), mode='same')
+            else:
+                raise ValueError('Bin spacing varies too much!')
+
+            pass
+        else:
+            raise ValueError('Unknown value for DigitalFilter._type')
+
+        if self._store:
+            self.input_signal = np.copy(signal)
+            self.input_bin_edges = np.copy(bin_edges)
+            self.output_bin_edges = np.copy(bin_edges)
+
+        return bin_edges, self.output_signal
+
+
+    def _check_bin_spacing(self,bin_edges):
+        bin_spacing = np.mean(bin_edges[:,1]-bin_edges[:,0])
+        edge_spacing = bin_edges[:-1,0]-bin_edges[1:,0]
+
+        min_edge_spacing = np.min(edge_spacing)
+        max_edge_spacing = np.max(edge_spacing)
+
+        if (max_edge_spacing-min_edge_spacing)/bin_spacing < 0.01:
+            self._bin_check = True
+        else:
+            self._bin_check = False
+            raise ValueError('There are too large gaps between bins!')
+
+
+class FIR_Filter(DigitalFilter):
+    def __init__(self,n_taps, f_cutoffs, sampling_rate, **kwargs):
+
+        """ A digital FIR (finite impulse response) filter, which uses firwin function from SciPy library to determine
+            filter coefficients. Note that the set value of the cut-off frequency corresponds to the real cut-off
+            frequency of the filter only when length of the signal is on the same order of longer than an period of
+            the cut off frequency and sampling rate is ("significantly") higher than the cut-off frequency. In other
+            words, do not trust too much to set value of the cut-off frequency,
+
+        :param n_taps: length of the filter (number of coefficients, i.e. the filter order + 1).
+            Odd number is recommended, when
+        :param f_cutoffs: cut-off frequencies of the filter. Multiple values are allowed as explained in
+            the documentation of firwin-function in SciPy
+        :param sampling_rate: sampling rate of the ADC (or a number of slices per seconds)
+        """
+
+        self._n_taps = n_taps
+        self._f_cutoffs = f_cutoffs
+        self._nyq = sampling_rate / 2.
+
+        coefficients = signal.firwin(self._n_taps, self._f_cutoffs, nyq=self._nyq)
+
+        super(self.__class__, self).__init__(coefficients, **kwargs)
 #
 #
 # class FIR_Register(Register):
