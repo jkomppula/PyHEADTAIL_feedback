@@ -1,26 +1,15 @@
-import itertools
-import math
-import copy
-from collections import deque
 from abc import ABCMeta, abstractmethod
 import numpy as np
 from scipy.constants import c, pi
-import scipy.integrate as integrate
-import scipy.special as special
-from scipy import linalg
-import pyximport; pyximport.install()
-from cython_functions import cython_matrix_product
 
 class Addition(object):
-
-    # TODO: bin set
     __metaclass__ = ABCMeta
     """ An abstract class which adds an array to the input signal. The addend array is produced by taking
         a slice property (determined in the input parameter 'seed') and passing it through the abstract method, namely
         addend_function(seed).
     """
 
-    def __init__(self, seed, normalization = None, recalculate_addend = False):
+    def __init__(self, seed, normalization = None, recalculate_addend = False, store_signal = False):
         """
         :param seed: 'bin_length', 'bin_midpoint', 'signal' or a property of a slice, which can be found
             from slice_set
@@ -29,7 +18,7 @@ class Addition(object):
             'average_weight': an average in  the multiplier array is equal to 1,
             'maximum_weight': a maximum value in the multiplier array value is equal to 1
             'minimum_weight': a minimum value in the multiplier array value is equal to 1
-        :param: recalculate_weight: if True, the weight is recalculated every time when process() is called
+        :param: recalculate_addend: if True, the weight is recalculated every time when process() is called
         """
 
         self._seed = seed
@@ -43,48 +32,61 @@ class Addition(object):
         if self._seed not in ['bin_length','bin_midpoint','signal']:
             self.required_variables.append(self._seed)
 
+        self._store_signal = store_signal
+
+        self.input_signal = None
+        self.input_bin_edges = None
+
+        self.output_signal = None
+        self.output_bin_edges = None
+
     @abstractmethod
     def addend_function(self, seed):
         pass
 
-    def process(self,signal,slice_sets, *args):
+    def process(self,bin_edges, signal, slice_sets, phase_advance, **kwargs):
 
         if (self._addend is None) or self._recalculate_addend:
-            self.__calculate_addend(signal,slice_sets)
+            self.__calculate_addend(bin_edges,signal,slice_sets)
 
-        return signal + self._addend
+        output_signal = signal + self._addend
 
-    def __calculate_addend(self,signal,slice_sets):
-        if not isinstance(slice_sets, list):
-            slice_sets = [slice_sets]
+        if self._store_signal:
+            self.input_signal = np.copy(signal)
+            self.input_bin_edges = np.copy(bin_edges)
+            self.output_signal = np.copy(output_signal)
+            self.output_bin_edges = np.copy(bin_edges)
+
+        # process the signal
+        return bin_edges, output_signal
+
+
+    def __calculate_addend(self,bin_edges,signal,slice_sets):
 
         if self._addend is None:
             self._addend = np.zeros(len(signal))
-
         if self._seed == 'bin_length':
-            start_idx = 0
-            for slice_set in slice_sets:
-                np.copyto(self._addend[start_idx:(start_idx+len(slice_set.z_bins)-1)],(slice_set.z_bins[1:]-slice_set.z_bins[:-1]))
-                start_idx += (len(slice_set.z_bins)-1)
-
+            np.copyto(self._addend, (bin_edges[:,1]-bin_edges[:,0]))
         elif self._seed == 'bin_midpoint':
-            start_idx = 0
-            for slice_set in slice_sets:
-                np.copyto(self._addend[start_idx:(start_idx+len(slice_set.z_bins)-1)],(slice_set.z_bins[1:]+slice_set.z_bins[:-1])/2.)
-                start_idx += (len(slice_set.z_bins)-1)
-
+            np.copyto(self._addend, ((bin_edges[:,1]+bin_edges[:,0])/2.))
         elif self._seed == 'signal':
             np.copyto(self._addend,signal)
-
         else:
-            start_idx = 0
-            for slice_set in slice_sets:
-                seed = getattr(slice_set,self._seed)
-                np.copyto(self._addend[start_idx:(start_idx+len(seed))],seed)
+            if len(signal) == len(slice_sets) * (len(slice_sets[0].z_bins) - 1):
+                start_idx = 0
+                for slice_set in slice_sets:
+                    seed = getattr(slice_set,self._seed)
+                    np.copyto(self._addend[start_idx:(start_idx+len(seed))],seed)
+                    start_idx += len(seed)
+            else:
+                raise ValueError('Signal length does not correspond to the original signal length '
+                                 'from the slice sets in the method Addition')
 
         self._addend = self.addend_function(self._addend)
 
-        if self._normalization == 'total':
+        if self._normalization is None:
+            norm_coeff = 1.
+        elif self._normalization == 'total':
             norm_coeff = float(np.sum(self._addend))
         elif self._normalization == 'average':
             norm_coeff = float(np.sum(self._addend))/float(len(self._addend))
@@ -93,9 +95,14 @@ class Addition(object):
         elif self._normalization == 'minimum':
             norm_coeff = float(np.min(self._addend))
         else:
-            norm_coeff = 1.
+            raise  ValueError('Unknown value in Addition._normalization')
 
+        # TODO: try to figure out why this can not be written as
+        # TODO:      self._multiplier /= norm_coeff
         self._addend = self._addend / norm_coeff
+
+    def clear(self):
+        self._addend = None
 
 
 class NoiseGenerator(Addition):
@@ -105,23 +112,22 @@ class NoiseGenerator(Addition):
         (distribution = 'normal') and an uniform distribution (distribution = 'uniform')
     """
 
-    def __init__(self,RMS_noise_level,reference_level = 'absolute', distribution = 'normal'):
+    def __init__(self,RMS_noise_level,reference_level = 'absolute', distribution = 'normal', **kwargs):
+        super(self.__class__, self).__init__('signal', recalculate_addend=True, **kwargs)
+        self.label = 'Noise generator'
 
         self._RMS_noise_level = RMS_noise_level
         self._reference_level = reference_level
         self._distribution = distribution
 
-        super(self.__class__, self).__init__('signal', None, True)
-        self.label = 'Noise generator'
-
     def addend_function(self,seed):
-
-        randoms = np.zeros(len(seed))
 
         if self._distribution == 'normal' or self._distribution is None:
             randoms = np.random.randn(len(seed))
         elif self._distribution == 'uniform':
             randoms = 1./0.577263*(-1.+2.*np.random.rand(len(seed)))
+        else:
+            raise ValueError('Unknown value in NoiseGenerator._distribution')
 
         if self._reference_level == 'absolute':
             addend = self._RMS_noise_level*randoms
@@ -129,23 +135,32 @@ class NoiseGenerator(Addition):
             addend = self._RMS_noise_level*np.max(seed)*randoms
         elif self._reference_level == 'local':
             addend = seed*self._RMS_noise_level*randoms
+        else:
+            raise ValueError('Unknown value in NoiseGenerator._reference_level')
 
         return addend
+
+
 
 class AdditionFromFile(Addition):
     """ Adds an array to the signal, which is produced by interpolation from the loaded data. Note the seed for
         the interpolation can be any of those presented in the abstract function.
     """
 
-    def __init__(self,filename, x_axis='time', seed='bin_midpoint',normalization = None, recalculate_multiplier = False):
-        super(self.__class__, self).__init__(seed, normalization, recalculate_multiplier)
+    def __init__(self,filename, x_axis='time', seed='bin_midpoint', **kwargs):
+        super(self.__class__, self).__init__(seed, **kwargs)
         self.label = 'Addition from file'
+
         self._filename = filename
         self._x_axis = x_axis
         self._data = np.loadtxt(self._filename)
+
         if self._x_axis == 'time':
             self._data[:, 0] = self._data[:, 0] * c
-
+        elif self._x_axis == 'position':
+            pass
+        else:
+            raise ValueError('Unknown value in AdditionFromFile._x_axis')
 
     def addend_function(self, seed):
         return np.interp(seed, self._data[:, 0], self._data[:, 1])

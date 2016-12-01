@@ -1,11 +1,5 @@
-from abc import ABCMeta, abstractmethod
-from scipy import signal
-import copy, math
 import numpy as np
 from scipy.constants import c, pi
-import math
-from itertools import izip, count
-from processors import Register
 from scipy import linalg
 import pyximport; pyximport.install()
 from cython_functions import cython_matrix_product
@@ -22,7 +16,7 @@ from cython_functions import cython_matrix_product
 """
 
 class Resampler(object):
-    def __init__(self,type, sampling_rate, sync, signal_length, normalization = 'bin_average',store = False):
+    def __init__(self,type, sampling_rate, sync, signal_length, normalization = 'bin_average',store_signal  = False):
         self._type = type
         self._sampling_rate = sampling_rate
         self._sync = sync
@@ -48,7 +42,7 @@ class Resampler(object):
 
         self._last_input_signal = None
 
-        self._store = store
+        self._store_signal  = store_signal
 
         self.input_signal = None
         self.input_bin_edges = None
@@ -84,7 +78,7 @@ class Resampler(object):
             np.copyto(self._output_signal[output_from:output_to],
                       np.array(cython_matrix_product(self._conversion_matrix, np.array(signal[input_from:input_to]))))
 
-        if self._store:
+        if self._store_signal:
             self.input_signal = np.copy(signal)
             self.input_bin_edges = np.copy(bin_edges)
             self.output_signal = np.copy(self._output_signal)

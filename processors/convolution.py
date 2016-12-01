@@ -1,6 +1,7 @@
 import math
 from abc import ABCMeta, abstractmethod
 import numpy as np
+from scipy import signal
 from scipy.constants import c, pi
 import scipy.integrate as integrate
 import timeit
@@ -124,7 +125,7 @@ class Convolution(object):
     """ An abstract class for signal processors which are based on convolution.
     """
 
-    def __init__(self, impulse_range, store):
+    def __init__(self, impulse_range, store_signal):
 
         self._impulse_range = impulse_range
 
@@ -143,7 +144,7 @@ class Convolution(object):
 
         self._output_signal = None
 
-        self._store = store
+        self._store_signal  = store_signal
 
         self.input_signal = None
         self.input_bin_edges = None
@@ -161,7 +162,7 @@ class Convolution(object):
         else:
             output_bin_edges, output_signal = self.process_normal(bin_edges,signal, [slice_sets])
 
-        if self._store:
+        if self._store_signal :
             self.input_signal = np.copy(signal)
             self.input_bin_edges = np.copy(bin_edges)
             self.output_signal = np.copy(output_signal)
@@ -356,7 +357,7 @@ class Sinc(Filter):
 ########################################################################################################################
 
 class DigitalFilter(object):
-    def __init__(self,coefficients, mode,store):
+    def __init__(self,coefficients, mode,store_signal):
         """ Filters the signal by convolving the signal and the input array of filter (FIR) coefficients
         :param coefficients: A numpy array of filter (convolution) coefficients
         """
@@ -367,7 +368,7 @@ class DigitalFilter(object):
         self._n_bunches = None
         self._bin_check = None
 
-        self._store = store
+        self._store_signal = store_signal
 
         self.input_signal = None
         self.input_bin_edges = None
@@ -403,7 +404,7 @@ class DigitalFilter(object):
         else:
             raise ValueError('Unknown value for DigitalFilter._type')
 
-        if self._store:
+        if self._store_signal:
             self.input_signal = np.copy(signal)
             self.input_bin_edges = np.copy(bin_edges)
             self.output_bin_edges = np.copy(bin_edges)

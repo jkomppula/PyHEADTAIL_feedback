@@ -1,25 +1,14 @@
-import itertools
-import math
-import copy
-from collections import deque
 from abc import ABCMeta, abstractmethod
 import numpy as np
 from scipy.constants import c, pi
-import scipy.integrate as integrate
-import scipy.special as special
-from scipy import linalg
-import pyximport; pyximport.install()
-from cython_functions import cython_matrix_product
 
 class Multiplication(object):
-    # TODO: bin set
-
     __metaclass__ = ABCMeta
     """ An abstract class which multiplies the input signal by an array. The multiplier array is produced by taking
         a slice property (determined in the input parameter 'seed') and passing it through the abstract method, namely
         multiplication_function(seed).
     """
-    def __init__(self, seed, normalization = None, recalculate_multiplier = False, store = False):
+    def __init__(self, seed, normalization = None, recalculate_multiplier = False, store_signal = False):
         """
         :param seed: 'bin_length', 'bin_midpoint', 'signal' or a property of a slice, which can be found
             from slice_set
@@ -42,7 +31,7 @@ class Multiplication(object):
         if self._seed not in ['bin_length','bin_midpoint','signal']:
             self.required_variables.append(self._seed)
 
-        self._store = store
+        self._store_signal = store_signal
 
         self.input_signal = None
         self.input_bin_edges = None
@@ -54,14 +43,14 @@ class Multiplication(object):
     def multiplication_function(self, seed):
         pass
 
-    def process(self,bin_edges, signal, slice_sets, phase_advance=None):
+    def process(self,bin_edges, signal, slice_sets, phase_advance, **kwargs):
 
         if (self._multiplier is None) or self._recalculate_multiplier:
-            self.__calculate_multiplier(signal,slice_sets)
+            self.__calculate_multiplier(bin_edges,signal,slice_sets)
 
         output_signal =  self._multiplier*signal
 
-        if self._store:
+        if self._store_signal:
             self.input_signal = np.copy(signal)
             self.input_bin_edges = np.copy(bin_edges)
             self.output_signal = np.copy(output_signal)
@@ -70,60 +59,58 @@ class Multiplication(object):
         # process the signal
         return bin_edges, output_signal
 
-    def __calculate_multiplier(self,signal,slice_sets):
-        if not isinstance(slice_sets, list):
-            slice_sets = [slice_sets]
+    def __calculate_multiplier(self,bin_edges,signal,slice_sets):
 
         if self._multiplier is None:
             self._multiplier = np.zeros(len(signal))
-
         if self._seed == 'bin_length':
-            start_idx = 0
-            for slice_set in slice_sets:
-                np.copyto(self._multiplier[start_idx:(start_idx+len(slice_set.z_bins)-1)],(slice_set.z_bins[1:]-slice_set.z_bins[:-1]))
-                start_idx += (len(slice_set.z_bins)-1)
-
+            np.copyto(self._multiplier, (bin_edges[:,1]-bin_edges[:,0]))
         elif self._seed == 'bin_midpoint':
-            start_idx = 0
-            for slice_set in slice_sets:
-                np.copyto(self._multiplier[start_idx:(start_idx+len(slice_set.z_bins)-1)],(slice_set.z_bins[1:]+slice_set.z_bins[:-1])/2.)
-                start_idx += (len(slice_set.z_bins)-1)
-
+            np.copyto(self._multiplier, ((bin_edges[:,1]+bin_edges[:,0])/2.))
         elif self._seed == 'signal':
             np.copyto(self._multiplier,signal)
-
         else:
-            start_idx = 0
-            for slice_set in slice_sets:
-                seed = getattr(slice_set,self._seed)
-                np.copyto(self._multiplier[start_idx:(start_idx+len(seed))],seed)
-                start_idx += len(seed)
+            if len(signal) == len(slice_sets) * (len(slice_sets[0].z_bins) - 1):
+                start_idx = 0
+                for slice_set in slice_sets:
+                    seed = getattr(slice_set,self._seed)
+                    np.copyto(self._multiplier[start_idx:(start_idx+len(seed))],seed)
+                    start_idx += len(seed)
+            else:
+                raise ValueError('Signal length does not correspond to the original signal length '
+                                 'from the slice sets in the method Multiplication')
 
+        # print 'self._multiplier: ' + str(self._multiplier)
         self._multiplier = self.multiplication_function(self._multiplier)
 
-        if self._normalization == 'total_weight':
-            norm_coeff = float(np.sum(self._multiplier))
-        elif self._normalization == 'average_weight':
-            norm_coeff = float(np.sum(self._multiplier))/float(len(self._multiplier))
-        elif self._normalization == 'maximum_weight':
-            norm_coeff = float(np.max(self._multiplier))
-        elif self._normalization == 'minimum_weight':
-            norm_coeff = float(np.min(self._multiplier))
-        elif self._normalization == None:
+        if self._normalization is None:
             norm_coeff = 1.
+        elif self._normalization == 'total':
+            norm_coeff = float(np.sum(self._multiplier))
+        elif self._normalization == 'average':
+            norm_coeff = float(np.sum(self._multiplier))/float(len(self._multiplier))
+        elif self._normalization == 'maximum':
+            norm_coeff = float(np.max(self._multiplier))
+        elif self._normalization == 'minimum':
+            norm_coeff = float(np.min(self._multiplier))
+        else:
+            raise  ValueError('Unknown value in Multiplication._normalization')
 
-        # TODO: try to figure out why this can not be written
-        # self._multiplier /= norm_coeff
+        # TODO: try to figure out why this can not be written as
+        # TODO:      self._multiplier /= norm_coeff
         self._multiplier =  self._multiplier / norm_coeff
+
+    def clear(self):
+        self._multiplier = None
 
 
 class ChargeWeighter(Multiplication):
     """ weights signal with charge (macroparticles) of slices
     """
 
-    def __init__(self, normalization = 'maximum_weight', store = False):
-        super(self.__class__, self).__init__('n_macroparticles_per_slice', normalization,recalculate_multiplier = True,
-                                             store = store)
+    def __init__(self, normalization = 'maximum', **kwargs):
+        super(self.__class__, self).__init__('n_macroparticles_per_slice', normalization,recalculate_multiplier = True
+                                             , **kwargs)
         self.label = 'Charge weighter'
 
     def multiplication_function(self,weight):
@@ -134,7 +121,7 @@ class EdgeWeighter(Multiplication):
     """ Use an inverse of the Fermi-Dirac distribution function to increase signal strength on the edges of the bunch
     """
 
-    def __init__(self,bunch_length,bunch_decay_length,maximum_weight = 10):
+    def __init__(self,bunch_length,bunch_decay_length,maximum_weight = 10., **kwargs):
         """
         :param bunch_length: estimated width of the bunch
         :param bunch_decay_length: slope of the function on the edge of the bunch. Smaller value, steeper slope.
@@ -143,7 +130,7 @@ class EdgeWeighter(Multiplication):
         self._bunch_length = bunch_length
         self._bunch_decay_length = bunch_decay_length
         self._maximum_weight=maximum_weight
-        super(self.__class__, self).__init__('bin_midpoint', 'minimum_weight')
+        super(self.__class__, self).__init__('bin_midpoint', 'minimum', **kwargs)
         self.label = 'Edge weighter'
 
     def multiplication_function(self,weight):
@@ -156,12 +143,12 @@ class NoiseGate(Multiplication):
     """ Passes a signal which is greater/less than the threshold level.
     """
 
-    def __init__(self,threshold, operator = 'greater', threshold_ref = 'amplitude'):
+    def __init__(self,threshold, operator = 'greater', threshold_ref = 'amplitude', **kwargs):
 
         self._threshold = threshold
         self._operator = operator
         self._threshold_ref = threshold_ref
-        super(self.__class__, self).__init__('signal', None,recalculate_multiplier = True)
+        super(self.__class__, self).__init__('signal',recalculate_multiplier = True, **kwargs)
         self.label = 'Noise gate'
 
     def multiplication_function(self, seed):
@@ -187,15 +174,20 @@ class MultiplicationFromFile(Multiplication):
         as a seed and etc...
     """
 
-    def __init__(self,filename, x_axis='time', seed='bin_midpoint',normalization = None, recalculate_multiplier = False):
-        super(self.__class__, self).__init__(seed, normalization, recalculate_multiplier)
+    def __init__(self,filename, x_axis='time', seed='bin_midpoint', **kwargs):
+        super(self.__class__, self).__init__(seed, **kwargs)
         self.label = 'Multiplication from file'
 
         self._filename = filename
         self._x_axis = x_axis
         self._data = np.loadtxt(self._filename)
+
         if self._x_axis == 'time':
             self._data[:, 0] = self._data[:, 0] * c
+        elif self._x_axis == 'position':
+            pass
+        else:
+            raise ValueError('Unknown value in MultiplicationFromFile._x_axis')
 
     def multiplication_function(self, seed):
         return np.interp(seed, self._data[:, 0], self._data[:, 1])
