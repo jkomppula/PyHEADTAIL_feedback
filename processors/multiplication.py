@@ -43,7 +43,7 @@ class Multiplication(object):
     def multiplication_function(self, seed):
         pass
 
-    def process(self,bin_edges, signal, slice_sets, phase_advance, **kwargs):
+    def process(self,bin_edges, signal, slice_sets, *args, **kwargs):
 
         if (self._multiplier is None) or self._recalculate_multiplier:
             self.__calculate_multiplier(bin_edges,signal,slice_sets)

@@ -44,7 +44,7 @@ class Addition(object):
     def addend_function(self, seed):
         pass
 
-    def process(self,bin_edges, signal, slice_sets, phase_advance, **kwargs):
+    def process(self,bin_edges, signal, slice_sets, *args, **kwargs):
 
         if (self._addend is None) or self._recalculate_addend:
             self.__calculate_addend(bin_edges,signal,slice_sets)
@@ -98,7 +98,7 @@ class Addition(object):
             raise  ValueError('Unknown value in Addition._normalization')
 
         # TODO: try to figure out why this can not be written as
-        # TODO:      self._multiplier /= norm_coeff
+        # TODO:      self._addend /= norm_coeff
         self._addend = self._addend / norm_coeff
 
     def clear(self):

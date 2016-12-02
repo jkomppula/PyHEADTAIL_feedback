@@ -103,7 +103,7 @@ class LinearTransform(object):
         # np.dot can't be used, because it slows down the calculations in LSF by a factor of two or more
         # return np.dot(self._matrix,signal)
 
-    def clear_matrix(self):
+    def clear(self):
         self._matrix = np.array([])
         self._recalculate_matrix = True
 
@@ -209,7 +209,7 @@ class LinearTransformFromFile(LinearTransform):
             return np.interp(bin_mid - ref_bin_mid, self._data[:, 0], self._data[:, 1])
 
 
-class Filter(LinearTransform):
+class LtFilter(LinearTransform):
     __metaclass__ = ABCMeta
     """ A general class for (analog) filters. Impulse response of the filter must be determined by overwriting
         the function raw_impulse_response.
@@ -239,7 +239,7 @@ class Filter(LinearTransform):
         self._filter_symmetry = filter_symmetry
 
         self._impulse_response = self.__impulse_response_generator(f_cutoff_2nd)
-        super(Filter, self).__init__(norm_type, norm_range, 'fully_diagonal')
+        super(LtFilter, self).__init__(norm_type, norm_range, 'fully_diagonal')
 
 
         self._CDF_time = None
@@ -349,102 +349,7 @@ class Filter(LinearTransform):
 
         return temp
 
-    # def response_function(self, ref_bin_mid, ref_bin_from, ref_bin_to, bin_mid, bin_from, bin_to):
-    #     # Frequency scaling must be done by scaling integral limits, because integration by substitution doesn't work
-    #     # with np.quad (see quad_problem.ipynbl). An ugly way, which could be fixed.
-    #
-    #     scaling = 2.*pi*self._f_cutoff/c
-    #     if self._bunch_spacing is None:
-    #         temp, _ = integrate.quad(self._impulse_response, scaling * (bin_from - (ref_bin_mid+self._delay_z)),
-    #                        scaling * (bin_to - (ref_bin_mid+self._delay_z)))
-    #     else:
-    #         # FIXME: this works well in principle
-    #         # TODO: add option to symmetric and "reverse time" filters.
-    #
-    #
-    #         if self._CDF_time is None:
-    #
-    #             if self._filter_symmetry == 'delay':
-    #                 fun_from = lambda x: scaling * (- 1. * self._bunch_spacing * c)
-    #                 fun_to = lambda x: 0.
-    #             elif self._filter_symmetry == 'advance':
-    #                 fun_from = lambda x: 0
-    #                 fun_to = lambda x: scaling * ( 1. * self._bunch_spacing * c)
-    #             elif self._filter_symmetry == 'symmetric':
-    #                 fun_from = lambda x: scaling * ( - 0.5 * self._bunch_spacing * c)
-    #                 fun_to = lambda x: scaling * ( 0.5 * self._bunch_spacing * c)
-    #
-    #             else:
-    #                 raise ValueError('Filter symmetry is not defined correctly!')
-    #
-    #             n_points = 1000
-    #             self._CDF_time = np.linspace(-10,10,n_points)
-    #             self._CDF_value = np.zeros(n_points)
-    #
-    #             fun = lambda y, x: self._impulse_response(x - y)
-    #             prev_value = self._CDF_time[0]
-    #             cum_value = 0.
-    #             for i, value in enumerate(self._CDF_time[1:]):
-    #                 temp, _ = integrate.dblquad(fun, prev_value, value, fun_from, fun_to)
-    #                 prev_value = value
-    #                 print temp
-    #                 cum_value += temp
-    #                 self._CDF_value[i] = cum_value
-    #             print 'CDF Done'
-    #
-    #
-    #     values = np.interp([scaling * (bin_from - (ref_bin_mid+self._delay_z)),
-    #                        scaling * (bin_to - (ref_bin_mid+self._delay_z))],self._CDF_time,self._CDF_value)
-    #
-    #     temp = values[1]-values[0]
-    #     if ref_bin_mid == bin_mid:
-    #         if self._filter_type == 'highpass':
-    #             temp += 1.
-    #
-    #
-    #     return temp
-
-    # def response_function(self, ref_bin_mid, ref_bin_from, ref_bin_to, bin_mid, bin_from, bin_to):
-    #     # Frequency scaling must be done by scaling integral limits, because integration by substitution doesn't work
-    #     # with np.quad (see quad_problem.ipynbl). An ugly way, which could be fixed.
-    #
-    #     scaling = 2.*pi*self._f_cutoff/c
-    #     if self._bunch_spacing is None:
-    #         temp, _ = integrate.quad(self._impulse_response, scaling * (bin_from - (ref_bin_mid+self._delay_z)),
-    #                        scaling * (bin_to - (ref_bin_mid+self._delay_z)))
-    #     else:
-    #         # FIXME: this works well in principle
-    #         # TODO: add option to symmetric and "reverse time" filters.
-    #
-    #         if self._filter_symmetry == 'delay':
-    #             fun_from = lambda x: scaling * (ref_bin_mid + self._delay_z - 1.*self._bunch_spacing*c)
-    #             fun_to = lambda x: scaling * (ref_bin_mid + self._delay_z)
-    #         elif  self._filter_symmetry == 'advance':
-    #             fun_from = lambda x: scaling * (ref_bin_mid + self._delay_z + 1.*self._bunch_spacing*c)
-    #             fun_to = lambda x: scaling * (ref_bin_mid + self._delay_z)
-    #         elif  self._filter_symmetry == 'symmetric':
-    #             fun_from = lambda x: scaling * (ref_bin_mid + self._delay_z - 0.5*self._bunch_spacing*c)
-    #             fun_to = lambda x: scaling * (ref_bin_mid + self._delay_z + 0.5*self._bunch_spacing*c)
-    #
-    #         else:
-    #             raise ValueError('Filter symmetry is not defined correctly!')
-    #
-    #         fun = lambda y,x: self._impulse_response(x-y)
-    #
-    #         temp, _ = integrate.dblquad(fun, scaling * bin_from, scaling * bin_to, fun_from, fun_to)
-    #
-    #         # temp, _ = integrate.quad(self._impulse_response, scaling * bin_from , bin_to - (ref_bin_mid+self._delay_z)))
-    #
-    #         # temp = temp/(self._bunch_spacing*c)
-    #
-    #     if ref_bin_mid == bin_mid:
-    #         if self._filter_type == 'highpass':
-    #             temp += 1.
-    #
-    #     return temp
-
-
-class Sinc(Filter):
+class Sinc(LtFilter):
     """ A nearly ideal lowpass filter, i.e. a windowed Sinc filter. The impulse response of the ideal lowpass filter
         is Sinc function, but because it is infinite length in both positive and negative time directions, it can not be
         used directly. Thus, the length of the impulse response is limited by using windowing. Properties of the filter
@@ -486,7 +391,7 @@ class Sinc(Filter):
         return 0.54-0.46*np.cos(2.*pi*(x/pi+self.window_width)/(2.*self.window_width))
 
 
-class Lowpass(Filter):
+class Lowpass(LtFilter):
     """ Classical first order lowpass filter (e.g. a RC filter), which impulse response can be described as exponential
         decay.
         """
@@ -500,7 +405,7 @@ class Lowpass(Filter):
         else:
             return math.exp(-1. * x)
 
-class Highpass(Filter):
+class Highpass(LtFilter):
     """The classical version of a highpass filter, which """
     def __init__(self, f_cutoff, delay=0., f_cutoff_2nd=None, norm_type=None, norm_range=None, bunch_spacing = None):
         super(self.__class__, self).__init__('highpass','advance', f_cutoff, delay, f_cutoff_2nd, norm_type, norm_range, bunch_spacing)
@@ -512,7 +417,7 @@ class Highpass(Filter):
         else:
             return -1.*math.exp(-1. * x)
 
-class PhaseLinearizedLowpass(Filter):
+class PhaseLinearizedLowpass(LtFilter):
     def __init__(self, f_cutoff, delay=0., f_cutoff_2nd=None, norm_type=None, norm_range=None, bunch_spacing = None):
         super(self.__class__, self).__init__('lowpass','symmetric', f_cutoff, delay, f_cutoff_2nd, norm_type, norm_range, bunch_spacing)
         self.label = 'Phaselinearized lowpass filter'
