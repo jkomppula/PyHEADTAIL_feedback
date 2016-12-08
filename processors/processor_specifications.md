@@ -1,5 +1,27 @@
-"""
-    This file contains signal processors which can be used in the feedback module in PyHEADTAIL.
+# Processor specifications
+
+This file contains specifications for a signal processor, which can be used in the feedback modele of PyHEADTAIL
+
+## Requirements for a signal processor
+An idea behind the signal processor is that it processes incoming signal
+
+
+
+
+## Types of signal processors
+
+In order to simplify development of the signal processors several abstract classes
+have been programmed. Those
+
+### Addition
+
+### Multiplication
+
+### Convulution
+
+### Linear transform
+
+### Register
 
     A general requirement for the signal processor is that it is a class object containing a function, namely,
     process (signal, slice_set, phase_advance). The input parameters for the function process(signal, slice_set) are
@@ -18,9 +40,3 @@
             a) the object is iterable
             b) the object contains a function namely combine(*args), which combines two signals returned by iteration
                together
-
-    @author Jani Komppula
-    @date 16/09/2016
-    @copyright CERN
-
-"""

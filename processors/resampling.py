@@ -3,7 +3,8 @@ from scipy.constants import c, pi
 import copy
 import pyximport; pyximport.install()
 from cython_functions import cython_matrix_product
-from scipy.interpolate import interp1d
+# from scipy.interpolate import interp1d
+from scipy import interpolate
 
 """
     This file contains signal processors which can be used for emulating digital signal processing in the feedback
@@ -27,7 +28,12 @@ class Resampler(object):
         self._sampling_type = sampling_type
         self._sampling_rate = sampling_rate
         self._sync_method = sync_method
-        self._signal_length = signal_length*c
+
+        if signal_length is not None:
+            self._signal_length = signal_length*c
+        else:
+            self._signal_length = None
+
         self._length_rounding = length_rounding
         self._data_conversion = data_conversion
 
@@ -43,7 +49,7 @@ class Resampler(object):
 
         self._output_z_bins = None
         self._output_n_slices_per_bunch = None
-        self._output_bin_spacing = c/sampling_rate
+        self._output_bin_spacing = None
         self._output_bin_edges = None
         self._total_output_bin_edges = None
         self._total_output_bin_mids = None
@@ -81,8 +87,13 @@ class Resampler(object):
                 np.copyto(self._output_signal[output_from:output_to],
                           np.array(cython_matrix_product(self._conversion_matrix, np.array(signal[input_from:input_to]))))
         elif self._conversion_type == 'interpolation':
-            f = interp1d(self._total_input_bin_mids, signal, kind='cubic')
-            self._output_signal =  f(self._total_output_bin_mids)
+            # f = interp1d(self._total_input_bin_mids, signal, kind='slinear')
+            #
+            # self._output_signal =  f(self._total_output_bin_mids)
+
+            tck = interpolate.splrep(self._total_input_bin_mids, signal, s=0)
+            self._output_signal = interpolate.splev(self._total_output_bin_mids, tck, der=0)
+            # self._output_signal = np.interp(self._total_output_bin_mids, self._total_input_bin_mids, signal)
         else:
             raise ValueError('Unknown value in Resampler._conversion_type')
 
@@ -93,7 +104,6 @@ class Resampler(object):
             self.output_bin_edges = np.copy(self._total_output_bin_edges)
 
         return self._total_output_bin_edges,self._output_signal
-
 
     def __init_variables(self,bin_edges,slice_sets):
         self._n_bunches = len(slice_sets)
@@ -170,13 +180,13 @@ class Resampler(object):
 
         if self._length_rounding == 'round':
             n_slices_per_bunch = np.round(signal_length * sampling_rate / c)
-            signal_length = sampling_rate * float(n_slices_per_bunch) * c
+            signal_length = float(n_slices_per_bunch) * c / sampling_rate
         elif self._length_rounding == 'floor':
             n_slices_per_bunch = np.floor(signal_length*sampling_rate / c)
-            signal_length = sampling_rate * float(n_slices_per_bunch) * c
+            signal_length = float(n_slices_per_bunch) * c / sampling_rate
         elif self._length_rounding == 'ceil':
             n_slices_per_bunch = np.ceil(signal_length*sampling_rate / c)
-            signal_length = sampling_rate * float(n_slices_per_bunch) * c
+            signal_length = float(n_slices_per_bunch) * c / sampling_rate
         elif self._length_rounding == 'exact':
             n_slices_per_bunch = np.round(signal_length*sampling_rate / c)
             sampling_rate = signal_length / (c * float(n_slices_per_bunch))
@@ -197,7 +207,7 @@ class Resampler(object):
             z_to = np.mean(input_z_bins) - 0.5 * signal_length
 
         elif self._sync_method == 'bin_mid':
-            bins_adv = (n_slices_per_bunch - 1)/ 2
+            bins_adv = np.round((n_slices_per_bunch - 1)/ 2)
             z_from = -1. * (0.5 + float(bins_adv)) * bin_spacing
             z_to = (0.5 + float(n_slices_per_bunch - bins_adv - 1)) * bin_spacing
         elif self._sync_method == 'bin_mid_advance':

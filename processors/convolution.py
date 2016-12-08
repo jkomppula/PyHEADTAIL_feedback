@@ -212,9 +212,10 @@ class Convolution(object):
 
             impulse_limits = (self._impulse_z_bins[0], self._impulse_z_bins[-1])
             signal_from = bin_edges[self._n_slices_per_bunch * i,0]
-            signal_to = bin_edges[self._n_slices_per_bunch * (i + 1)-1, 0]
+            signal_to = bin_edges[self._n_slices_per_bunch * (i + 1)-1, 1]
 
             signal_limits = (signal_from, signal_to)
+
             self._impulse_objects.append(Impulse(i,np.array(self.output_signal[idx_from:idx_to], copy=False),
                                                 signal_limits, self._impulse_values, impulse_limits))
 
@@ -349,7 +350,7 @@ class ConvolutionFilter(Convolution):
             response_values[i], _ = integrate.quad(self._impulse_response, int_from, int_to)
 
             if (z_from <= 0.) and (0. < z_to):
-                response_values[i] =+ self._zero_bin_value
+                response_values[i] = response_values[i] + self._zero_bin_value
 
         return response_values
 
@@ -575,7 +576,7 @@ class FIRfilter(object):
             raise ValueError('There are too large gaps between bins!')
 
 
-class NunpyFIRfilter(DigitalFilter):
+class NumpyFIRfilter(FIRfilter):
     def __init__(self,n_taps, f_cutoffs, sampling_rate, **kwargs):
 
         """ A digital FIR (finite impulse response) filter, which uses firwin function from SciPy library to determine

@@ -11,6 +11,8 @@ from scipy import linalg
 import pyximport; pyximport.install()
 from cython_functions import cython_matrix_product
 
+# TODO: clean code here!
+
 class LinearTransform(object):
     __metaclass__ = ABCMeta
     """ An abstract class for signal processors which are based on linear transformation. The signal is processed by
