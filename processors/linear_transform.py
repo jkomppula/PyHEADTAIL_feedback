@@ -75,8 +75,6 @@ class LinearTransform(object):
 
     def process(self,bin_edges, signal, slice_sets, phase_advance=None):
 
-        # FIXME:
-
         if self._matrix is None:
 
             if self._bin_middle == 'particles':
@@ -131,9 +129,9 @@ class LinearTransform(object):
         self._mid_bunch = int(self._n_bunches/2)
 
         norm_bunch_midpoints = bin_midpoints[:self._n_slices_per_bunch]
-        norm_bunch_midpoints = norm_bunch_midpoints / np.mean(slice_sets[0].z_bins)
+        norm_bunch_midpoints = norm_bunch_midpoints - np.mean(slice_sets[0].z_bins)
         norm_bin_edges = bin_edges[:self._n_slices_per_bunch]
-        norm_bin_edges = norm_bin_edges/np.mean(slice_sets[0].z_bins)
+        norm_bin_edges = norm_bin_edges - np.mean(slice_sets[0].z_bins)
 
         bin_spacing = np.mean(norm_bin_edges[:, 1] - norm_bin_edges[:, 0])
 
@@ -144,7 +142,7 @@ class LinearTransform(object):
             for i, midpoint_i in enumerate(norm_bunch_midpoints):
                 for j, midpoint_j in enumerate(norm_bunch_midpoints):
                     self._matrix[j][i] = self.response_function(midpoint_i,norm_bin_edges[i,0],norm_bin_edges[i,1],
-                                                                    midpoint_j,norm_bin_edges[j,0],norm_bin_edges[j,1])
+                                                                midpoint_j,norm_bin_edges[j,0],norm_bin_edges[j,1])
         elif self._mode == 'total':
             self._matrix = np.identity(len(bin_midpoints))
             for i, midpoint_i in enumerate(bin_midpoints):
