@@ -21,8 +21,8 @@ class LinearTransform(object):
         the ref_bin to the bin)
     """
 
-    def __init__(self, norm_type=None, norm_range=None, matrix_symmetry = 'none', bin_check = False,
-                 bin_middle = 'bin', recalculate_always = False, store = False):
+    def __init__(self, mode = 'bunch_by_bunch', norm_type=None, norm_range=None,
+                 bin_middle = 'bin', store_signal = False):
         """
 
         :param norm_type: Describes normalization method for the transfer matrix
@@ -35,31 +35,30 @@ class LinearTransform(object):
         :param norm_range: Normalization length in cases of self.norm_type == 'fi
         xed_length_average' or
             self.norm_type == 'fixed_length_integral'
-        :param matrix_symmetry: symmetry of the matrix is used for minimizing the number of calculable elements
-            in the matrix. Implemented options are:
-            'none':             all elements are calculated separately
-            'fully_diagonal':   all elements are identical in diagonal direction
         :param bin_check: if True, a change of the bin_set is checked every time process() is called and matrix is
             recalculated if any change is found
         :param bin_middle: defines if middle points of the bins are determined by a middle point of the bin
             (bin_middle = 'bin') or an average place of macro particles (bin_middle = 'particles')
         """
 
+        self._mode = mode
+
         self._norm_type = norm_type
         self._norm_range = norm_range
-        self._bin_check = bin_check
         self._bin_middle = bin_middle
-        self._matrix_symmetry = matrix_symmetry
 
         self._z_bin_set = None
         self._matrix = None
 
         self._recalculate_matrix = True
-        self._recalculate_matrix_always = recalculate_always
 
         self.required_variables = ['z_bins','mean_z']
 
-        self._store = store
+        self._store_signal = store_signal
+
+        self._n_bunches = None
+        self._n_slices_per_bunch = None
+        self._mid_bunch = None
 
         self.input_signal = None
         self.input_bin_edges = None
@@ -69,8 +68,6 @@ class LinearTransform(object):
 
         self.label = None
 
-
-
     @abstractmethod
     def response_function(self, ref_bin_mid, ref_bin_from, ref_bin_to, bin_mid, bin_from, bin_to):
         # Impulse response function of the processor
@@ -78,7 +75,9 @@ class LinearTransform(object):
 
     def process(self,bin_edges, signal, slice_sets, phase_advance=None):
 
-        if self._recalculate_matrix:
+        # FIXME:
+
+        if self._matrix is None:
 
             if self._bin_middle == 'particles':
                 bin_midpoints = np.array([])
@@ -89,17 +88,26 @@ class LinearTransform(object):
             else:
                 raise ValueError('Unknown value for LinearTransform._bin_middle ')
 
-            self.__generate_matrix(bin_edges,bin_midpoints)
+            self.__generate_matrix(bin_edges,bin_midpoints,slice_sets)
 
-        output_signal = np.array(cython_matrix_product(self._matrix, signal))
+        if self._mode == 'total':
+            output_signal = np.array(cython_matrix_product(self._matrix, signal))
+        elif self._mode == 'bunch_by_bunch':
+            output_signal = np.zeros(len(signal))
 
-        if self._store:
+            for i in xrange(self._n_bunches):
+                idx_from = i * self._n_slices_per_bunch
+                idx_to = (i+1) * self._n_slices_per_bunch
+                np.copyto(output_signal[idx_from:idx_to],cython_matrix_product(self._matrix, signal[idx_from:idx_to]))
+        else:
+            raise ValueError('Unknown value for LinearTransform._mode ')
+
+        if self._store_signal:
             self.input_signal = np.copy(signal)
             self.input_bin_edges = np.copy(bin_edges)
             self.output_signal = np.copy(output_signal)
             self.output_bin_edges = np.copy(bin_edges)
 
-        # process the signal
         return bin_edges, output_signal
 
         # np.dot can't be used, because it slows down the calculations in LSF by a factor of two or more
@@ -116,47 +124,69 @@ class LinearTransform(object):
                 print "{:6.3f}".format(element),
             print "]"
 
-    def __generate_matrix(self,bin_edges, bin_midpoints):
+    def __generate_matrix(self,bin_edges, bin_midpoints, slice_sets):
 
-        self._matrix = np.identity(len(bin_midpoints))
+        self._n_bunches = len(slice_sets)
+        self._n_slices_per_bunch = len(bin_edges)/self._n_bunches
+        self._mid_bunch = int(self._n_bunches/2)
 
-        for i, midpoint_i in enumerate(bin_midpoints):
-            for j, midpoint_j in enumerate(bin_midpoints):
-                    if np.isnan(self._matrix[j][i]):
-                        self._matrix[j][i] = self.response_function(midpoint_i,bin_edges[i,0],bin_edges[i,1],midpoint_j,bin_edges[j,0]
-                                                               ,bin_edges[j,1])
+        norm_bunch_midpoints = bin_midpoints[:self._n_slices_per_bunch]
+        norm_bunch_midpoints = norm_bunch_midpoints / np.mean(slice_sets[0].z_bins)
+        norm_bin_edges = bin_edges[:self._n_slices_per_bunch]
+        norm_bin_edges = norm_bin_edges/np.mean(slice_sets[0].z_bins)
 
-        # FIXME: This normalization doesn't work for multi bunch bin set
+        bin_spacing = np.mean(norm_bin_edges[:, 1] - norm_bin_edges[:, 0])
+
+        if self._mode == 'bunch_by_bunch':
+
+            self._matrix = np.identity(len(norm_bunch_midpoints))
+
+            for i, midpoint_i in enumerate(norm_bunch_midpoints):
+                for j, midpoint_j in enumerate(norm_bunch_midpoints):
+                    self._matrix[j][i] = self.response_function(midpoint_i,norm_bin_edges[i,0],norm_bin_edges[i,1],
+                                                                    midpoint_j,norm_bin_edges[j,0],norm_bin_edges[j,1])
+        elif self._mode == 'total':
+            self._matrix = np.identity(len(bin_midpoints))
+            for i, midpoint_i in enumerate(bin_midpoints):
+                for j, midpoint_j in enumerate(bin_midpoints):
+                    self._matrix[j][i] = self.response_function(midpoint_i, bin_edges[i, 0], bin_edges[i, 1],
+                                                                midpoint_j, bin_edges[j, 0], bin_edges[j, 1])
+
+        else:
+            raise ValueError('Unknown value in LinearTransform._mode')
+
+        matrix_size = self._matrix.shape
+
         if self._norm_type == 'bunch_average':
+            self._norm_coeff = norm_bin_edges[-1,1] - norm_bin_edges[0,0]
+        elif self._norm_type == 'total_average':
             self._norm_coeff = bin_edges[-1,1] - bin_edges[0,0]
         elif self._norm_type == 'fixed_average':
             self._norm_coeff = self._norm_range[1] - self._norm_range[0]
         elif self._norm_type == 'bunch_integral':
-            center_idx = math.floor(len(bin_midpoints) / 2)
-            self._norm_coeff = self.response_function(bin_midpoints[center_idx], bin_edges[center_idx,0],
-                                                      bin_edges[center_idx,1], bin_midpoints[center_idx],
-                                                      bin_edges[0,0], bin_edges[-1,1])
-        elif self._norm_type == 'mpi_bunch_integral_RC':
-            pass
-            # TODO: think this affect of single bunch signal to all
-
-            # if bunch_data is not None:
-            #     center_idx = math.floor(len(bin_midpoints) / 2)
-            #     self._norm_coeff = self.response_function(bin_midpoints[center_idx], bin_set[center_idx,0],
-            #                                              bin_set[center_idx,1], bin_midpoints[center_idx],
-            #                                              bin_set[0,0], bin_set[-1,1])
-            #
-
+            self._norm_coeff = self.response_function(0., -0.5 * bin_spacing, 0.5 * bin_spacing,
+                                                      0., norm_bin_edges[0,1], norm_bin_edges[-1,1])
+        elif self._norm_type == 'total_integral':
+            self._norm_coeff = self.response_function(np.mean(slice_sets[self._mid_bunch].z_bins),
+                                                      np.mean(slice_sets[self._mid_bunch].z_bins) - 0.5 * bin_spacing,
+                                                      np.mean(slice_sets[self._mid_bunch].z_bins) + 0.5 * bin_spacing,
+                                                      np.mean(slice_sets[self._mid_bunch].z_bins) , bin_edges[0,1],
+                                                      bin_edges[-1,1])
         elif self._norm_type == 'fixed_integral':
-            center_idx = math.floor(len(bin_midpoints) / 2)
-            self._norm_coeff = self.response_function(bin_midpoints[center_idx], bin_edges[center_idx,0],
-                                                      bin_edges[center_idx,1], bin_midpoints[center_idx],
-                                                     self._norm_range[0], self._norm_range[-1])
-        elif self._norm_type == 'max_column':
-            self._norm_coeff= np.max(np.sum(self._matrix,0))
-
+            self._norm_coeff = self.response_function(0., -0.5 * bin_spacing, 0.5 * bin_spacing,
+                                                     0, self._norm_range[0], self._norm_range[-1])
+        elif self._norm_type == 'column_min':
+            self._norm_coeff= np.min(self._matrix[:,int(matrix_size[1]/2)])
+        elif self._norm_type == 'column_max':
+            self._norm_coeff= np.max(self._matrix[:,int(matrix_size[1]/2)])
+        elif self._norm_type == 'column_mean':
+            self._norm_coeff= np.mean(self._matrix[:,int(matrix_size[1]/2)])
+        elif self._norm_type == 'column_sum':
+            self._norm_coeff= np.sum(self._matrix[:,int(matrix_size[1]/2)])
         elif self._norm_type is None:
             self._norm_coeff = 1.
+        else:
+            raise ValueError('Unknown value in LinearTransform._norm_type')
 
         self._matrix = self._matrix / float(self._norm_coeff)
 
@@ -165,20 +195,19 @@ class Averager(LinearTransform):
         are normalized to be one (i.e. a sum of the input signal doesn't change).
     """
 
-    def __init__(self,norm_type = 'max_column', norm_range = None):
-        super(self.__class__, self).__init__(norm_type, norm_range)
+    def __init__(self, mode = 'bunch_by_bunch', norm_type = 'column_sum', **kwargs):
+        super(self.__class__, self).__init__(mode, norm_type, **kwargs)
         self.label = 'Averager'
 
     def response_function(self, ref_bin_mid, ref_bin_from, ref_bin_to, bin_mid, bin_from, bin_to):
         return 1
 
-
 class Delay(LinearTransform):
     """ Delays signal in the units of [second].
     """
-    def __init__(self,delay, norm_type = None, norm_range = None,recalculate_always = False):
+    def __init__(self,delay, **kwargs):
         self._delay = delay
-        super(self.__class__, self).__init__(norm_type, norm_range, 'fully_diagonal', recalculate_always = recalculate_always)
+        super(self.__class__, self).__init__( **kwargs)
         self.label = 'Delay'
 
     def response_function(self, ref_bin_mid, ref_bin_from, ref_bin_to, bin_mid, bin_from, bin_to):
@@ -193,18 +222,17 @@ class Delay(LinearTransform):
         else:
             return 1.
 
-
 class LinearTransformFromFile(LinearTransform):
     """ Interpolates matrix columns by using inpulse response data from a file. """
 
-    def __init__(self,filename, x_axis = 'time', norm_type = 'max_column', norm_range = None):
+    def __init__(self,filename, x_axis = 'time', norm_type = 'max_column', **kwargs):
         self._filename = filename
         self._x_axis = x_axis
         self._data = np.loadtxt(self._filename)
         if self._x_axis == 'time':
             self._data[:, 0]=self._data[:, 0]*c
 
-        super(self.__class__, self).__init__(norm_type, norm_range)
+        super(self.__class__, self).__init__(norm_type, **kwargs)
         self.label = 'LT from file'
 
     def response_function(self, ref_bin_mid, ref_bin_from, ref_bin_to, bin_mid, bin_from, bin_to):
@@ -220,7 +248,8 @@ class LtFilter(LinearTransform):
 
     """
 
-    def __init__(self, filter_type, filter_symmetry,f_cutoff, delay, f_cutoff_2nd, norm_type, norm_range, bunch_spacing):
+    def __init__(self, filter_type, filter_symmetry,f_cutoff, delay = 0., f_cutoff_2nd = None, bunch_spacing = None
+                 , **kwargs):
         """
         :param filter_type: Options are:
                 'lowpass'
@@ -241,7 +270,7 @@ class LtFilter(LinearTransform):
         self._filter_symmetry = filter_symmetry
 
         self._impulse_response = self.__impulse_response_generator(f_cutoff_2nd)
-        super(LtFilter, self).__init__(norm_type, norm_range, 'fully_diagonal')
+        super(LtFilter, self).__init__(**kwargs)
 
 
         self._CDF_time = None
@@ -285,66 +314,15 @@ class LtFilter(LinearTransform):
 
         return transfer_function
 
+
     def response_function(self, ref_bin_mid, ref_bin_from, ref_bin_to, bin_mid, bin_from, bin_to):
         # Frequency scaling must be done by scaling integral limits, because integration by substitution doesn't work
         # with np.quad (see quad_problem.ipynbl). An ugly way, which could be fixed.
 
         scaling = 2. * pi * self._f_cutoff / c
-        if self._bunch_spacing is None:
-            temp, _ = integrate.quad(self._impulse_response, scaling * (bin_from - (ref_bin_mid + self._delay_z)),
-                                     scaling * (bin_to - (ref_bin_mid + self._delay_z)))
-        else:
-            # FIXME: this works well in principle
-            # TODO: add option to symmetric and "reverse time" filters.
+        temp, _ = integrate.quad(self._impulse_response, scaling * (bin_from - (ref_bin_mid + self._delay_z)),
+                                 scaling * (bin_to - (ref_bin_mid + self._delay_z)))
 
-            if self._CDF_time is None:
-
-                n_taus = 10.
-
-                if self._filter_symmetry == 'delay':
-                    int_from = scaling * (- 1. * 0.9 * self._bunch_spacing * c)
-                    int_to = scaling * ( 0.1 * self._bunch_spacing * c)
-                    x_from = scaling * (- 1. * self._bunch_spacing * c) - n_taus
-                    x_to = n_taus
-                elif self._filter_symmetry == 'advance':
-                    int_from = 0.
-                    int_to = scaling * ( self._bunch_spacing * c)
-                    x_from = -1. * n_taus
-                    x_to = n_taus +  scaling * (1. * self._bunch_spacing * c)
-                elif self._filter_symmetry == 'symmetric':
-                    int_from =  scaling * (- 0.5 * self._bunch_spacing * c)
-                    int_to = scaling * (0.5 * self._bunch_spacing * c)
-                    x_from =  scaling * (- 0.5 * self._bunch_spacing * c) - n_taus
-                    x_to = n_taus + scaling * (0.5 * self._bunch_spacing * c)
-
-                else:
-                    raise ValueError('Filter symmetry is not defined correctly!')
-
-                n_points = 10000
-                self._CDF_time = np.linspace(x_from, x_to, n_points)
-
-                step_size = (x_to-x_from)/float(n_points)
-                self._CDF_value = np.zeros(n_points)
-                self._PDF = np.zeros(n_points)
-
-                prev_value = self._CDF_time[0]
-                cum_value = 0.
-
-
-                for i, value in enumerate(self._CDF_time):
-                    fun = lambda x: self._impulse_response(value - x)
-                    temp, _ = integrate.quad(fun, int_from, int_to)
-                    prev_value = value
-                    # print temp
-                    cum_value += temp*step_size
-                    self._PDF[i] = temp
-                    self._CDF_value[i] = cum_value
-                print 'CDF Done'
-
-        values = np.interp([scaling * (bin_from - (ref_bin_mid + self._delay_z)),
-                            scaling * (bin_to - (ref_bin_mid + self._delay_z))], self._CDF_time, self._CDF_value)
-
-        temp = values[1] - values[0]
         if ref_bin_mid == bin_mid:
             if self._filter_type == 'highpass':
                 temp += 1.
@@ -362,7 +340,7 @@ class Sinc(LtFilter):
         code in example/test 004_analog_signal_processors.ipynb
     """
 
-    def __init__(self, f_cutoff, delay=0., window_width = 3, window_type = 'blackman' , norm_type=None, norm_range=None, bunch_spacing = None):
+    def __init__(self, f_cutoff, window_width = 3, window_type = 'blackman', **kwargs):
         """
         :param f_cutoff: a cutoff frequency of the filter
         :param delay: a delay of the filter [s]
@@ -373,7 +351,7 @@ class Sinc(LtFilter):
         """
         self.window_width = float(window_width)
         self.window_type = window_type
-        super(self.__class__, self).__init__('lowpass', 'symmetric', f_cutoff, delay, None, norm_type, norm_range, bunch_spacing)
+        super(self.__class__, self).__init__('lowpass', 'symmetric', f_cutoff, **kwargs)
         self.label = 'Sinc filter'
 
     def raw_impulse_response(self, x):
@@ -397,8 +375,8 @@ class Lowpass(LtFilter):
     """ Classical first order lowpass filter (e.g. a RC filter), which impulse response can be described as exponential
         decay.
         """
-    def __init__(self, f_cutoff, delay=0., f_cutoff_2nd=None, norm_type=None, norm_range=None, bunch_spacing = None):
-        super(self.__class__, self).__init__('lowpass','delay', f_cutoff, delay, f_cutoff_2nd, norm_type, norm_range, bunch_spacing)
+    def __init__(self, f_cutoff, **kwargs):
+        super(self.__class__, self).__init__('lowpass','delay', f_cutoff, **kwargs)
         self.label = 'Lowpass filter'
 
     def raw_impulse_response(self, x):
@@ -409,8 +387,8 @@ class Lowpass(LtFilter):
 
 class Highpass(LtFilter):
     """The classical version of a highpass filter, which """
-    def __init__(self, f_cutoff, delay=0., f_cutoff_2nd=None, norm_type=None, norm_range=None, bunch_spacing = None):
-        super(self.__class__, self).__init__('highpass','advance', f_cutoff, delay, f_cutoff_2nd, norm_type, norm_range, bunch_spacing)
+    def __init__(self, f_cutoff, **kwargs):
+        super(self.__class__, self).__init__('highpass','advance', f_cutoff, **kwargs)
         self.label = 'Highpass filter'
 
     def raw_impulse_response(self, x):
@@ -420,8 +398,8 @@ class Highpass(LtFilter):
             return -1.*math.exp(-1. * x)
 
 class PhaseLinearizedLowpass(LtFilter):
-    def __init__(self, f_cutoff, delay=0., f_cutoff_2nd=None, norm_type=None, norm_range=None, bunch_spacing = None):
-        super(self.__class__, self).__init__('lowpass','symmetric', f_cutoff, delay, f_cutoff_2nd, norm_type, norm_range, bunch_spacing)
+    def __init__(self, f_cutoff, **kwargs):
+        super(self.__class__, self).__init__('lowpass','symmetric', f_cutoff, **kwargs)
         self.label = 'Phaselinearized lowpass filter'
 
     def raw_impulse_response(self, x):
