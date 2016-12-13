@@ -24,6 +24,7 @@ from PyHEADTAIL_MPI.mpi import mpi_data
 
 """
 
+# TODO: add beta function
 
 def get_processor_variables(processors, required_variables = None):
     """Function which checks statistical variables required by signal processors
@@ -72,7 +73,6 @@ class IdealBunchFeedback(object):
 class IdealSliceFeedback(object):
     """Corrects a gain fraction of a mean xp/yp value of each slice in the bunch."""
     def __init__(self,gain,slicer):
-
         if isinstance(gain, collections.Container):
             self._gain_x = gain[0]
             self._gain_y = gain[1]
@@ -145,8 +145,8 @@ class FeedbackMapObject(object):
             self._bunch_list = self._mpi_gatherer.bunch_list
 
         else:
-            processor_slice_sets = [bunch.get_slices(self._slicer, statistics=self._statistical_variables)]
-            self._local_slice_sets = processor_slice_sets
+            self._processor_slice_sets = [bunch.get_slices(self._slicer, statistics=self._statistical_variables)]
+            self._local_slice_sets = self._processor_slice_sets
             self._bunch_list = [bunch]
 
     def _init_variables(self,bunch):
@@ -192,18 +192,23 @@ class FeedbackMapObject(object):
             np.copyto(self._input_signal_y[idx_from:idx_to],getattr(slice_set, attr_y))
 
     def _process_signal(self):
-        bin_edges_x = np.copy(self._input_bin_edges)
+
         signal_x = np.copy(self._input_signal_x)
-
-        for processor in self._processors_x:
-            bin_edges_x, signal_x = processor.process(bin_edges_x, signal_x,self._processor_slice_sets,
-                                                     phase_advance=self._phase_advance_x)
-
-        bin_edges_y = np.copy(self._input_bin_edges)
         signal_y = np.copy(self._input_signal_y)
-        for processor in self._processors_y:
-            bin_edges_y, signal_y = processor.process(bin_edges_y, signal_y,self._processor_slice_sets,
-                                                     phase_advance=self._phase_advance_y)
+
+        if self._input_signal_x is not None:
+            bin_edges_x = np.copy(self._input_bin_edges)
+            for processor in self._processors_x:
+                bin_edges_x, signal_x = processor.process(bin_edges_x, signal_x,self._processor_slice_sets, self._phase_advance_x)
+        else:
+            print 'Warning: Correction signal in x-plane is None'
+
+        if self._input_signal_y is not None:
+            bin_edges_y = np.copy(self._input_bin_edges)
+            for processor in self._processors_y:
+                bin_edges_y, signal_y = processor.process(bin_edges_y, signal_y,self._processor_slice_sets, self._phase_advance_y)
+        else:
+            print 'Warning: Correction signal in y-plane is None'
 
         return signal_x, signal_y
 
@@ -218,20 +223,22 @@ class FeedbackMapObject(object):
             idx_from = bunch_idx * self._n_slices_per_bunch
             idx_to = (bunch_idx + 1) * self._n_slices_per_bunch
 
-            correction_x = self._gain_x*signal_x[idx_from:idx_to]
-            correction_y = self._gain_y*signal_y[idx_from:idx_to]
 
             # mpi_gatherer has also slice set list, which can be used for applying the kicks
             p_idx = self._local_slice_sets[local_idx].particles_within_cuts
             s_idx = self._local_slice_sets[local_idx].slice_index_of_particle.take(p_idx)
 
-            particle_coordinates_x = getattr(sub_bunch,attr_x)
-            particle_coordinates_x[p_idx] -= correction_x[s_idx]
-            setattr(sub_bunch,attr_x,particle_coordinates_x)
+            if self._input_signal_x is not None:
+                correction_x = self._gain_x*signal_x[idx_from:idx_to]
+                particle_coordinates_x = getattr(sub_bunch,attr_x)
+                particle_coordinates_x[p_idx] -= correction_x[s_idx]
+                setattr(sub_bunch,attr_x,particle_coordinates_x)
 
-            particle_coordinates_y = getattr(sub_bunch,attr_y)
-            particle_coordinates_y[p_idx] -= correction_y[s_idx]
-            setattr(sub_bunch,attr_y,particle_coordinates_y)
+            if self._input_signal_y is not None:
+                correction_y = self._gain_y*signal_y[idx_from:idx_to]
+                particle_coordinates_y = getattr(sub_bunch,attr_y)
+                particle_coordinates_y[p_idx] -= correction_y[s_idx]
+                setattr(sub_bunch,attr_y,particle_coordinates_y)
 
         if self._mpi:
             # at the end the superbunch must be rebunched. Without that the kicks do not apply to the next turn
@@ -285,10 +292,10 @@ class PickUp(FeedbackMapObject):
                                              phase_advance_x = phase_advance_x, phase_advance_y = phase_advance_y,
                                              **kwargs)
 
-        def track(self, bunch):
-            self._init_track(bunch)
-            self._read_signal(self._slice_attr_x, self._slice_attr_y)
-            self._process_signal()
+    def track(self, bunch):
+        self._init_track(bunch)
+        self._read_signal(self._slice_attr_x, self._slice_attr_y)
+        self._process_signal()
 
 
 class Kicker(FeedbackMapObject):
@@ -322,6 +329,7 @@ class Kicker(FeedbackMapObject):
 
         self._input_signal_x = self.__combine(self._registers_x,self._phase_advance_x, self._xp_per_x)
         self._input_signal_y = self.__combine(self._registers_y,self._phase_advance_y, self._yp_per_y)
+
         signal_x, signal_y = self._process_signal()
         self._do_kick(bunch,signal_x,signal_y,self._particle_attr_x, self._particle_attr_y)
 

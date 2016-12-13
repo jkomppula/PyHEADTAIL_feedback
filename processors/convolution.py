@@ -401,7 +401,7 @@ class ConvolutionFilter(Convolution):
         return transfer_function
 
 class Lowpass(ConvolutionFilter):
-    def __init__(self,f_cutoff, impulse_length = 3., f_cutoff_2nd = None, **kwargs):
+    def __init__(self,f_cutoff, impulse_length = 5., f_cutoff_2nd = None, **kwargs):
         scaling = 2. * pi * f_cutoff / c
         impulse_range = (0, impulse_length/scaling)
 
@@ -420,7 +420,7 @@ class Lowpass(ConvolutionFilter):
             return math.exp(-1. * x)
 
 class Highpass(ConvolutionFilter):
-    def __init__(self,f_cutoff, impulse_length = 3., f_cutoff_2nd = None, **kwargs):
+    def __init__(self,f_cutoff, impulse_length = 5., f_cutoff_2nd = None, **kwargs):
         scaling = 2. * pi * f_cutoff / c
         impulse_range = (0, impulse_length/scaling)
 
@@ -439,7 +439,7 @@ class Highpass(ConvolutionFilter):
             return -1.* math.exp(-1. * x)
 
 class PhaseLinearizedLowpass(ConvolutionFilter):
-    def __init__(self, f_cutoff, impulse_length = 3., f_cutoff_2nd = None, **kwargs):
+    def __init__(self, f_cutoff, impulse_length = 5., f_cutoff_2nd = None, **kwargs):
         scaling = 2. * pi * f_cutoff / c
         impulse_range = (-1.*impulse_length/scaling, impulse_length/scaling)
 
@@ -451,7 +451,7 @@ class PhaseLinearizedLowpass(ConvolutionFilter):
         super(self.__class__, self).__init__( scaling, impulse_range, tip_cut_width = tip_cut_width, **kwargs)
         self.label = 'Phaselinearized lowpass filter'
 
-    def raw_impulse_response(self, x):
+    def _raw_impulse_response(self, x):
         if x == 0.:
             return 0.
         else:
@@ -507,7 +507,7 @@ class Sinc(ConvolutionFilter):
 ########################################################################################################################
 
 class FIRfilter(object):
-    def __init__(self,coefficients, mode,store_signal):
+    def __init__(self,coefficients, mode = 'bunch_by_bunch',store_signal=False):
         """ Filters the signal by convolving the signal and the input array of filter (FIR) coefficients
         :param coefficients: A numpy array of filter (convolution) coefficients
         """
@@ -532,15 +532,17 @@ class FIRfilter(object):
 
         if self._n_bunches is None:
             self._n_bunches = len(slice_sets)
-            self._n_slices_per_bunch = len(slice_sets[0].z_bins) - 1
+            self._n_slices_per_bunch = int(len(signal)/self._n_bunches)
             self.output_signal = np.zeros(self._n_bunches*self._n_slices_per_bunch)
 
         if self._mode == 'bunch_by_bunch':
             for i in xrange(self._n_bunches):
                 i_from = i * self._n_slices_per_bunch
                 i_to = (i+1) * self._n_slices_per_bunch
-                np.copyto(self.output_signal[i_from:i_to],
-                          np.convolve(np.array(signal[i_from:i_to]), np.array(self._coefficients), mode='same'))
+                temp_signal = signal[i_from:i_to]
+                out_temp_signal =  np.convolve(temp_signal, self._coefficients, mode='same')
+                np.copyto(self.output_signal[i_from:i_to],out_temp_signal)
+
         elif self._mode == 'continuously':
             if self._bin_check is None:
                 self._check_bin_spacing(bin_edges)

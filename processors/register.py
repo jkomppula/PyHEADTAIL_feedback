@@ -74,10 +74,10 @@ class Register(object):
             self._n_iter_left -= 1
             return (self._register[self._n_iter_left],None,delay,self._phase_advance)
 
-    def process(self,signal, slice_set, data_phase_advance ,*args):
+    def process(self,bin_edges, signal, slice_sets, phase_advance, **kwargs):
 
         if self._phase_advance is None:
-            self._phase_advance = data_phase_advance
+            self._phase_advance = phase_advance
 
         self._register.append(signal)
 
@@ -94,7 +94,7 @@ class Register(object):
                     prev = value
                     temp_signal += combined / float(len(self))
 
-            return temp_signal
+            return bin_edges, temp_signal
 
     @abstractmethod
     def combine(self,x1,x2,reader_position,x_to_xp = False):
@@ -209,80 +209,80 @@ class CosineSumRegister(Register):
 
 
 
-#
-#
-# class FIR_Register(Register):
-#     def __init__(self, n_taps, tune, delay, zero_idx, in_processor_chain):
-#         """ A general class for the register object, which uses FIR (finite impulse response) method to calculate
-#             a correct signal for kick from the register values. Because the register can be used for multiple kicker
-#             (in different locations), the filter coefficients are calculated in every call with
-#             the function namely coeff_generator.
-#
-#         :param n_taps: length of the register (and length of filter)
-#         :param tune: a real number value of a betatron tune (e.g. 59.28 in horizontal or 64.31 in vertical direction
-#                 for LHC)
-#         :param delay: a delay between storing to reading values  in turns
-#         :param zero_idx: location of the zero index of the filter coeffients
-#             'middle': an index of middle value in the register is 0. Values which have spend less time than that
-#                     in the register have negative indexes and vice versa
-#         :param in_processor_chain: if True, process() returns a signal, if False saves computing time
-#         """
-#         self.combination = 'individual'
-#         # self.combination = 'combined'
-#         self._zero_idx = zero_idx
-#         self._n_taps = n_taps
-#
-#         super(FIR_Register, self).__init__(n_taps, tune, delay, in_processor_chain)
-#         self.required_variables = []
-#
-#     def combine(self,x1,x2,reader_phase_advance,x_to_xp = False):
-#         delta_phi = -1. * float(self._delay) * self._phase_shift_per_turn
-#
-#         if self._zero_idx == 'middle':
-#             delta_phi -= float(self._n_taps/2) * self._phase_shift_per_turn
-#
-#         if reader_phase_advance is not None:
-#             delta_position = self._phase_advance - reader_phase_advance
-#             delta_phi += delta_position
-#             if delta_position > 0:
-#                 delta_phi -= self._phase_shift_per_turn
-#             if x_to_xp == True:
-#                 delta_phi -= pi/2.
-#
-#         n = self._n_iter_left
-#
-#         if self._zero_idx == 'middle':
-#             n -= self._n_taps/2
-#         # print delta_phi
-#         h = self.coeff_generator(n, delta_phi)
-#         h *= self._n_taps
-#
-#         # print str(len(self)/2) + 'n: ' + str(n) + ' -> ' + str(h)  + ' (phi = ' + str(delta_phi) + ') from ' + str(self._phase_advance) + ' to ' + str(reader_phase_advance)
-#
-#         return h*x1[0]
-#
-#     def coeff_generator(self, n, delta_phi):
-#         """ Calculates filter coefficients
-#         :param n: index of the value
-#         :param delta_phi: total phase advance to the kicker for the value which index is 0
-#         :return: filter coefficient h
-#         """
-#         return 0.
-#
-#
-# class HilbertPhaseShiftRegister(FIR_Register):
-#     """ A register used in some damper systems at CERN. The correct signal is calculated by using FIR phase shifter,
-#     which is based on the Hilbert transform. It is recommended to use odd number of taps (e.g. 7) """
-#
-#     def __init__(self,n_taps, tune, delay = 0, in_processor_chain=True):
-#         super(self.__class__, self).__init__(n_taps, tune, delay, 'middle', in_processor_chain)
-#
-#     def coeff_generator(self, n, delta_phi):
-#         h = 0.
-#
-#         if n == 0:
-#             h = np.cos(delta_phi)
-#         elif n % 2 == 1:
-#             h = -2. * np.sin(delta_phi) / (pi * float(n))
-#
-#         return h
+
+
+class FIR_Register(Register):
+    def __init__(self, n_taps, tune, delay, zero_idx, in_processor_chain):
+        """ A general class for the register object, which uses FIR (finite impulse response) method to calculate
+            a correct signal for kick from the register values. Because the register can be used for multiple kicker
+            (in different locations), the filter coefficients are calculated in every call with
+            the function namely coeff_generator.
+
+        :param n_taps: length of the register (and length of filter)
+        :param tune: a real number value of a betatron tune (e.g. 59.28 in horizontal or 64.31 in vertical direction
+                for LHC)
+        :param delay: a delay between storing to reading values  in turns
+        :param zero_idx: location of the zero index of the filter coeffients
+            'middle': an index of middle value in the register is 0. Values which have spend less time than that
+                    in the register have negative indexes and vice versa
+        :param in_processor_chain: if True, process() returns a signal, if False saves computing time
+        """
+        self.combination = 'individual'
+        # self.combination = 'combined'
+        self._zero_idx = zero_idx
+        self._n_taps = n_taps
+
+        super(FIR_Register, self).__init__(n_taps, tune, delay, in_processor_chain)
+        self.required_variables = []
+
+    def combine(self,x1,x2,reader_phase_advance,x_to_xp = False):
+        delta_phi = -1. * float(self._delay) * self._phase_shift_per_turn
+
+        if self._zero_idx == 'middle':
+            delta_phi -= float(self._n_taps/2) * self._phase_shift_per_turn
+
+        if reader_phase_advance is not None:
+            delta_position = self._phase_advance - reader_phase_advance
+            delta_phi += delta_position
+            if delta_position > 0:
+                delta_phi -= self._phase_shift_per_turn
+            if x_to_xp == True:
+                delta_phi -= pi/2.
+
+        n = self._n_iter_left
+
+        if self._zero_idx == 'middle':
+            n -= self._n_taps/2
+        # print delta_phi
+        h = self.coeff_generator(n, delta_phi)
+        h *= self._n_taps
+
+        # print str(len(self)/2) + 'n: ' + str(n) + ' -> ' + str(h)  + ' (phi = ' + str(delta_phi) + ') from ' + str(self._phase_advance) + ' to ' + str(reader_phase_advance)
+
+        return h*x1[0]
+
+    def coeff_generator(self, n, delta_phi):
+        """ Calculates filter coefficients
+        :param n: index of the value
+        :param delta_phi: total phase advance to the kicker for the value which index is 0
+        :return: filter coefficient h
+        """
+        return 0.
+
+
+class HilbertPhaseShiftRegister(FIR_Register):
+    """ A register used in some damper systems at CERN. The correct signal is calculated by using FIR phase shifter,
+    which is based on the Hilbert transform. It is recommended to use odd number of taps (e.g. 7) """
+
+    def __init__(self,n_taps, tune, delay = 0, in_processor_chain=True):
+        super(self.__class__, self).__init__(n_taps, tune, delay, 'middle', in_processor_chain)
+
+    def coeff_generator(self, n, delta_phi):
+        h = 0.
+
+        if n == 0:
+            h = np.cos(delta_phi)
+        elif n % 2 == 1:
+            h = -2. * np.sin(delta_phi) / (pi * float(n))
+
+        return h

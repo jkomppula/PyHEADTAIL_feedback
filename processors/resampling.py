@@ -292,8 +292,6 @@ class Resampler(object):
                         self._conversion_matrix[i, j] = conversion_value[kernel_idx]
                 else:
                     raise ValueError('Unknown data type in conversion_value')
-        print 'self._conversion_matrix:'
-        print self._conversion_matrix
 
     def __CDF(self,x,ref_bin_from, ref_bin_to):
             if x <= ref_bin_from:

@@ -96,7 +96,10 @@ def generate_bunch(machine, n_macroparticles, long_map):
               (2 * np.pi * long_map.Qs))
 
     epsn_z = 4. * np.pi * machine.sigma_z ** 2. * machine.p0 / (beta_z * e)
-
+    
+    print 'machine.beta_x_inj: ' + str(machine.beta_x_inj)
+    print 'machine.beta_y_inj: ' + str(machine.beta_y_inj)
+    
     bunch = generators.generate_Gaussian6DTwiss(
         macroparticlenumber=n_macroparticles, intensity=machine.intensity, charge=e,
         gamma=machine.gamma, mass=m_p, circumference=machine.C,
