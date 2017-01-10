@@ -11,6 +11,13 @@ Unfortunately, the required definition for signals should work in the all cases 
 
 There is a hierarchy in the signal classes. For class 0 signals a very few assumptions about the signal has been made. Class 1 signals are assumed to be equally spaced, but not continuous in time. In Class 2, signals are finite length, equally spaced and continuous in time. This means that a signal processor designed for lower class signals (e.g. Class 0) can process upper class signals  (e.g. Class 1 and Class 2), but not vice versa.
 
+~~~python
+import collections
+
+SignalParameters = collections.namedtuple('SignalParameters', ['class','bin_edges','n_segments', 'n_slices_per_segment'])
+~~~
+
+
 ##### Class 0
 The basic definition for a signal is that it is a numpy array of floating point numbers. Each number in the array corresponds to an averaged signal over the specific time interval, *bin*. There are no limitations how the bins are located in the physical space. Thus, additional data are given together with the signal in the variable *bin_edges*. A 2D numpy array *bin_edges* is equal length to the signal, but each row includes two floating point numbers, the positions of the bin edges in the physical space.
 

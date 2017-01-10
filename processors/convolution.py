@@ -1,4 +1,4 @@
-import math
+import math, copy
 from abc import ABCMeta, abstractmethod
 import numpy as np
 from scipy import signal
@@ -129,13 +129,16 @@ class Convolution(object):
 
         self._impulse_range = impulse_range
 
-        self.required_variables = ['z_bins','mean_z']
+        self.signal_classes = (1, 1)
 
-        self._n_slices_per_bunch = None
-        self._n_bunches = None
+        self.extensions = ['store']
+        self._store_signal = store_signal
 
-        self._impulse_z_bins = None
-        self._impulse_mean_z = None
+        self._n_slices_per_segment = None
+        self._n_segments = None
+
+        self._impulse_bin_edges = None
+        self._impulse_bin_mids = None
         self._impulse_values = None
 
         self._bin_spacing = None
@@ -145,23 +148,24 @@ class Convolution(object):
         self._store_signal  = store_signal
 
         self.input_signal = None
-        self.input_bin_edges = None
+        self.input_signal_parameters = None
 
         self.output_signal = None
-        self.output_bin_edges = None
+        self.output_signal_parameters = None
 
 
-    def process(self, bin_edges, signal, slice_sets, *args, **kwargs):
+    def process(self, signal_parameters, signal, *args, **kwargs):
 
         if self.output_signal is None:
-            self.__init_variables(bin_edges,signal,slice_sets)
+            self.__init_variables(signal_parameters.bin_edges,signal,signal_parameters.n_segments,
+                                  signal_parameters.n_slices_per_segment)
         else:
             self.output_signal.fill(0.)
 
         for i,impulse_object in enumerate(self._impulse_objects):
 
-            signal_from = i*self._n_slices_per_bunch
-            signal_to = (i+1)*self._n_slices_per_bunch
+            signal_from = i*self._n_slices_per_segment
+            signal_to = (i+1)*self._n_slices_per_segment
             impulse_object.build_impulse(signal[signal_from:signal_to])
 
             for target_bunch, impulse_view in zip(impulse_object.target_bunches, impulse_object.impulse_views):
@@ -171,19 +175,19 @@ class Convolution(object):
                     raise ValueError('Memviews are not synchronized!')
 
         if self._store_signal:
-            self.input_signal = np.copy(signal)
-            self.input_bin_edges = np.copy(bin_edges)
-            self.output_bin_edges = np.copy(bin_edges)
+            self.input_signal = copy.copy(signal)
+            self.input_signal_parameters = copy.copy(signal_parameters)
+            self.output_signal_parameters = copy.copy(signal_parameters)
 
-        return bin_edges, self.output_signal
+        return signal_parameters, self.output_signal
 
-    def __init_variables(self,bin_edges,signal,slice_sets):
+    def __init_variables(self,bin_edges,signal,n_segments,n_slices_per_segment):
 
         # generates variables
-        self._n_bunches = len(slice_sets)
-        self._n_slices_per_bunch = len(bin_edges)/self._n_bunches
+        self._n_segments = n_segments
+        self._n_slices_per_segment = n_slices_per_segment
         self.output_signal = np.zeros(len(signal))
-        self._bin_spacing = np.mean(bin_edges[0:self._n_slices_per_bunch,1]-bin_edges[0:self._n_slices_per_bunch,0])
+        self._bin_spacing = np.mean(bin_edges[0:self._n_slices_per_segment,1]-bin_edges[0:self._n_slices_per_segment,0])
 
         # generates an impulse response
         if self._impulse_range[0] < -0.5*self._bin_spacing:
@@ -197,22 +201,24 @@ class Convolution(object):
         else:
             z_bins_plus = np.array([0.5*self._bin_spacing])
 
-        self._impulse_z_bins = np.append(z_bins_minus,z_bins_plus)
-        self._impulse_z_bins = self._impulse_z_bins[self._impulse_z_bins >= (self._impulse_range[0] - 0.5*self._bin_spacing)]
-        self._impulse_z_bins = self._impulse_z_bins[self._impulse_z_bins <= (self._impulse_range[1] + 0.5*self._bin_spacing)]
-        self._impulse_mean_z = (self._impulse_z_bins[1:]+self._impulse_z_bins[:-1])/2.
-        self._impulse_values = self.calculate_response(self._impulse_mean_z,self._impulse_z_bins,slice_sets)
+        # TODO: change naming and also z bins to standard bin edges
+        impulse_z_bins = np.append(z_bins_minus,z_bins_plus)
+        impulse_z_bins = impulse_z_bins[impulse_z_bins >= (self._impulse_range[0] - 0.5*self._bin_spacing)]
+        impulse_z_bins = impulse_z_bins[impulse_z_bins <= (self._impulse_range[1] + 0.5*self._bin_spacing)]
+        self._impulse_bin_edges = np.transpose(np.array([impulse_z_bins[:-1],impulse_z_bins[1:]]))
+        self._impulse_bin_mids = (impulse_z_bins[1:]+impulse_z_bins[:-1])/2.
+        self._impulse_values = self.calculate_response(self._impulse_bin_mids,self._impulse_bin_edges)
 
         # generates bunch impulses
         self._impulse_objects = []
 
-        for i in xrange(self._n_bunches):
-            idx_from = i * self._n_slices_per_bunch
-            idx_to = (i + 1) * self._n_slices_per_bunch
+        for i in xrange(self._n_segments):
+            idx_from = i * self._n_slices_per_segment
+            idx_to = (i + 1) * self._n_slices_per_segment
 
-            impulse_limits = (self._impulse_z_bins[0], self._impulse_z_bins[-1])
-            signal_from = bin_edges[self._n_slices_per_bunch * i,0]
-            signal_to = bin_edges[self._n_slices_per_bunch * (i + 1)-1, 1]
+            impulse_limits = (self._impulse_bin_edges[0,0], self._impulse_bin_edges[-1,1])
+            signal_from = bin_edges[self._n_slices_per_segment * i,0]
+            signal_to = bin_edges[self._n_slices_per_segment * (i + 1)-1, 1]
 
             signal_limits = (signal_from, signal_to)
 
@@ -225,7 +231,7 @@ class Convolution(object):
                 bunch_impulse.check_if_target(j,bunch_impulse_target)
 
     @abstractmethod
-    def calculate_response(self, impulse_response_z,impulse_response_edges,slice_sets):
+    def calculate_response(self, impulse_bin_mids, impulse_bin_edges):
         # Impulse response function of the processor
         pass
 
@@ -243,23 +249,24 @@ class Delay(Convolution):
         super(self.__class__, self).__init__(impulse_range, **kwargs)
         self.label = 'Delay'
 
-    def calculate_response(self, impulse_response_z, impulse_response_edges,slice_sets):
+    def calculate_response(self, impulse_bin_mids, impulse_bin_edges):
+        impulse_values = np.zeros(len(impulse_bin_mids))
+        bin_spacing =  np.mean(impulse_bin_edges[:,1]-impulse_bin_edges[:,0])
 
-        response_values = np.zeros(len(impulse_response_z))
-        bin_spacing = np.mean(impulse_response_edges[:,1] - impulse_response_edges[:,0])
+        for i, edges in enumerate(impulse_bin_edges):
+            impulse_values[i], _ = self._CDF(edges[1],-0.5*bin_spacing, 0.5*bin_spacing)
 
-        for i, (z_from, z_to) in enumerate(zip(impulse_response_edges, impulse_response_edges[1:])):
-            response_values[i], _ = self._CDF(z_to,-0.5*bin_spacing, 0.5*bin_spacing)
-
-        return response_values
+        return impulse_values
 
     def _CDF(self,x,ref_bin_from, ref_bin_to):
-            if x <= ref_bin_from:
-                return 0.
-            elif x < ref_bin_to:
-                return (x-ref_bin_from)/float(ref_bin_to-ref_bin_from)
-            else:
-                return 1.
+        # FIXME: this is not gonna work for nagative delays?
+
+        if x <= ref_bin_from:
+            return 0.
+        elif x < ref_bin_to:
+            return (x-ref_bin_from)/float(ref_bin_to-ref_bin_from)
+        else:
+            return 1.
 
 
 class MovingAverage(Convolution):
@@ -279,13 +286,13 @@ class MovingAverage(Convolution):
         super(self.__class__, self).__init__(self._window, **kwargs)
         self.label = 'Average'
 
-    def calculate_response(self, impulse_response_z, impulse_response_edges,slice_sets):
-        response_values = np.zeros(len(impulse_response_z))
+    def calculate_response(self, impulse_bin_mids, impulse_bin_edges):
+        impulse_values = np.zeros(len(impulse_bin_mids))
 
-        for i, (z_from, z_to) in enumerate(zip(impulse_response_edges, impulse_response_edges[1:])):
-            response_values[i], _ = self._CDF(z_to, self._window[0], self._window[1])
+        for i, edges in enumerate(impulse_bin_edges):
+            impulse_values[i], _ = self._CDF(edges[1], self._window[0], self._window[1])
 
-        return response_values
+        return impulse_values
 
     def _CDF(self, x, ref_bin_from, ref_bin_to):
         if x <= ref_bin_from:
@@ -313,16 +320,16 @@ class ConvolutionFromFile(Convolution):
         super(self.__class__, self).__init__(impulse_range, **kwargs)
         self.label = 'Convolution from external data'
 
-    def calculate_response(self, impulse_response_z, impulse_response_edges, slice_sets):
+    def calculate_response(self, impulse_response_bin_mid, impulse_response_bin_edges):
 
         if self._calc_type == 'mean':
-            return np.interp(impulse_response_z, self._data[:, 0], self._data[:, 1])
+            return np.interp(impulse_response_bin_mid, self._data[:, 0], self._data[:, 1])
         elif self._calc_type == 'integral':
             s = UnivariateSpline(self._data[:, 0], self._data[:, 1])
-            response_values = np.zeros(len(impulse_response_z))
+            response_values = np.zeros(len(impulse_response_bin_mid))
 
-            for i, (z_from, z_to) in enumerate(zip(impulse_response_edges, impulse_response_edges[1:])):
-                response_values[i], _ = s.integral(z_from,z_to)
+            for i, edges in enumerate(impulse_response_bin_edges):
+                response_values[i], _ = s.integral(edges[0],edges[1])
             return response_values
 
         else:
@@ -340,19 +347,19 @@ class ConvolutionFilter(Convolution):
         super(ConvolutionFilter, self).__init__(impulse_range, **kwargs)
         self._impulse_response = self._impulse_response_generator(tip_cut_width)
 
-    def calculate_response(self, impulse_response_z, impulse_response_edges,slice_sets):
+    def calculate_response(self, impulse_bin_mids, impulse_bin_edges):
 
-        response_values = np.zeros(len(impulse_response_z))
-        for i, (z_from, z_to) in enumerate(zip(impulse_response_edges, impulse_response_edges[1:])):
-            int_from = z_from * self._scaling
-            int_to = z_to * self._scaling
+        impulse_values = np.zeros(len(impulse_bin_mids))
+        for i, edges in enumerate(impulse_bin_edges):
+            integral_from = edges[0] * self._scaling
+            integral_to = edges[1] * self._scaling
 
-            response_values[i], _ = integrate.quad(self._impulse_response, int_from, int_to)
+            impulse_values[i], _ = integrate.quad(self._impulse_response, integral_from, integral_to)
 
-            if (z_from <= 0.) and (0. < z_to):
-                response_values[i] = response_values[i] + self._zero_bin_value
+            if (edges[0] <= 0.) and (0. < edges[1]):
+                impulse_values[i] = impulse_values[i] + self._zero_bin_value
 
-        return response_values
+        return impulse_values
 
     @abstractmethod
     def _raw_impulse_response(self, x):
@@ -514,68 +521,54 @@ class FIRfilter(object):
         self._coefficients = coefficients
         self.required_variables = []
         self._mode = mode
-        self._n_slices_per_bunch = None
-        self._n_bunches = None
+        self._n_slices_per_segment = None
+        self._n_segments = None
         self._bin_check = None
 
+        if self._mode == 'bunch_by_bunch':
+            self.signal_classes = (1, 1)
+        elif self._mode == 'continuous':
+            self.signal_classes = (2, 2)
+        else:
+            raise ValueError('Unknown mode for FIRfilter')
+
+        self.extensions = ['store']
         self._store_signal = store_signal
 
         self.input_signal = None
-        self.input_bin_edges = None
+        self.input_signal_parameters = None
 
         self.output_signal = None
-        self.output_bin_edges = None
+        self.output_signal_parameters = None
 
         self.label = 'Digital filter'
 
-    def process(self,bin_edges, signal, slice_sets, phase_advance=None):
-
-        if self._n_bunches is None:
-            self._n_bunches = len(slice_sets)
-            self._n_slices_per_bunch = int(len(signal)/self._n_bunches)
-            self.output_signal = np.zeros(self._n_bunches*self._n_slices_per_bunch)
+    def process(self,signal_parameters, signal, *args, **kwargs):
 
         if self._mode == 'bunch_by_bunch':
-            for i in xrange(self._n_bunches):
-                i_from = i * self._n_slices_per_bunch
-                i_to = (i+1) * self._n_slices_per_bunch
+
+            if self._n_segments is None:
+                self._n_segments = signal_parameters.n_segments
+                self._n_slices_per_segment = signal_parameters.n_slices_per_segment
+                self.output_signal = np.zeros(self._n_segments*self._n_slices_per_segment)
+
+
+            for i in xrange(self._n_segments):
+                i_from = i * self._n_slices_per_segment
+                i_to = (i+1) * self._n_slices_per_segment
                 temp_signal = signal[i_from:i_to]
                 out_temp_signal =  np.convolve(temp_signal, self._coefficients, mode='same')
                 np.copyto(self.output_signal[i_from:i_to],out_temp_signal)
 
-        elif self._mode == 'continuously':
-            if self._bin_check is None:
-                self._check_bin_spacing(bin_edges)
-
-            if self._bin_check:
-                self.output_signal =  np.convolve(np.array(signal), np.array(self._coefficients), mode='same')
-            else:
-                raise ValueError('Bin spacing varies too much!')
-
-            pass
-        else:
-            raise ValueError('Unknown value for DigitalFilter._type')
+        elif self._mode == 'continuous':
+            self.output_signal =  np.convolve(np.array(signal), np.array(self._coefficients), mode='same')
 
         if self._store_signal:
             self.input_signal = np.copy(signal)
-            self.input_bin_edges = np.copy(bin_edges)
-            self.output_bin_edges = np.copy(bin_edges)
+            self.input_signal_parameters = copy.copy(signal_parameters)
+            self.output_bin_edges = copy.copy(signal_parameters)
 
-        return bin_edges, self.output_signal
-
-
-    def _check_bin_spacing(self,bin_edges):
-        bin_spacing = np.mean(bin_edges[:,1]-bin_edges[:,0])
-        edge_spacing = bin_edges[:-1,0]-bin_edges[1:,0]
-
-        min_edge_spacing = np.min(edge_spacing)
-        max_edge_spacing = np.max(edge_spacing)
-
-        if (max_edge_spacing-min_edge_spacing)/bin_spacing < 0.01:
-            self._bin_check = True
-        else:
-            self._bin_check = False
-            raise ValueError('There are too large gaps between bins!')
+        return signal_parameters, self.output_signal
 
 
 class NumpyFIRfilter(FIRfilter):

@@ -1,10 +1,11 @@
 import numpy as np
 from scipy.constants import c, pi
-import copy
+import copy, collections
 import pyximport; pyximport.install()
 from cython_functions import cython_matrix_product
 # from scipy.interpolate import interp1d
 from scipy import interpolate
+from signal import SignalParameters
 
 """
     This file contains signal processors which can be used for emulating digital signal processing in the feedback
@@ -16,6 +17,7 @@ from scipy import interpolate
     @copyright CERN
 
 """
+
 
 class Resampler(object):
     def __init__(self,sampling_type, sampling_rate = None, signal_length = None, sync_method = 'bin_mid',
@@ -32,6 +34,10 @@ class Resampler(object):
         """
 
         self._sampling_type = sampling_type
+        if self._sampling_type == 'original':
+            self.signal_classes = (1, 0)
+        else:
+            self.signal_classes = (0, 1)
         self._sampling_rate = sampling_rate
         self._sync_method = sync_method
 
@@ -44,18 +50,19 @@ class Resampler(object):
         self._data_conversion = data_conversion
 
 
-        self._n_bunches = None
+        self._n_segments = None
 
+        self._input_signal_parameters = None
         self._input_bin_spacing = None
-        self._input_n_slices_per_bunch = None
+        self._input_n_slices_per_segment = None
         self._input_z_bins = None
         self._input_bin_edges = None
         self._total_input_bin_edges = None
         self._total_input_bin_mids = None
 
-
+        self._output_signal_parameters = None
         self._output_z_bins = None
-        self._output_n_slices_per_bunch = None
+        self._output_n_slices_per_segment = None
         self._output_bin_spacing = None
         self._output_bin_edges = None
         self._total_output_bin_edges = None
@@ -68,27 +75,33 @@ class Resampler(object):
         self._conversion_matrix = None
 
         # for storing the signal
-        self._store_signal  = store_signal
-        self.input_signal = None
-        self.input_bin_edges = None
-        self.output_signal = None
-        self.output_bin_edges = None
+        self.signal_classes = (1, 1)
 
-        self.required_variables = ['z_bins']
+        self.extensions = ['store']
+        if self._sampling_type == 'original':
+            self.extensions.append('bunch')
+            self.required_variables = []
+        self._store_signal = store_signal
+
+        self.input_signal = None
+        self.input_signal_parameters = None
+
+        self.output_signal = None
+        self.output_signal_parameters = None
         self.label = 'Resampler'
 
-    def process(self,bin_edges,signal,slice_sets,phase_advance, ** kwargs):
+    def process(self, signal_parameters, signal,slice_sets = None, *args, **kwargs):
         if self._conversion_type is None:
-            self.__init_variables(bin_edges,slice_sets)
+            self.__init_variables(signal_parameters,slice_sets)
 
         if self._conversion_type == 'matrix':
             self._output_signal.fill(0.)
 
-            for i in xrange(len(slice_sets)):
-                input_from = i * self._input_n_slices_per_bunch
-                input_to = (i + 1) * self._input_n_slices_per_bunch
-                output_from = i * self._output_n_slices_per_bunch
-                output_to = (i + 1) * self._output_n_slices_per_bunch
+            for i in xrange(signal_parameters.n_segments):
+                input_from = i * self._input_n_slices_per_segment
+                input_to = (i + 1) * self._input_n_slices_per_segment
+                output_from = i * self._output_n_slices_per_segment
+                output_to = (i + 1) * self._output_n_slices_per_segment
 
                 np.copyto(self._output_signal[output_from:output_to],
                           np.array(cython_matrix_product(self._conversion_matrix, np.array(signal[input_from:input_to]))))
@@ -100,22 +113,23 @@ class Resampler(object):
 
         if self._store_signal:
             self.input_signal = np.copy(signal)
-            self.input_bin_edges = np.copy(bin_edges)
+            self.input_signal_parameters = copy.copy(signal_parameters)
             self.output_signal = np.copy(self._output_signal)
-            self.output_bin_edges = np.copy(self._total_output_bin_edges)
+            self.output_signal_parameters = np.copy(self._output_signal_parameters)
 
-        return self._total_output_bin_edges,self._output_signal
+        return self._output_signal_parameters,self._output_signal
 
-    def __init_variables(self,bin_edges,slice_sets):
-        self._n_bunches = len(slice_sets)
-        self._input_n_slices_per_bunch = len(bin_edges)/self._n_bunches
+    def __init_variables(self,signal_parameters,slice_sets):
+        self._input_signal_parameters = copy.copy(signal_parameters)
+        self._n_segments = signal_parameters.n_segments
+        self._input_n_slices_per_segment = signal_parameters.n_slices_per_segment
 
-        self._input_bin_edges = np.copy(bin_edges)
-        self._input_z_bins = bin_edges[0:self._input_n_slices_per_bunch,0]
-        self._input_z_bins = np.append(self._input_z_bins,bin_edges[(self._input_n_slices_per_bunch-1),1])
-        self._input_z_bins = self._input_z_bins - np.mean(slice_sets[0].z_bins) # A re
-        self._input_bin_spacing = np.mean(bin_edges[0:self._input_n_slices_per_bunch,1]-bin_edges[0:self._input_n_slices_per_bunch,0])
-        self._total_input_bin_edges = np.copy(bin_edges)
+        self._input_bin_edges = np.copy(signal_parameters.bin_edges)
+        self._input_z_bins = signal_parameters.bin_edges[0:self._input_n_slices_per_segment,0]
+        self._input_z_bins = np.append(self._input_z_bins,signal_parameters.bin_edges[(self._input_n_slices_per_segment-1),1])
+        self._input_z_bins = self._input_z_bins - signal_parameters.original_z_mids[0] # A re
+        self._input_bin_spacing = np.mean(signal_parameters.bin_edges[0:self._input_n_slices_per_segment,1]-signal_parameters.bin_edges[0:self._input_n_slices_per_segment,0])
+        self._total_input_bin_edges = np.copy(signal_parameters.bin_edges)
         self._total_input_bin_mids = (self._total_input_bin_edges[:,0]+self._total_input_bin_edges[:,1])/2.
 
         if isinstance(self._sampling_rate, float):
@@ -136,27 +150,27 @@ class Resampler(object):
 
 
         if self._sampling_type == 'reconstructed':
-            z_bins, n_slices_per_bunch, bin_spacing, sampling_rate, signal_length = \
+            z_bins, n_slices_per_segment, bin_spacing, sampling_rate, signal_length = \
                 self.__reconstruct_z_bins(self._signal_length, self._sampling_rate, self._input_z_bins)
         elif self._sampling_type == 'original':
             z_bins = np.copy(slice_sets[0].z_bins) - np.mean(slice_sets[0].z_bins)
-            n_slices_per_bunch = len(z_bins) -1
-            bin_spacing = (z_bins[-1] - z_bins[0]) / float(n_slices_per_bunch)
+            n_slices_per_segment = len(z_bins) -1
+            bin_spacing = (z_bins[-1] - z_bins[0]) / float(n_slices_per_segment)
             sampling_rate = bin_spacing/c
-            signal_length = bin_spacing * n_slices_per_bunch
+            signal_length = bin_spacing * n_slices_per_segment
         else:
             raise ValueError('Unknown value in Resampler._sampling_type')
 
         self._output_z_bins = z_bins
-        self._output_n_slices_per_bunch = n_slices_per_bunch
+        self._output_n_slices_per_segment = n_slices_per_segment
         self._output_bin_spacing = bin_spacing
         self._sampling_rate = sampling_rate
         self._signal_length = signal_length
         self._output_bin_edges = np.transpose(np.array([z_bins[:-1], z_bins[1:]]))
 
         self._total_output_bin_edges = None
-        for slice_set in slice_sets:
-            edges = self._output_bin_edges + np.mean(slice_set.z_bins)
+        for z_mid in signal_parameters.original_z_mids:
+            edges = self._output_bin_edges + z_mid
 
             if self._total_output_bin_edges is None:
                 self._total_output_bin_edges = np.copy(edges)
@@ -165,6 +179,11 @@ class Resampler(object):
 
         self._total_output_bin_mids = (self._total_output_bin_edges[:,0]+self._total_output_bin_edges[:,1])/2.
         self._output_signal = np.zeros(len(self._total_output_bin_edges))
+        self._output_signal_parameters = SignalParameters(self._input_signal_parameters[0],self._total_output_bin_edges,
+                                                          self._n_segments,self._output_n_slices_per_segment,
+                                                          self._input_signal_parameters.phase_advance,
+                                                          self._input_signal_parameters.original_z_mids)
+
 
         if self._data_conversion == 'interpolation':
             self._conversion_type = 'interpolation'
@@ -181,7 +200,7 @@ class Resampler(object):
         elif self._data_conversion == 'bin_average':
             # sets output bin value to an average value of input bins contributing to the output bin
             norm_coeff = 1. / min(self._output_bin_spacing / self._input_bin_spacing,
-                                           float(self._input_n_slices_per_bunch))
+                                           float(self._input_n_slices_per_segment))
             self.__contruct_value_conversion_matrix(norm_coeff)
             self._conversion_type = 'matrix'
         elif isinstance(self._data_conversion,tuple):
@@ -196,21 +215,21 @@ class Resampler(object):
     def __reconstruct_z_bins(self,signal_length, sampling_rate, input_z_bins):
 
         if self._length_rounding == 'round':
-            n_slices_per_bunch = np.round(signal_length * sampling_rate / c)
-            signal_length = float(n_slices_per_bunch) * c / sampling_rate
+            n_slices_per_segment = np.round(signal_length * sampling_rate / c)
+            signal_length = float(n_slices_per_segment) * c / sampling_rate
         elif self._length_rounding == 'floor':
-            n_slices_per_bunch = np.floor(signal_length*sampling_rate / c)
-            signal_length = float(n_slices_per_bunch) * c / sampling_rate
+            n_slices_per_segment = np.floor(signal_length*sampling_rate / c)
+            signal_length = float(n_slices_per_segment) * c / sampling_rate
         elif self._length_rounding == 'ceil':
-            n_slices_per_bunch = np.ceil(signal_length*sampling_rate / c)
-            signal_length = float(n_slices_per_bunch) * c / sampling_rate
+            n_slices_per_segment = np.ceil(signal_length*sampling_rate / c)
+            signal_length = float(n_slices_per_segment) * c / sampling_rate
         elif self._length_rounding == 'exact':
-            n_slices_per_bunch = np.round(signal_length*sampling_rate / c)
-            sampling_rate = signal_length / (c * float(n_slices_per_bunch))
+            n_slices_per_segment = np.round(signal_length*sampling_rate / c)
+            sampling_rate = signal_length / (c * float(n_slices_per_segment))
         else:
             raise ValueError('Unknown value in Resampler._length_rounding')
 
-        bin_spacing = signal_length / float(n_slices_per_bunch)
+        bin_spacing = signal_length / float(n_slices_per_segment)
 
         if self._sync_method == 'rising_edge':
             z_from = input_z_bins[0]
@@ -224,15 +243,15 @@ class Resampler(object):
             z_to = np.mean(input_z_bins) - 0.5 * signal_length
 
         elif self._sync_method == 'bin_mid':
-            bins_adv = np.round((n_slices_per_bunch - 1)/ 2)
+            bins_adv = np.round((n_slices_per_segment - 1)/ 2)
             z_from = -1. * (0.5 + float(bins_adv)) * bin_spacing
-            z_to = (0.5 + float(n_slices_per_bunch - bins_adv - 1)) * bin_spacing
+            z_to = (0.5 + float(n_slices_per_segment - bins_adv - 1)) * bin_spacing
         elif self._sync_method == 'bin_mid_advance':
             if input_z_bins[-1] > 0.5*bin_spacing:
                 bins_after = np.ceil((input_z_bins[-1] - 0.5 * bin_spacing)/bin_spacing)
             else:
                 bins_after = 0.
-            z_from = -1. * (0.5 + float(float(n_slices_per_bunch) - bins_after - 1.)) * bin_spacing
+            z_from = -1. * (0.5 + float(float(n_slices_per_segment) - bins_after - 1.)) * bin_spacing
             z_to = (bins_after+0.5) * bin_spacing
         elif self._sync_method == 'bin_mid_delay':
             if input_z_bins[0] < -0.5*bin_spacing:
@@ -240,43 +259,43 @@ class Resampler(object):
             else:
                 bins_adv = 0.
             z_from = -1. * (bins_adv+0.5) * bin_spacing
-            z_to = (0.5 + float(float(n_slices_per_bunch) - bins_adv - 1.)) * bin_spacing
+            z_to = (0.5 + float(float(n_slices_per_segment) - bins_adv - 1.)) * bin_spacing
 
         else:
             raise ValueError('Unknown value for Resampler._sync')
 
-        z_bins = np.linspace(z_from, z_to, n_slices_per_bunch + 1)
+        z_bins = np.linspace(z_from, z_to, n_slices_per_segment + 1)
 
-        return z_bins, n_slices_per_bunch, bin_spacing, sampling_rate, signal_length
+        return z_bins, n_slices_per_segment, bin_spacing, sampling_rate, signal_length
 
     def __resample_z_bins(self,signal_length, sampling_rate, input_z_bins):
 
         signal_length = input_z_bins[-1] - input_z_bins[0]
 
         if self._length_rounding == 'round':
-            n_slices_per_bunch = np.round(signal_length * sampling_rate / c)
-            signal_length = sampling_rate * float(n_slices_per_bunch) * c
+            n_slices_per_segment = np.round(signal_length * sampling_rate / c)
+            signal_length = sampling_rate * float(n_slices_per_segment) * c
         elif self._length_rounding == 'floor':
-            n_slices_per_bunch = np.floor(signal_length*sampling_rate / c)
-            signal_length = sampling_rate * float(n_slices_per_bunch) * c
+            n_slices_per_segment = np.floor(signal_length*sampling_rate / c)
+            signal_length = sampling_rate * float(n_slices_per_segment) * c
         elif self._length_rounding == 'ceil':
-            n_slices_per_bunch = np.ceil(signal_length*sampling_rate / c)
-            signal_length = sampling_rate * float(n_slices_per_bunch) * c
+            n_slices_per_segment = np.ceil(signal_length*sampling_rate / c)
+            signal_length = sampling_rate * float(n_slices_per_segment) * c
         elif self._length_rounding == 'exact':
-            n_slices_per_bunch = np.round(signal_length*sampling_rate / c)
-            sampling_rate = signal_length / (c * float(n_slices_per_bunch))
+            n_slices_per_segment = np.round(signal_length*sampling_rate / c)
+            sampling_rate = signal_length / (c * float(n_slices_per_segment))
         else:
             raise ValueError('Unknown value in Resampler._length_rounding')
 
-        bin_spacing = signal_length / float(n_slices_per_bunch)
+        bin_spacing = signal_length / float(n_slices_per_segment)
 
         length_difference = signal_length - (input_z_bins[-1] - input_z_bins[0])
 
         z_from = input_z_bins[0] - length_difference / 2.
         z_to = input_z_bins[-1] + length_difference / 2.
-        z_bins = np.linspace(z_from, z_to, n_slices_per_bunch + 1)
+        z_bins = np.linspace(z_from, z_to, n_slices_per_segment + 1)
 
-        return z_bins, n_slices_per_bunch, bin_spacing, sampling_rate, signal_length
+        return z_bins, n_slices_per_segment, bin_spacing, sampling_rate, signal_length
 
     def __contruct_value_conversion_matrix(self,conversion_value):
         self._conversion_matrix = np.zeros((len(self._output_z_bins) - 1, len(self._input_z_bins) - 1))
@@ -314,16 +333,18 @@ class Quantizer(object):
         self._input_range = input_range
         self._store_signal = store_signal
         self._step_size = (self._input_range[1]-self._input_range[0])/float(self._n_steps)
-        self.required_variables = []
 
-        # for storing the signal
+        self.signal_classes = (0, 0)
+        self.extensions = ['store']
         self._store_signal = store_signal
         self.input_signal = None
-        self.input_bin_edges = None
+        self.input_signal_parameters = None
         self.output_signal = None
-        self.output_bin_edges = None
+        self.output_signal_parameters = None
 
-    def process(self,bin_edges,signal,slice_sets,phase_advance, ** kwargs):
+        self.label = 'Quantizer'
+
+    def process(self, signal_parameters, signal, *args, **kwargs):
         output_signal = self._step_size*np.floor(signal/self._step_size+0.5)
 
         output_signal[output_signal < self._input_range[0]] = self._input_range[0]
@@ -331,11 +352,11 @@ class Quantizer(object):
 
         if self._store_signal:
             self.input_signal = np.copy(signal)
-            self.input_bin_edges = np.copy(bin_edges)
+            self.input_signal_parameters = np.copy(signal_parameters)
             self.output_signal = np.copy(output_signal)
-            self.output_bin_edges = np.copy(bin_edges)
+            self.output_signal_parameters = np.copy(signal_parameters)
 
-        return bin_edges, output_signal
+        return signal_parameters, output_signal
 
 
 class ADC(object):
@@ -360,36 +381,37 @@ class ADC(object):
                     in the beginning and end of the signal
         """
         self.label = 'ADC'
+        self.signal_classes = (0, 1)
+        self.extensions = ['store']
         self._resampler = Resampler('reconstructed' , sampling_rate, **kwargs)
-        self.required_variables = copy.copy(self._resampler.required_variables)
 
         self._digitizer = None
         if (n_bits is not None) and (input_range is not None):
             self._digitizer = Quantizer(n_bits,input_range, *kwargs)
-            self.required_variables += self._digitizer.required_variables
         elif (n_bits is not None) or (input_range is not None):
             raise ValueError('Either both n_bits and input_range must have values or they must be None')
 
         # for storing the signal
         self._store_signal = store_signal
         self.input_signal = None
-        self.input_bin_edges = None
+        self.input_signal_parameters = None
         self.output_signal = None
-        self.output_bin_edges = None
+        self.output_signal_parameters = None
 
-    def process(self,bin_edges,signal,slice_sets,phase_advance, ** kwargs):
-        output_bin_edges, output_signal = self._resampler.process(bin_edges,signal,slice_sets,phase_advance, ** kwargs)
+    def process(self, signal_parameters, signal, *args, **kwargs):
+        output_signal_parameters, output_signal = self._resampler.process(signal_parameters, signal, *args, **kwargs)
 
         if self._digitizer is not None:
-            output_bin_edges, output_signal = self._digitizer.process(output_bin_edges, output_signal,slice_sets,phase_advance, ** kwargs)
+            output_signal_parameters, output_signal = self._digitizer.process(output_signal_parameters, output_signal
+                                                                              , *args, **kwargs)
 
         if self._store_signal:
             self.input_signal = np.copy(signal)
-            self.input_bin_edges = np.copy(bin_edges)
+            self.input_signal_parameters = np.copy(signal_parameters)
             self.output_signal = np.copy(output_signal)
-            self.output_bin_edges = np.copy(output_bin_edges)
+            self.output_signal_parameters = np.copy(output_signal_parameters)
 
-        return output_bin_edges, output_signal
+        return output_signal_parameters, output_signal
 
 
 class DAC(object):
@@ -414,41 +436,44 @@ class DAC(object):
                     in the beginning and end of the signal
         """
         self.label = 'DAC'
+        self.extensions = ['store']
 
         if sampling_rate is None:
+            self.signal_classes = (1, 0)
             self._resampler = Resampler('original',data_conversion = 'interpolation', **kwargs)
-
+            self.extensions.append('bunch')
+            self.required_variables = copy.copy(self._resampler.required_variables)
         else:
+            self.signal_classes = (1, 1)
             self._resampler = Resampler('reconstructed', sampling_rate,data_conversion = 'interpolation')
-        self.required_variables = copy.copy(self._resampler.required_variables)
 
         self._digitizer = None
         if (n_bits is not None) and (output_range is not None):
             self._digitizer = Quantizer(n_bits,output_range, **kwargs)
-            self.required_variables += self._digitizer.required_variables
         elif (n_bits is not None) or (output_range is not None):
             raise ValueError('Either both n_bits and input_range must have values or they must be None')
 
         # for storing the signal
         self._store_signal = store_signal
         self.input_signal = None
-        self.input_bin_edges = None
+        self.input_signal_parameters = None
         self.output_signal = None
-        self.output_bin_edges = None
+        self.output_signal_parameters = None
 
-    def process(self,bin_edges,signal,slice_sets,phase_advance, ** kwargs):
-        output_bin_edges, output_signal = self._resampler.process(bin_edges,signal,slice_sets,phase_advance, ** kwargs)
+    def process(self, signal_parameters, signal, *args, **kwargs):
+        output_signal_parameters, output_signal = self._resampler.process(signal_parameters, signal, *args, **kwargs)
 
         if self._digitizer is not None:
-            output_bin_edges, output_signal = self._digitizer.process(output_bin_edges, output_signal,slice_sets,phase_advance, ** kwargs)
+            output_signal_parameters, output_signal = self._digitizer.process(output_signal_parameters, output_signal,
+                                                                              *args, **kwargs)
 
         if self._store_signal:
             self.input_signal = np.copy(signal)
-            self.input_bin_edges = np.copy(bin_edges)
+            self.input_signal_parameters = np.copy(signal_parameters)
             self.output_signal = np.copy(output_signal)
-            self.output_bin_edges = np.copy(output_bin_edges)
+            self.output_signal_parameters = np.copy(output_signal_parameters)
 
-        return output_bin_edges, output_signal
+        return output_signal_parameters, output_signal
 
 
 class BackToOriginalSliceSets(Resampler):

@@ -1,6 +1,7 @@
 from abc import ABCMeta, abstractmethod
 import numpy as np
 from scipy.constants import c, pi
+import copy
 
 class Multiplication(object):
     __metaclass__ = ABCMeta
@@ -26,38 +27,40 @@ class Multiplication(object):
 
         self._multiplier = None
 
-        self.required_variables = ['z_bins']
+        self.signal_classes = (0,0)
 
-        if self._seed not in ['bin_length','bin_midpoint','signal']:
-            self.required_variables.append(self._seed)
-
+        self.extensions = ['store']
         self._store_signal = store_signal
 
+        if self._seed not in ['bin_length','bin_midpoint','signal']:
+            self.extensions.append('bunch')
+            self.required_variables = [self._seed]
+
         self.input_signal = None
-        self.input_bin_edges = None
+        self.input_signal_parameters = None
 
         self.output_signal = None
-        self.output_bin_edges = None
+        self.output_signal_parameters = None
 
     @abstractmethod
     def multiplication_function(self, seed):
         pass
 
-    def process(self,bin_edges, signal, slice_sets, *args, **kwargs):
+    def process(self,signal_parameters, signal, slice_sets = None, *args, **kwargs):
 
         if (self._multiplier is None) or self._recalculate_multiplier:
-            self.__calculate_multiplier(bin_edges,signal,slice_sets)
+            self.__calculate_multiplier(signal_parameters.bin_edges,signal,slice_sets)
 
         output_signal =  self._multiplier*signal
 
         if self._store_signal:
             self.input_signal = np.copy(signal)
-            self.input_bin_edges = np.copy(bin_edges)
+            self.input_signal_parameters = copy.copy(signal_parameters)
             self.output_signal = np.copy(output_signal)
-            self.output_bin_edges = np.copy(bin_edges)
+            self.output_signal_parameters = copy.copy(signal_parameters)
 
         # process the signal
-        return bin_edges, output_signal
+        return signal_parameters, output_signal
 
     def __calculate_multiplier(self,bin_edges,signal,slice_sets):
 

@@ -1,3 +1,4 @@
+import copy
 import numpy as np
 
 class Bypass(object):
@@ -6,24 +7,26 @@ class Bypass(object):
     """
 
     def __init__(self, store_signal = False):
+        self.signal_classes = (0, 0)
+        self.extensions = ['store']
+
         self.label = 'Bypass'
-        self.required_variables = []
         self._store_signal = store_signal
-
         self.input_signal = None
-        self.input_bin_edges = None
-
+        self.input_signal_parameters = None
         self.output_signal = None
-        self.output_bin_edges = None
+        self.output_signal_parameters = None
 
-    def process(self,bin_edges, signal, *args, **kwargs):
+    def process(self,signal_parameters, signal, *args, **kwargs):
+
         if self._store_signal:
             self.input_signal = np.copy(signal)
-            self.input_bin_edges = np.copy(bin_edges)
+            self.input_signal_parameters = copy.copy(signal_parameters)
             self.output_signal = np.copy(signal)
-            self.output_bin_edges = np.copy(bin_edges)
+            self.output_signal_parameters = copy.copy(signal_parameters)
 
-        return bin_edges, signal
+
+        return signal_parameters, signal
 
 
 class Average(object):
@@ -32,27 +35,29 @@ class Average(object):
         self.label = 'Average'
         self._avg_type = avg_type
 
-        self.required_variables = []
+
+        self.signal_classes = (0, 0)
+        self.extensions = ['store']
+
         self._store_signal = store_signal
-
         self.input_signal = None
-        self.input_bin_edges = None
-
+        self.input_signal_parameters = None
         self.output_signal = None
-        self.output_bin_edges = None
+        self.output_signal_parameters = None
 
-    def process(self, bin_edges, signal, slice_sets, *args, **kwargs):
+
+    def process(self,signal_parameters, signal, *args, **kwargs):
 
         if self._avg_type == 'bunch':
-            n_bunches = len(slice_sets)
-            n_slices_per_bunch = len(signal) / n_bunches
+            n_segments = signal_parameters.n_segments
+            n_slices_per_segment = signal_parameters.n_slices_per_segment
 
             output_signal = np.zeros(len(signal))
-            ones = np.ones(n_slices_per_bunch)
+            ones = np.ones(n_slices_per_segment)
 
-            for i in xrange(n_bunches):
-                idx_from = i * n_slices_per_bunch
-                idx_to = (i + 1) * n_slices_per_bunch
+            for i in xrange(n_segments):
+                idx_from = i * n_slices_per_segment
+                idx_to = (i + 1) * n_slices_per_segment
                 np.copyto(output_signal[idx_from:idx_to], ones * np.mean(signal[idx_from:idx_to]))
 
         elif self._avg_type == 'total':
@@ -63,10 +68,9 @@ class Average(object):
 
         if self._store_signal:
             self.input_signal = np.copy(signal)
-            self.input_bin_edges = np.copy(bin_edges)
+            self.input_signal_parameters = copy.copy(signal_parameters)
             self.output_signal = np.copy(output_signal)
-            self.output_bin_edges = np.copy(bin_edges)
+            self.output_signal_parameters = copy.copy(signal_parameters)
 
 
-
-        return bin_edges, output_signal
+        return signal_parameters, output_signal

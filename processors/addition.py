@@ -1,5 +1,6 @@
-from abc import ABCMeta, abstractmethod
+from abc import ABCMeta, abstractmethod, abstractproperty
 import numpy as np
+import copy
 from scipy.constants import c, pi
 
 class Addition(object):
@@ -27,39 +28,40 @@ class Addition(object):
 
         self._addend = None
 
-        self.required_variables=['z_bins']
+        self.signal_classes = (0,0)
 
-        if self._seed not in ['bin_length','bin_midpoint','signal']:
-            self.required_variables.append(self._seed)
-
+        self.extensions = ['store']
         self._store_signal = store_signal
 
+        if self._seed not in ['bin_length','bin_midpoint','signal']:
+            self.extensions.append('bunch')
+            self.required_variables = [self._seed]
+
         self.input_signal = None
-        self.input_bin_edges = None
+        self.input_signal_parameters = None
 
         self.output_signal = None
-        self.output_bin_edges = None
+        self.output_signal_parameters = None
 
     @abstractmethod
     def addend_function(self, seed):
         pass
 
-    def process(self,bin_edges, signal, slice_sets, *args, **kwargs):
+    def process(self,signal_parameters, signal, slice_sets = None, *args, **kwargs):
 
         if (self._addend is None) or self._recalculate_addend:
-            self.__calculate_addend(bin_edges,signal,slice_sets)
+            self.__calculate_addend(signal_parameters.bin_edges,signal,slice_sets)
 
         output_signal = signal + self._addend
 
         if self._store_signal:
             self.input_signal = np.copy(signal)
-            self.input_bin_edges = np.copy(bin_edges)
+            self.input_signal_parameters = copy.copy(signal_parameters)
             self.output_signal = np.copy(output_signal)
-            self.output_bin_edges = np.copy(bin_edges)
+            self.output_signal_parameters = copy.copy(signal_parameters)
 
         # process the signal
-        return bin_edges, output_signal
-
+        return signal_parameters, output_signal
 
     def __calculate_addend(self,bin_edges,signal,slice_sets):
 
@@ -119,6 +121,9 @@ class NoiseGenerator(Addition):
         self._RMS_noise_level = RMS_noise_level
         self._reference_level = reference_level
         self._distribution = distribution
+
+    def signal_classes(self):
+        return (0,0)
 
     def addend_function(self,seed):
 

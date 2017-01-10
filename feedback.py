@@ -5,6 +5,7 @@ import copy
 from abc import ABCMeta, abstractmethod
 import timeit
 from PyHEADTAIL_MPI.mpi import mpi_data
+from processors.signal import SignalParameters
 """
     This file contains modules, which can be used as a feedback module/object in PyHEADTAIL. Actual signal processing is
     done by using signal processors written to files processors.py and digital_processors.py. A list of signal
@@ -39,19 +40,15 @@ def get_processor_variables(processors, required_variables = None):
         required_variables = []
 
     for processor in processors:
-        required_variables.extend(processor.required_variables)
+        if 'bunch' in processor.extensions:
+            required_variables.extend(processor.required_variables)
 
     required_variables = list(set(required_variables))
 
     if 'z_bins' in required_variables:
         required_variables.remove('z_bins')
 
-    statistical_variables = copy.deepcopy(required_variables)
-
-    if 'n_macroparticles_per_slice' in statistical_variables:
-        statistical_variables.remove('n_macroparticles_per_slice')
-
-    return required_variables, statistical_variables
+    return required_variables
 
 
 class IdealBunchFeedback(object):
@@ -119,7 +116,8 @@ class FeedbackMapObject(object):
         self._n_slices_per_bunch = None
         self._local_bunch_indexes = None
 
-        self._input_bin_edges = None
+        self._input_signal_parameters_x = None
+        self._input_signal_parameters_y = None
 
         # variables, which will be set each time, when the track method is called
         self._processor_slice_sets = None
@@ -145,7 +143,7 @@ class FeedbackMapObject(object):
             self._bunch_list = self._mpi_gatherer.bunch_list
 
         else:
-            self._processor_slice_sets = [bunch.get_slices(self._slicer, statistics=self._statistical_variables)]
+            self._processor_slice_sets = [bunch.get_slices(self._slicer, statistics=self._required_variables)]
             self._local_slice_sets = self._processor_slice_sets
             self._bunch_list = [bunch]
 
@@ -153,8 +151,8 @@ class FeedbackMapObject(object):
         if self._extra_statistics is not None:
             self._required_variables += self._extra_statistics
 
-        self._required_variables, self._statistical_variables = get_processor_variables(self._processors_x, self._required_variables)
-        self._required_variables, self._statistical_variables = get_processor_variables(self._processors_y, self._required_variables)
+        self._required_variables = get_processor_variables(self._processors_x, self._required_variables)
+        self._required_variables = get_processor_variables(self._processors_y, self._required_variables)
 
         if self._mpi:
             self._mpi_gatherer = mpi_data.MpiGatherer(self._slicer, self._required_variables)
@@ -164,8 +162,12 @@ class FeedbackMapObject(object):
             processor_slice_sets = self._mpi_gatherer.bunch_by_bunch_data
             local_slice_sets = self._mpi_gatherer.slice_set_list
         else:
+
+            if 'n_macroparticles_per_slice' in self._required_variables:
+                self._required_variables.remove('n_macroparticles_per_slice')
+
             self._local_bunch_indexes = [0]
-            processor_slice_sets = [bunch.get_slices(self._slicer, statistics=self._statistical_variables)]
+            processor_slice_sets = [bunch.get_slices(self._slicer, statistics=self._required_variables)]
             local_slice_sets = processor_slice_sets
 
         self._n_local_bunches = len(local_slice_sets)
@@ -175,12 +177,22 @@ class FeedbackMapObject(object):
         self._input_signal_x = np.zeros(self._n_total_bunches * self._n_slices_per_bunch)
         self._input_signal_y = np.zeros(self._n_total_bunches * self._n_slices_per_bunch)
 
+        input_bin_edges = None
+        original_z_mids = []
         for slice_set in processor_slice_sets:
             edges = np.transpose(np.array([slice_set.z_bins[:-1], slice_set.z_bins[1:]]))
-            if self._input_bin_edges is None:
-                self._input_bin_edges = np.copy(edges)
+            original_z_mids.append(np.mean(slice_set.z_bins))
+            if input_bin_edges is None:
+                input_bin_edges = np.copy(edges)
             else:
-                self._input_bin_edges = np.append(self._input_bin_edges,edges, axis=0)
+                input_bin_edges = np.append(input_bin_edges,edges, axis=0)
+
+        self._input_signal_parameters_x = SignalParameters(0,input_bin_edges,len(processor_slice_sets),
+                                                           int(len(input_bin_edges)/len(processor_slice_sets)),
+                                                           self._phase_advance_x,original_z_mids)
+        self._input_signal_parameters_y = SignalParameters(0,input_bin_edges,len(processor_slice_sets),
+                                                           int(len(input_bin_edges)/len(processor_slice_sets)),
+                                                           self._phase_advance_y,original_z_mids)
 
     def _read_signal(self, attr_x, attr_y):
 
@@ -192,21 +204,22 @@ class FeedbackMapObject(object):
             np.copyto(self._input_signal_y[idx_from:idx_to],getattr(slice_set, attr_y))
 
     def _process_signal(self):
+        # TODO: check signal classes
 
         signal_x = np.copy(self._input_signal_x)
         signal_y = np.copy(self._input_signal_y)
 
         if self._input_signal_x is not None:
-            bin_edges_x = np.copy(self._input_bin_edges)
+            signal_parameters_x = copy.copy(self._input_signal_parameters_x)
             for processor in self._processors_x:
-                bin_edges_x, signal_x = processor.process(bin_edges_x, signal_x,self._processor_slice_sets, self._phase_advance_x)
+                signal_parameters_x, signal_x = processor.process(signal_parameters_x, signal_x,slice_sets = self._processor_slice_sets)
         else:
             print 'Warning: Correction signal in x-plane is None'
 
         if self._input_signal_y is not None:
-            bin_edges_y = np.copy(self._input_bin_edges)
+            signal_parameters_y = copy.copy(self._input_signal_parameters_y)
             for processor in self._processors_y:
-                bin_edges_y, signal_y = processor.process(bin_edges_y, signal_y,self._processor_slice_sets, self._phase_advance_y)
+                signal_parameters_y, signal_y = processor.process(signal_parameters_y, signal_y,slice_sets = self._processor_slice_sets)
         else:
             print 'Warning: Correction signal in y-plane is None'
 

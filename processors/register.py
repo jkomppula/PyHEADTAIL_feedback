@@ -1,4 +1,4 @@
-import math
+import math, copy
 from collections import deque
 from abc import ABCMeta, abstractmethod
 import numpy as np
@@ -24,7 +24,7 @@ class Register(object):
 
     """
 
-    def __init__(self, n_avg, tune, delay, in_processor_chain):
+    def __init__(self, n_avg, tune, delay, in_processor_chain,store_signal = False):
         """
         :param n_avg: a number of register values (in turns) have been stored after the delay
         :param tune: a real number value of a betatron tune (e.g. 59.28 in horizontal or 64.31 in vertical direction
@@ -39,7 +39,6 @@ class Register(object):
         self._in_processor_chain = in_processor_chain
         self.combination = None
 
-
         self._max_reg_length = self._delay+self._n_avg
         self._register = deque()
 
@@ -51,6 +50,15 @@ class Register(object):
         #     self._register.append(np.zeros(n_slices))
 
         self.required_variables = None
+
+        self.extensions = ['store', 'register']
+
+        self.label = None
+        self._store_signal = store_signal
+        self.input_signal = None
+        self.input_signal_parameters = None
+        self.output_signal = None
+        self.output_signal_parameters = None
 
     def __iter__(self):
         # calculates a maximum number of iterations. If there is no enough values in the register, sets -1, which
@@ -74,10 +82,14 @@ class Register(object):
             self._n_iter_left -= 1
             return (self._register[self._n_iter_left],None,delay,self._phase_advance)
 
-    def process(self,bin_edges, signal, slice_sets, phase_advance, **kwargs):
+    def process(self,signal_parameters, signal, *args, **kwargs):
+
+        if self._store_signal:
+            self.input_signal = np.copy(signal)
+            self.input_signal_parameters = copy.copy(signal_parameters)
 
         if self._phase_advance is None:
-            self._phase_advance = phase_advance
+            self._phase_advance = signal_parameters.phase_advance
 
         self._register.append(signal)
 
@@ -94,7 +106,11 @@ class Register(object):
                     prev = value
                     temp_signal += combined / float(len(self))
 
-            return bin_edges, temp_signal
+            if self._store_signal:
+                self.output_signal = np.copy(temp_signal)
+                self.output_signal_parameters = copy.copy(signal_parameters)
+
+            return signal_parameters, temp_signal
 
     @abstractmethod
     def combine(self,x1,x2,reader_position,x_to_xp = False):

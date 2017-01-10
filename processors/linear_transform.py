@@ -52,28 +52,32 @@ class LinearTransform(object):
 
         self._recalculate_matrix = True
 
-        self.required_variables = ['z_bins','mean_z']
+        self.signal_classes = (0,0)
 
-        self._store_signal = store_signal
-
-        self._n_bunches = None
-        self._n_slices_per_bunch = None
+        self._n_segments = None
+        self._n_slices_per_segment = None
         self._mid_bunch = None
 
-        self.input_signal = None
-        self.input_bin_edges = None
-
-        self.output_signal = None
-        self.output_bin_edges = None
+        self.extensions = ['store']
+        if bin_middle == 'particles':
+            self.extensions.append('bunch')
+            self.required_variables = ['mean_z']
 
         self.label = None
+        self._store_signal = store_signal
+        self.input_signal = None
+        self.input_signal_parameters = None
+        self.output_signal = None
+        self.output_signal_parameters = None
+
+
 
     @abstractmethod
     def response_function(self, ref_bin_mid, ref_bin_from, ref_bin_to, bin_mid, bin_from, bin_to):
         # Impulse response function of the processor
         pass
 
-    def process(self,bin_edges, signal, slice_sets, phase_advance=None):
+    def process(self,signal_parameters, signal, slice_sets = None, *args, **kwargs):
 
         if self._matrix is None:
 
@@ -82,31 +86,34 @@ class LinearTransform(object):
                 for slice_set in slice_sets:
                     bin_midpoints = np.append(bin_midpoints, slice_set.mean_z)
             elif self._bin_middle == 'bin':
-                bin_midpoints = (bin_edges[:, 1] + bin_edges[:, 0]) / 2.
+                bin_midpoints = (signal_parameters.bin_edges[:, 1] + signal_parameters.bin_edges[:, 0]) / 2.
             else:
                 raise ValueError('Unknown value for LinearTransform._bin_middle ')
 
-            self.__generate_matrix(bin_edges,bin_midpoints,slice_sets)
+            self._n_segments = signal_parameters.n_segments
+            self._n_slices_per_segment = signal_parameters.n_slices_per_segment
+
+            self.__generate_matrix(signal_parameters.bin_edges,bin_midpoints)
 
         if self._mode == 'total':
             output_signal = np.array(cython_matrix_product(self._matrix, signal))
         elif self._mode == 'bunch_by_bunch':
             output_signal = np.zeros(len(signal))
 
-            for i in xrange(self._n_bunches):
-                idx_from = i * self._n_slices_per_bunch
-                idx_to = (i+1) * self._n_slices_per_bunch
+            for i in xrange(self._n_segments):
+                idx_from = i * self._n_slices_per_segment
+                idx_to = (i+1) * self._n_slices_per_segment
                 np.copyto(output_signal[idx_from:idx_to],cython_matrix_product(self._matrix, signal[idx_from:idx_to]))
         else:
             raise ValueError('Unknown value for LinearTransform._mode ')
 
         if self._store_signal:
             self.input_signal = np.copy(signal)
-            self.input_bin_edges = np.copy(bin_edges)
+            self.input_signal_parameters = copy.copy(signal_parameters)
             self.output_signal = np.copy(output_signal)
-            self.output_bin_edges = np.copy(bin_edges)
+            self.output_signal_parameters = copy.copy(signal_parameters)
 
-        return bin_edges, output_signal
+        return signal_parameters, output_signal
 
         # np.dot can't be used, because it slows down the calculations in LSF by a factor of two or more
         # return np.dot(self._matrix,signal)
@@ -122,16 +129,18 @@ class LinearTransform(object):
                 print "{:6.3f}".format(element),
             print "]"
 
-    def __generate_matrix(self,bin_edges, bin_midpoints, slice_sets):
+    def __generate_matrix(self,bin_edges, bin_midpoints):
 
-        self._n_bunches = len(slice_sets)
-        self._n_slices_per_bunch = len(bin_edges)/self._n_bunches
-        self._mid_bunch = int(self._n_bunches/2)
+        self._mid_bunch = int(self._n_segments/2)
 
-        norm_bunch_midpoints = bin_midpoints[:self._n_slices_per_bunch]
-        norm_bunch_midpoints = norm_bunch_midpoints - np.mean(slice_sets[0].z_bins)
-        norm_bin_edges = bin_edges[:self._n_slices_per_bunch]
-        norm_bin_edges = norm_bin_edges - np.mean(slice_sets[0].z_bins)
+        bunch_mid = (bin_edges[0,0]+bin_edges[(self._n_slices_per_segment - 1),1]) / 2.
+
+        total_mid = bin_midpoints[int(len(bin_midpoints)/2)]
+
+        norm_bunch_midpoints = bin_midpoints[:self._n_slices_per_segment]
+        norm_bunch_midpoints = norm_bunch_midpoints - bunch_mid
+        norm_bin_edges = bin_edges[:self._n_slices_per_segment]
+        norm_bin_edges = norm_bin_edges - bunch_mid
 
         bin_spacing = np.mean(norm_bin_edges[:, 1] - norm_bin_edges[:, 0])
 
@@ -165,10 +174,11 @@ class LinearTransform(object):
             self._norm_coeff = self.response_function(0., -0.5 * bin_spacing, 0.5 * bin_spacing,
                                                       0., norm_bin_edges[0,1], norm_bin_edges[-1,1])
         elif self._norm_type == 'total_integral':
-            self._norm_coeff = self.response_function(np.mean(slice_sets[self._mid_bunch].z_bins),
-                                                      np.mean(slice_sets[self._mid_bunch].z_bins) - 0.5 * bin_spacing,
-                                                      np.mean(slice_sets[self._mid_bunch].z_bins) + 0.5 * bin_spacing,
-                                                      np.mean(slice_sets[self._mid_bunch].z_bins) , bin_edges[0,1],
+
+            self._norm_coeff = self.response_function(total_mid,
+                                                      total_mid - 0.5 * bin_spacing,
+                                                      total_mid + 0.5 * bin_spacing,
+                                                      total_mid , bin_edges[0,1],
                                                       bin_edges[-1,1])
         elif self._norm_type == 'fixed_integral':
             self._norm_coeff = self.response_function(0., -0.5 * bin_spacing, 0.5 * bin_spacing,
