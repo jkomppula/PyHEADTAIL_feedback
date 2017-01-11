@@ -50,7 +50,7 @@ class Addition(object):
     def process(self,signal_parameters, signal, slice_sets = None, *args, **kwargs):
 
         if (self._addend is None) or self._recalculate_addend:
-            self.__calculate_addend(signal_parameters.bin_edges,signal,slice_sets)
+            self.__calculate_addend(signal_parameters, signal, slice_sets)
 
         output_signal = signal + self._addend
 
@@ -63,14 +63,25 @@ class Addition(object):
         # process the signal
         return signal_parameters, output_signal
 
-    def __calculate_addend(self,bin_edges,signal,slice_sets):
+    def __calculate_addend(self,signal_parameters, signal, slice_sets):
+        self._addend = np.zeros(len(signal))
 
-        if self._addend is None:
-            self._addend = np.zeros(len(signal))
-        if self._seed == 'bin_length':
-            np.copyto(self._addend, (bin_edges[:,1]-bin_edges[:,0]))
+        if self._seed == 'ones':
+            self._addend = self._addend + 1.
+        elif self._seed == 'bin_length':
+            np.copyto(self._addend, (signal_parameters.bin_edges[:,1]-signal_parameters.bin_edges[:,0]))
         elif self._seed == 'bin_midpoint':
-            np.copyto(self._addend, ((bin_edges[:,1]+bin_edges[:,0])/2.))
+            np.copyto(self._addend, ((signal_parameters.bin_edges[:,1]+signal_parameters.bin_edges[:,0])/2.))
+        elif self._seed == 'normalized_bin_midpoint':
+
+            for i in xrange(signal_parameters.n_segments):
+                i_from = i * signal_parameters.n_slices_per_segment
+                i_to = (i + 1) * signal_parameters.n_slices_per_segment
+
+                np.copyto(self._addend[i_from:i_to], ((signal_parameters.bin_edges[i_from:i_to,1]+
+                                                           signal_parameters.bin_edges[i_from:i_to,0])/2.
+                                                          -signal_parameters.original_z_mids[i]))
+
         elif self._seed == 'signal':
             np.copyto(self._addend,signal)
         else:

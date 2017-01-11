@@ -65,7 +65,9 @@ class Multiplication(object):
     def __calculate_multiplier(self,signal_parameters, signal, slice_sets):
         self._multiplier = np.zeros(len(signal))
 
-        if self._seed == 'bin_length':
+        if self._seed == 'ones':
+            self._multiplier = self._multiplier + 1.
+        elif self._seed == 'bin_length':
             np.copyto(self._multiplier, (signal_parameters.bin_edges[:,1]-signal_parameters.bin_edges[:,0]))
         elif self._seed == 'bin_midpoint':
             np.copyto(self._multiplier, ((signal_parameters.bin_edges[:,1]+signal_parameters.bin_edges[:,0])/2.))
@@ -191,6 +193,18 @@ class SignalMixer(Multiplication):
     def multiplication_function(self, seed):
         multiplier = np.sin(2.*pi*self._frequency*seed/c + self._phase_shift)
         return multiplier
+
+
+class IdealAmplifier(Multiplication):
+    def __init__(self,gain, **kwargs):
+
+        self._gain = gain
+
+        super(self.__class__, self).__init__('ones', **kwargs)
+        self.label = 'IdealAmplifier'
+
+    def multiplication_function(self, seed):
+        return seed * self._gain
 
 
 class MultiplicationFromFile(Multiplication):
