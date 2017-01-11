@@ -239,7 +239,7 @@ class Convolution(object):
 class Delay(Convolution):
     def __init__(self,delay, **kwargs):
 
-        self._z_delay = delay/c
+        self._z_delay = delay*c
 
         if self._z_delay < 0.:
             impulse_range = (self._z_delay, 0.)
@@ -253,9 +253,11 @@ class Delay(Convolution):
         impulse_values = np.zeros(len(impulse_bin_mids))
         bin_spacing =  np.mean(impulse_bin_edges[:,1]-impulse_bin_edges[:,0])
 
+        ref_bin_from = -0.5*bin_spacing+self._z_delay
+        ref_bin_to = 0.5*bin_spacing+self._z_delay
+
         for i, edges in enumerate(impulse_bin_edges):
-            impulse_values[i], _ = self._CDF(edges[1],-0.5*bin_spacing, 0.5*bin_spacing) \
-                                   - self._CDF(edges[0],-0.5*bin_spacing, 0.5*bin_spacing)
+            impulse_values[i] = self._CDF(edges[1],ref_bin_from,ref_bin_to) - self._CDF(edges[0],ref_bin_from,ref_bin_to)
 
         return impulse_values
 
@@ -291,7 +293,7 @@ class MovingAverage(Convolution):
         impulse_values = np.zeros(len(impulse_bin_mids))
 
         for i, edges in enumerate(impulse_bin_edges):
-            impulse_values[i], _ = self._CDF(edges[1], self._window[0], self._window[1]) \
+            impulse_values[i] = self._CDF(edges[1], self._window[0], self._window[1]) \
                                    - self._CDF(edges[0], self._window[0], self._window[1])
 
         return impulse_values
