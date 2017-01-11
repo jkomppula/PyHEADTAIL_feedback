@@ -49,7 +49,7 @@ class Multiplication(object):
     def process(self,signal_parameters, signal, slice_sets = None, *args, **kwargs):
 
         if (self._multiplier is None) or self._recalculate_multiplier:
-            self.__calculate_multiplier(signal_parameters.bin_edges,signal,slice_sets)
+            self.__calculate_multiplier(signal_parameters, signal, slice_sets)
 
         output_signal =  self._multiplier*signal
 
@@ -62,14 +62,23 @@ class Multiplication(object):
         # process the signal
         return signal_parameters, output_signal
 
-    def __calculate_multiplier(self,bin_edges,signal,slice_sets):
+    def __calculate_multiplier(self,signal_parameters, signal, slice_sets):
+        self._multiplier = np.zeros(len(signal))
 
-        if self._multiplier is None:
-            self._multiplier = np.zeros(len(signal))
         if self._seed == 'bin_length':
-            np.copyto(self._multiplier, (bin_edges[:,1]-bin_edges[:,0]))
+            np.copyto(self._multiplier, (signal_parameters.bin_edges[:,1]-signal_parameters.bin_edges[:,0]))
         elif self._seed == 'bin_midpoint':
-            np.copyto(self._multiplier, ((bin_edges[:,1]+bin_edges[:,0])/2.))
+            np.copyto(self._multiplier, ((signal_parameters.bin_edges[:,1]+signal_parameters.bin_edges[:,0])/2.))
+        elif self._seed == 'normalized_bin_midpoint':
+
+            for i in xrange(signal_parameters.n_segments):
+                i_from = i * signal_parameters.n_slices_per_segment
+                i_to = (i + 1) * signal_parameters.n_slices_per_segment
+
+                np.copyto(self._multiplier[i_from:i_to], ((signal_parameters.bin_edges[i_from:i_to,1]+
+                                                           signal_parameters.bin_edges[i_from:i_to,0])/2.
+                                                          -signal_parameters.original_z_mids[i]))
+
         elif self._seed == 'signal':
             np.copyto(self._multiplier,signal)
         else:
@@ -167,6 +176,20 @@ class NoiseGate(Multiplication):
         elif self._operator == 'less':
             multiplier[comparable < self._threshold] = 1
 
+        return multiplier
+
+
+class SignalMixer(Multiplication):
+    def __init__(self,frequency,phase_shift, **kwargs):
+
+        self._frequency = frequency
+        self._phase_shift = phase_shift
+
+        super(self.__class__, self).__init__('normalized_bin_midpoint', **kwargs)
+        self.label = 'Signal mixer'
+
+    def multiplication_function(self, seed):
+        multiplier = np.sin(2.*pi*self._frequency*seed/c + self._phase_shift)
         return multiplier
 
 

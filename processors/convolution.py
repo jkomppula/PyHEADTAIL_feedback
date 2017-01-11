@@ -254,7 +254,8 @@ class Delay(Convolution):
         bin_spacing =  np.mean(impulse_bin_edges[:,1]-impulse_bin_edges[:,0])
 
         for i, edges in enumerate(impulse_bin_edges):
-            impulse_values[i], _ = self._CDF(edges[1],-0.5*bin_spacing, 0.5*bin_spacing)
+            impulse_values[i], _ = self._CDF(edges[1],-0.5*bin_spacing, 0.5*bin_spacing) \
+                                   - self._CDF(edges[0],-0.5*bin_spacing, 0.5*bin_spacing)
 
         return impulse_values
 
@@ -290,7 +291,8 @@ class MovingAverage(Convolution):
         impulse_values = np.zeros(len(impulse_bin_mids))
 
         for i, edges in enumerate(impulse_bin_edges):
-            impulse_values[i], _ = self._CDF(edges[1], self._window[0], self._window[1])
+            impulse_values[i], _ = self._CDF(edges[1], self._window[0], self._window[1]) \
+                                   - self._CDF(edges[0], self._window[0], self._window[1])
 
         return impulse_values
 
@@ -301,6 +303,51 @@ class MovingAverage(Convolution):
             return (x - ref_bin_from) / float(ref_bin_to - ref_bin_from)
         else:
             return 1.
+
+
+class WaveletGenerator(Convolution):
+
+    def __init__(self,spacing,n_copies, **kwargs):
+        self._spacing = spacing
+        self._n_copies = n_copies
+
+        if isinstance(self._n_copies,tuple):
+            self._i_from = self._n_copies[0]
+            self._i_to = self._n_copies[1]
+
+        else:
+            self._i_from = min(self._n_copies,0)
+            self._i_to = max(self._n_copies,0)
+
+        self._window = (self._i_from*self._spacing*c,self._i_to*self._spacing*c)
+
+        super(self.__class__, self).__init__(self._window, **kwargs)
+        self.label = 'Wavelet generator'
+
+
+    def calculate_response(self, impulse_bin_mids, impulse_bin_edges):
+
+        bin_spacing = np.mean(impulse_bin_edges[:,1]-impulse_bin_edges[:,0])
+        impulse_values = np.zeros(len(impulse_bin_mids))
+
+        for i in xrange(self._i_from,(self._i_to+1)):
+            copy_mid = i*self._spacing*c
+            copy_from = copy_mid - 0.5 * bin_spacing
+            copy_to = copy_mid + 0.5 * bin_spacing
+
+            for j, edges in enumerate(impulse_bin_edges):
+                impulse_values[j] += (self._CDF(edges[1],copy_from,copy_to)-self._CDF(edges[0],copy_from,copy_to))
+
+        return impulse_values
+
+    def _CDF(self, x, ref_bin_from, ref_bin_to):
+        if x <= ref_bin_from:
+            return 0.
+        elif x < ref_bin_to:
+            return (x - ref_bin_from) / float(ref_bin_to - ref_bin_from)
+        else:
+            return 1.
+
 
 
 class ConvolutionFromFile(Convolution):
@@ -393,14 +440,13 @@ class ConvolutionFilter(Convolution):
             integral_pos, _ = integrate.quad(self._raw_impulse_response, tip_cut_width, norm_to)
 
             norm_coeff = np.abs(integral_neg + integral_pos + (threshold_val_neg + threshold_val_pos) * tip_cut_width)
-
             def transfer_function(x):
                 if np.abs(x) < tip_cut_width:
                     return self._raw_impulse_response(np.sign(x)*tip_cut_width) / norm_coeff
                 else:
                     return self._raw_impulse_response(x) / norm_coeff
         else:
-            norm_coeff, _ = integrate.quad(self._raw_impulse_response, norm_from, norm_to)
+            norm_coeff, _ = np.abs(integrate.quad(self._raw_impulse_response, norm_from, norm_to))
 
             def transfer_function(x):
                     return self._raw_impulse_response(x) / norm_coeff
@@ -508,6 +554,8 @@ class Sinc(ConvolutionFilter):
 
     def hamming_window(self, x):
         return 0.54-0.46*np.cos(2.*pi*(x/pi+self.window_width)/(2.*self.window_width))
+
+
 
 ########################################################################################################################
 ####### PLAIN CONVOLUTION ##############################################################################################

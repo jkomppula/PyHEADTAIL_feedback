@@ -37,7 +37,7 @@ class BypassAddition(Addition):
         return 0.
 
 
-class BypassFIR(DigitalFilter):
+class BypassFIR(FIRfilter):
 
     def __init__(self):
         coefficients = [1.]

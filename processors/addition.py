@@ -106,6 +106,29 @@ class Addition(object):
     def clear(self):
         self._addend = None
 
+class AdditionFromFile(Addition):
+    """ Adds an array to the signal, which is produced by interpolation from the loaded data. Note the seed for
+        the interpolation can be any of those presented in the abstract function.
+    """
+
+    def __init__(self,filename, x_axis='time', seed='bin_midpoint', **kwargs):
+        super(self.__class__, self).__init__(seed, **kwargs)
+        self.label = 'Addition from file'
+
+        self._filename = filename
+        self._x_axis = x_axis
+        self._data = np.loadtxt(self._filename)
+
+        if self._x_axis == 'time':
+            self._data[:, 0] = self._data[:, 0] * c
+        elif self._x_axis == 'position':
+            pass
+        else:
+            raise ValueError('Unknown value in AdditionFromFile._x_axis')
+
+    def addend_function(self, seed):
+        return np.interp(seed, self._data[:, 0], self._data[:, 1])
+
 
 class NoiseGenerator(Addition):
     """ Adds noise to a signal. The noise level is given as RMS value of the absolute level (reference_level = 'absolute'),
@@ -144,28 +167,3 @@ class NoiseGenerator(Addition):
             raise ValueError('Unknown value in NoiseGenerator._reference_level')
 
         return addend
-
-
-
-class AdditionFromFile(Addition):
-    """ Adds an array to the signal, which is produced by interpolation from the loaded data. Note the seed for
-        the interpolation can be any of those presented in the abstract function.
-    """
-
-    def __init__(self,filename, x_axis='time', seed='bin_midpoint', **kwargs):
-        super(self.__class__, self).__init__(seed, **kwargs)
-        self.label = 'Addition from file'
-
-        self._filename = filename
-        self._x_axis = x_axis
-        self._data = np.loadtxt(self._filename)
-
-        if self._x_axis == 'time':
-            self._data[:, 0] = self._data[:, 0] * c
-        elif self._x_axis == 'position':
-            pass
-        else:
-            raise ValueError('Unknown value in AdditionFromFile._x_axis')
-
-    def addend_function(self, seed):
-        return np.interp(seed, self._data[:, 0], self._data[:, 1])
