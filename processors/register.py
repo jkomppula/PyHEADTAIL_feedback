@@ -4,10 +4,6 @@ from abc import ABCMeta, abstractmethod
 import numpy as np
 from scipy.constants import c, pi
 
-
-
-
-
 class Register(object):
     __metaclass__ = ABCMeta
 
@@ -32,10 +28,11 @@ class Register(object):
         :param delay: a delay between storing to reading values  in turns
         :param in_processor_chain: if True, process() returns a signal
         """
+
+        self.beam_parameters = None
         self._delay = delay
         self._n_avg = n_avg
         self._phase_shift_per_turn = 2.*pi * tune
-        self._phase_advance = None
         self._in_processor_chain = in_processor_chain
         self.combination = None
 
@@ -46,8 +43,8 @@ class Register(object):
 
         self._reader_position = None
 
-        # if n_slices is not None:
-        #     self._register.append(np.zeros(n_slices))
+        # if n_bins is not None:
+        #     self._register.append(np.zeros(n_bins))
 
         self.required_variables = None
 
@@ -80,7 +77,7 @@ class Register(object):
         else:
             delay = -1. * (len(self._register) - self._n_iter_left) * self._phase_shift_per_turn
             self._n_iter_left -= 1
-            return (self._register[self._n_iter_left],None,delay,self._phase_advance)
+            return (self._register[self._n_iter_left],None,delay,self.beam_parameters.phase_advance)
 
     def process(self,signal_parameters, signal, *args, **kwargs):
 
@@ -88,8 +85,8 @@ class Register(object):
             self.input_signal = np.copy(signal)
             self.input_signal_parameters = copy.copy(signal_parameters)
 
-        if self._phase_advance is None:
-            self._phase_advance = signal_parameters.phase_advance
+        if self.beam_parameters is None:
+            self.beam_parameters = signal_parameters.beam_parameters
 
         self._register.append(signal)
 
@@ -99,7 +96,7 @@ class Register(object):
         if self._in_processor_chain == True:
             temp_signal = np.zeros(len(signal))
             if len(self) > 0:
-                prev = (np.zeros(len(self._register[0])),None,0,self._phase_advance)
+                prev = (np.zeros(len(self._register[0])),None,0,self.beam_parameters.phase_advance)
 
                 for value in self:
                     combined = self.combine(value,prev,None)
@@ -213,7 +210,7 @@ class CosineSumRegister(Register):
     def combine(self,x1,x2,reader_phase_advance,x_to_xp = False):
         delta_phi = x1[2]
         if reader_phase_advance is not None:
-            delta_position = self._phase_advance - reader_phase_advance
+            delta_position = self.beam_parameters.phase_advance - reader_phase_advance
             delta_phi += delta_position
             if delta_position > 0:
                 delta_phi -= self._phase_shift_per_turn
@@ -258,7 +255,7 @@ class FIR_Register(Register):
             delta_phi -= float(self._n_taps/2) * self._phase_shift_per_turn
 
         if reader_phase_advance is not None:
-            delta_position = self._phase_advance - reader_phase_advance
+            delta_position = self.beam_parameters.phase_advance - reader_phase_advance
             delta_phi += delta_position
             if delta_position > 0:
                 delta_phi -= self._phase_shift_per_turn

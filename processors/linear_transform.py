@@ -55,7 +55,7 @@ class LinearTransform(object):
         self.signal_classes = (0,0)
 
         self._n_segments = None
-        self._n_slices_per_segment = None
+        self._n_bins_per_segment = None
         self._mid_bunch = None
 
         self.extensions = ['store']
@@ -91,7 +91,7 @@ class LinearTransform(object):
                 raise ValueError('Unknown value for LinearTransform._bin_middle ')
 
             self._n_segments = signal_parameters.n_segments
-            self._n_slices_per_segment = signal_parameters.n_slices_per_segment
+            self._n_bins_per_segment = signal_parameters.n_bins_per_segment
 
             self.__generate_matrix(signal_parameters.bin_edges,bin_midpoints)
 
@@ -101,8 +101,8 @@ class LinearTransform(object):
             output_signal = np.zeros(len(signal))
 
             for i in xrange(self._n_segments):
-                idx_from = i * self._n_slices_per_segment
-                idx_to = (i+1) * self._n_slices_per_segment
+                idx_from = i * self._n_bins_per_segment
+                idx_to = (i+1) * self._n_bins_per_segment
                 np.copyto(output_signal[idx_from:idx_to],cython_matrix_product(self._matrix, signal[idx_from:idx_to]))
         else:
             raise ValueError('Unknown value for LinearTransform._mode ')
@@ -133,13 +133,13 @@ class LinearTransform(object):
 
         self._mid_bunch = int(self._n_segments/2)
 
-        bunch_mid = (bin_edges[0,0]+bin_edges[(self._n_slices_per_segment - 1),1]) / 2.
+        bunch_mid = (bin_edges[0,0]+bin_edges[(self._n_bins_per_segment - 1),1]) / 2.
 
         total_mid = bin_midpoints[int(len(bin_midpoints)/2)]
 
-        norm_bunch_midpoints = bin_midpoints[:self._n_slices_per_segment]
+        norm_bunch_midpoints = bin_midpoints[:self._n_bins_per_segment]
         norm_bunch_midpoints = norm_bunch_midpoints - bunch_mid
-        norm_bin_edges = bin_edges[:self._n_slices_per_segment]
+        norm_bin_edges = bin_edges[:self._n_bins_per_segment]
         norm_bin_edges = norm_bin_edges - bunch_mid
 
         bin_spacing = np.mean(norm_bin_edges[:, 1] - norm_bin_edges[:, 0])

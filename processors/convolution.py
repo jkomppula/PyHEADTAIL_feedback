@@ -134,7 +134,7 @@ class Convolution(object):
         self.extensions = ['store']
         self._store_signal = store_signal
 
-        self._n_slices_per_segment = None
+        self._n_bins_per_segment = None
         self._n_segments = None
 
         self._impulse_bin_edges = None
@@ -158,14 +158,14 @@ class Convolution(object):
 
         if self.output_signal is None:
             self.__init_variables(signal_parameters.bin_edges,signal,signal_parameters.n_segments,
-                                  signal_parameters.n_slices_per_segment)
+                                  signal_parameters.n_bins_per_segment)
         else:
             self.output_signal.fill(0.)
 
         for i,impulse_object in enumerate(self._impulse_objects):
 
-            signal_from = i*self._n_slices_per_segment
-            signal_to = (i+1)*self._n_slices_per_segment
+            signal_from = i*self._n_bins_per_segment
+            signal_to = (i+1)*self._n_bins_per_segment
             impulse_object.build_impulse(signal[signal_from:signal_to])
 
             for target_bunch, impulse_view in zip(impulse_object.target_bunches, impulse_object.impulse_views):
@@ -181,13 +181,13 @@ class Convolution(object):
 
         return signal_parameters, self.output_signal
 
-    def __init_variables(self,bin_edges,signal,n_segments,n_slices_per_segment):
+    def __init_variables(self,bin_edges,signal,n_segments,n_bins_per_segment):
 
         # generates variables
         self._n_segments = n_segments
-        self._n_slices_per_segment = n_slices_per_segment
+        self._n_bins_per_segment = n_bins_per_segment
         self.output_signal = np.zeros(len(signal))
-        self._bin_spacing = np.mean(bin_edges[0:self._n_slices_per_segment,1]-bin_edges[0:self._n_slices_per_segment,0])
+        self._bin_spacing = np.mean(bin_edges[0:self._n_bins_per_segment,1]-bin_edges[0:self._n_bins_per_segment,0])
 
         # generates an impulse response
         if self._impulse_range[0] < -0.5*self._bin_spacing:
@@ -213,12 +213,12 @@ class Convolution(object):
         self._impulse_objects = []
 
         for i in xrange(self._n_segments):
-            idx_from = i * self._n_slices_per_segment
-            idx_to = (i + 1) * self._n_slices_per_segment
+            idx_from = i * self._n_bins_per_segment
+            idx_to = (i + 1) * self._n_bins_per_segment
 
             impulse_limits = (self._impulse_bin_edges[0,0], self._impulse_bin_edges[-1,1])
-            signal_from = bin_edges[self._n_slices_per_segment * i,0]
-            signal_to = bin_edges[self._n_slices_per_segment * (i + 1)-1, 1]
+            signal_from = bin_edges[self._n_bins_per_segment * i,0]
+            signal_to = bin_edges[self._n_bins_per_segment * (i + 1)-1, 1]
 
             signal_limits = (signal_from, signal_to)
 
@@ -571,7 +571,7 @@ class FIRfilter(object):
         self._coefficients = coefficients
         self.required_variables = []
         self._mode = mode
-        self._n_slices_per_segment = None
+        self._n_bins_per_segment = None
         self._n_segments = None
         self._bin_check = None
 
@@ -599,13 +599,13 @@ class FIRfilter(object):
 
             if self._n_segments is None:
                 self._n_segments = signal_parameters.n_segments
-                self._n_slices_per_segment = signal_parameters.n_slices_per_segment
-                self.output_signal = np.zeros(self._n_segments*self._n_slices_per_segment)
+                self._n_bins_per_segment = signal_parameters.n_bins_per_segment
+                self.output_signal = np.zeros(self._n_segments*self._n_bins_per_segment)
 
 
             for i in xrange(self._n_segments):
-                i_from = i * self._n_slices_per_segment
-                i_to = (i+1) * self._n_slices_per_segment
+                i_from = i * self._n_bins_per_segment
+                i_to = (i+1) * self._n_bins_per_segment
                 temp_signal = signal[i_from:i_to]
                 out_temp_signal =  np.convolve(temp_signal, self._coefficients, mode='same')
                 np.copyto(self.output_signal[i_from:i_to],out_temp_signal)

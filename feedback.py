@@ -5,7 +5,7 @@ import copy
 from abc import ABCMeta, abstractmethod
 import timeit
 from PyHEADTAIL_MPI.mpi import mpi_data
-from processors.signal import SignalParameters
+from processors.signal import SignalParameters, BeamParameters
 """
     This file contains modules, which can be used as a feedback module/object in PyHEADTAIL. Actual signal processing is
     done by using signal processors written to files processors.py and digital_processors.py. A list of signal
@@ -93,8 +93,8 @@ class IdealSliceFeedback(object):
 class FeedbackMapObject(object):
     __metaclass__ = ABCMeta
 
-    def __init__(self,slicer, processors_x, processors_y, required_variables, phase_advance_x=None,
-                 phase_advance_y=None, mpi=False, gain_x=None, gain_y=None, extra_statistics=None):
+    def __init__(self,slicer, processors_x, processors_y, required_variables, beam_parameters_x=None,
+                 beam_parameters_y=None, mpi=False, gain_x=None, gain_y=None, extra_statistics=None):
 
         self._slicer = slicer
 
@@ -108,8 +108,8 @@ class FeedbackMapObject(object):
         self._extra_statistics = extra_statistics
         self._required_variables = required_variables
 
-        self._phase_advance_x = phase_advance_x
-        self._phase_advance_y = phase_advance_y
+        self._beam_parameters_x = beam_parameters_x
+        self._beam_parameters_y = beam_parameters_y
 
         self._n_local_bunches = None
         self._n_total_bunches = None
@@ -178,10 +178,10 @@ class FeedbackMapObject(object):
         self._input_signal_y = np.zeros(self._n_total_bunches * self._n_slices_per_bunch)
 
         input_bin_edges = None
-        original_z_mids = []
+        original_segment_mids = []
         for slice_set in processor_slice_sets:
             edges = np.transpose(np.array([slice_set.z_bins[:-1], slice_set.z_bins[1:]]))
-            original_z_mids.append(np.mean(slice_set.z_bins))
+            original_segment_mids.append(np.mean(slice_set.z_bins))
             if input_bin_edges is None:
                 input_bin_edges = np.copy(edges)
             else:
@@ -189,10 +189,11 @@ class FeedbackMapObject(object):
 
         self._input_signal_parameters_x = SignalParameters(0,input_bin_edges,len(processor_slice_sets),
                                                            int(len(input_bin_edges)/len(processor_slice_sets)),
-                                                           self._phase_advance_x,original_z_mids)
+                                                           original_segment_mids,self._beam_parameters_x)
         self._input_signal_parameters_y = SignalParameters(0,input_bin_edges,len(processor_slice_sets),
                                                            int(len(input_bin_edges)/len(processor_slice_sets)),
-                                                           self._phase_advance_y,original_z_mids)
+                                                           original_segment_mids,
+                                                           self._beam_parameters_y)
 
     def _read_signal(self, attr_x, attr_y):
 
@@ -261,6 +262,9 @@ class OneboxFeedback(FeedbackMapObject):
 
     def __init__(self,gain, slicer, processors_x, processors_y, axis='divergence', **kwargs):
 
+        beam_parameters_x = BeamParameters(0.,1.)
+        beam_parameters_y = BeamParameters(0.,1.)
+
         if isinstance(gain, collections.Container):
             gain_x = gain[0]
             gain_y = gain[1]
@@ -284,7 +288,8 @@ class OneboxFeedback(FeedbackMapObject):
         required_variables = [self._slice_attr_x,self._slice_attr_y]
 
         super(self.__class__, self).__init__(slicer, processors_x, processors_y, required_variables,
-                 gain_x=gain_x, gain_y=gain_y, **kwargs)
+                 gain_x=gain_x, gain_y=gain_y, beam_parameters_x=beam_parameters_x,
+                 beam_parameters_y=beam_parameters_y, **kwargs)
 
 
     def track(self, bunch):
@@ -295,14 +300,14 @@ class OneboxFeedback(FeedbackMapObject):
 
 
 class PickUp(FeedbackMapObject):
-    def __init__(self, slicer, processors_x, processors_y, phase_advance_x, phase_advance_y, **kwargs):
+    def __init__(self, slicer, processors_x, processors_y, beam_parameters_x, beam_parameters_y, **kwargs):
         self._slice_attr_x = 'mean_x'
         self._slice_attr_y = 'mean_y'
 
         required_variables = [self._slice_attr_x,self._slice_attr_y]
 
         super(self.__class__, self).__init__(slicer, processors_x, processors_y, required_variables,
-                                             phase_advance_x = phase_advance_x, phase_advance_y = phase_advance_y,
+                                             beam_parameters_x = beam_parameters_x, beam_parameters_y = beam_parameters_y,
                                              **kwargs)
 
     def track(self, bunch):
@@ -312,8 +317,8 @@ class PickUp(FeedbackMapObject):
 
 
 class Kicker(FeedbackMapObject):
-    def __init__(self,gain,slicer,processors_x,processors_y, phase_advance_x, phase_advance_y,
-                 registers_x,registers_y,xp_per_x, yp_per_y, **kwargs):
+    def __init__(self,gain,slicer,processors_x,processors_y,
+                 registers_x,registers_y, beam_parameters_x, beam_parameters_y, **kwargs):
 
         if isinstance(gain, collections.Container):
             gain_x = gain[0]
@@ -330,28 +335,27 @@ class Kicker(FeedbackMapObject):
         self._registers_x = registers_x
         self._registers_y = registers_y
 
-        self._xp_per_x = xp_per_x
-        self._yp_per_y = yp_per_y
-
         super(self.__class__, self).__init__(slicer, processors_x, processors_y, required_variables, gain_x = gain_x,
-                                             gain_y = gain_y, phase_advance_x = phase_advance_x,
-                                             phase_advance_y = phase_advance_y, **kwargs)
+                                             gain_y = gain_y, beam_parameters_x = beam_parameters_x,
+                                             beam_parameters_y = beam_parameters_y, **kwargs)
 
     def track(self, bunch):
         self._init_track(bunch)
 
-        self._input_signal_x = self.__combine(self._registers_x,self._phase_advance_x, self._xp_per_x)
-        self._input_signal_y = self.__combine(self._registers_y,self._phase_advance_y, self._yp_per_y)
+        self._input_signal_x = self.__combine(self._registers_x,self._beam_parameters_x)
+        self._input_signal_y = self.__combine(self._registers_y,self._beam_parameters_y)
 
         signal_x, signal_y = self._process_signal()
         self._do_kick(bunch,signal_x,signal_y,self._particle_attr_x, self._particle_attr_y)
 
-    def __combine(self,registers,reader_phase_advance,phase_conv_coeff):
+    def __combine(self,registers,beam_parameters):
         # This function picks signals from different registers, turns them to correct phase advance and
         # calculates an average of them after that. Actual phase shift in betatron phase is done in a combine method
         # written to the registers. The combine method might or might not require multiple signals (from different turns
         # or different registers) depending on the register. Thus, two signals are givens as a argument for combine
         # method of the register object.
+
+        reader_phase_advance = beam_parameters.phase_advance
 
         total_signal = None
         n_signals = 0
@@ -364,7 +368,8 @@ class Kicker(FeedbackMapObject):
                 if total_signal is None:
                     prev_signal = signal
                     total_signal = np.zeros(len(signal[0]))
-                total_signal += registers[0].combine(signal, prev_signal,reader_phase_advance, True)
+                phase_conv_coeff = 1. / np.sqrt(beam_parameters.beta_function * registers[0].beam_parameters.beta_function)
+                total_signal += phase_conv_coeff*registers[0].combine(signal, prev_signal,reader_phase_advance, True)
                 n_signals += 1
                 prev_signal = signal
 
@@ -384,15 +389,15 @@ class Kicker(FeedbackMapObject):
             for register in registers[first_iterable:]:
                 # print prev_register
                 # print register
+                phase_conv_coeff = 1. / np.sqrt(beam_parameters.beta_function * prev_register.beam_parameters.beta_function)
                 for signal_1, signal_2 in itertools.izip(prev_register,register):
                     if total_signal is None:
                         total_signal = np.zeros(len(signal_1[0]))
-                    total_signal += prev_register.combine(signal_1,signal_2,reader_phase_advance, True)
+                    total_signal += phase_conv_coeff*prev_register.combine(signal_1,signal_2,reader_phase_advance, True)
                     n_signals += 1
                 prev_register = register
 
         if total_signal is not None:
             total_signal /= float(n_signals)
-            total_signal *= phase_conv_coeff
 
         return total_signal

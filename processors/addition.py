@@ -75,8 +75,8 @@ class Addition(object):
         elif self._seed == 'normalized_bin_midpoint':
 
             for i in xrange(signal_parameters.n_segments):
-                i_from = i * signal_parameters.n_slices_per_segment
-                i_to = (i + 1) * signal_parameters.n_slices_per_segment
+                i_from = i * signal_parameters.n_bins_per_segment
+                i_to = (i + 1) * signal_parameters.n_bins_per_segment
 
                 np.copyto(self._addend[i_from:i_to], ((signal_parameters.bin_edges[i_from:i_to,1]+
                                                            signal_parameters.bin_edges[i_from:i_to,0])/2.
