@@ -28,7 +28,7 @@ class Register(object):
         :param delay: a delay between storing to reading values  in turns
         :param in_processor_chain: if True, process() returns a signal
         """
-
+        self.signal_parameters = None
         self.beam_parameters = None
         self._delay = delay
         self._n_avg = n_avg
@@ -46,7 +46,6 @@ class Register(object):
         # if n_bins is not None:
         #     self._register.append(np.zeros(n_bins))
 
-        self.required_variables = None
 
         self.extensions = ['store', 'register']
 
@@ -86,6 +85,7 @@ class Register(object):
             self.input_signal_parameters = copy.copy(signal_parameters)
 
         if self.beam_parameters is None:
+            self.signal_parameters = signal_parameters
             self.beam_parameters = signal_parameters.beam_parameters
 
         self._register.append(signal)
@@ -117,11 +117,10 @@ class Register(object):
 
 class VectorSumRegister(Register):
 
-    def __init__(self, n_avg, tune, delay = 0, in_processor_chain=True):
+    def __init__(self, n_avg, tune, delay = 0, in_processor_chain=True,**kwargs):
         self.combination = 'combined'
-        super(self.__class__, self).__init__(n_avg, tune, delay, in_processor_chain)
+        super(self.__class__, self).__init__(n_avg, tune, delay, in_processor_chain,**kwargs)
         self.label = 'Vector sum register'
-        self.required_variables = []
 
     def combine(self,x1,x2,reader_phase_advance,x_to_xp = False):
         # determines a complex number representation from two signals (e.g. from two pickups or different turns), by using
@@ -199,13 +198,12 @@ class CosineSumRegister(Register):
         If there are multiple values in different phases, the sum approaches a value equal to half of the displacement
         in the reader's position.
     """
-    def __init__(self, n_avg, tune, delay = 0, in_processor_chain=True):
+    def __init__(self, n_avg, tune, delay = 0, in_processor_chain=True,**kwargs):
 
         self.combination = 'individual'
 
-        super(self.__class__, self).__init__(n_avg, tune, delay, in_processor_chain)
+        super(self.__class__, self).__init__(n_avg, tune, delay, in_processor_chain,**kwargs)
         self.label = 'Cosine sum register'
-        self.required_variables = []
 
     def combine(self,x1,x2,reader_phase_advance,x_to_xp = False):
         delta_phi = x1[2]
@@ -225,7 +223,7 @@ class CosineSumRegister(Register):
 
 
 class FIR_Register(Register):
-    def __init__(self, n_taps, tune, delay, zero_idx, in_processor_chain):
+    def __init__(self, n_taps, tune, delay, zero_idx, in_processor_chain,**kwargs):
         """ A general class for the register object, which uses FIR (finite impulse response) method to calculate
             a correct signal for kick from the register values. Because the register can be used for multiple kicker
             (in different locations), the filter coefficients are calculated in every call with
@@ -245,7 +243,7 @@ class FIR_Register(Register):
         self._zero_idx = zero_idx
         self._n_taps = n_taps
 
-        super(FIR_Register, self).__init__(n_taps, tune, delay, in_processor_chain)
+        super(FIR_Register, self).__init__(n_taps, tune, delay, in_processor_chain,**kwargs)
         self.required_variables = []
 
     def combine(self,x1,x2,reader_phase_advance,x_to_xp = False):
@@ -287,8 +285,9 @@ class HilbertPhaseShiftRegister(FIR_Register):
     """ A register used in some damper systems at CERN. The correct signal is calculated by using FIR phase shifter,
     which is based on the Hilbert transform. It is recommended to use odd number of taps (e.g. 7) """
 
-    def __init__(self,n_taps, tune, delay = 0, in_processor_chain=True):
-        super(self.__class__, self).__init__(n_taps, tune, delay, 'middle', in_processor_chain)
+    def __init__(self,n_taps, tune, delay = 0, in_processor_chain=True,**kwargs):
+        super(self.__class__, self).__init__(n_taps, tune, delay, 'middle', in_processor_chain,**kwargs)
+        self.label = 'HilbertPhaseShiftRegister'
 
     def coeff_generator(self, n, delta_phi):
         h = 0.

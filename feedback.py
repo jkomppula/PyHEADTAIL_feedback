@@ -339,11 +339,23 @@ class Kicker(FeedbackMapObject):
                                              gain_y = gain_y, beam_parameters_x = beam_parameters_x,
                                              beam_parameters_y = beam_parameters_y, **kwargs)
 
+        # FIXME: This is ugly way
+        self._first_kick_x = True
+        self._first_kick_y = True
+
     def track(self, bunch):
         self._init_track(bunch)
 
         self._input_signal_x = self.__combine(self._registers_x,self._beam_parameters_x)
         self._input_signal_y = self.__combine(self._registers_y,self._beam_parameters_y)
+
+        if self._first_kick_x and (self._input_signal_x is not None):
+            self._first_kick_x = False
+            self._input_signal_parameters_x = copy.copy(self._registers_x[0].signal_parameters)
+
+        if self._first_kick_y and (self._input_signal_y is not None):
+            self._first_kick_y = False
+            self._input_signal_parameters_y = copy.copy(self._registers_y[0].signal_parameters)
 
         signal_x, signal_y = self._process_signal()
         self._do_kick(bunch,signal_x,signal_y,self._particle_attr_x, self._particle_attr_y)

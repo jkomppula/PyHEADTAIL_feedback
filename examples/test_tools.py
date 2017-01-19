@@ -1,6 +1,8 @@
 import numpy as np
 from scipy.constants import m_p, c, e, pi
 import matplotlib.pyplot as plt
+
+from PyHEADTAIL.machines.synchrotron import BasicSynchrotron
 import PyHEADTAIL.particles.generators as generators
 from PyHEADTAIL.trackers.transverse_tracking import TransverseMap
 from PyHEADTAIL.trackers.simple_long_tracking import LinearMap
@@ -96,10 +98,7 @@ def generate_bunch(machine, n_macroparticles, long_map):
               (2 * np.pi * long_map.Qs))
 
     epsn_z = 4. * np.pi * machine.sigma_z ** 2. * machine.p0 / (beta_z * e)
-    
-    print 'machine.beta_x_inj: ' + str(machine.beta_x_inj)
-    print 'machine.beta_y_inj: ' + str(machine.beta_y_inj)
-    
+
     bunch = generators.generate_Gaussian6DTwiss(
         macroparticlenumber=n_macroparticles, intensity=machine.intensity, charge=e,
         gamma=machine.gamma, mass=m_p, circumference=machine.C,
@@ -255,3 +254,75 @@ def compare_projections(bunches, labels):
     ax_z_y.legend(loc='upper right')
     ax_z_y.set_xlabel('z [m]')
     ax_z_y.set_ylabel('y [mm]')
+
+
+
+class MultibunchMachine(BasicSynchrotron):
+
+    def __init__(self, **kwargs):
+
+        charge = e
+        mass = m_p
+        alpha = 53.86**-2
+        h_RF = 35640
+
+        p0 = 7000e9 * e / c
+        p_increment = 0.
+        self.accQ_x = 62.31
+        self.accQ_y = 60.32
+        V_RF = 16e6
+        dphi_RF = 0
+
+        if 's' in kwargs.keys():
+            raise ValueError('s vector cannot be provided if ' +
+                             'optics_mode == "smooth"')
+
+        name = None
+        n_segments = kwargs['n_segments']
+        circumference = 26658.883
+
+        s = None
+        alpha_x = None
+        alpha_y = None
+        self.beta_x_inj = circumference / (2.*np.pi*self.accQ_x)
+        self.beta_y_inj = circumference / (2.*np.pi*self.accQ_y)
+        D_x = 0
+        D_y = 0
+
+
+        # detunings
+        Qp_x = 0
+        Qp_y = 0
+
+        app_x = 0
+        app_y = 0
+        app_xy = 0
+
+        verbose = False
+        wrap_z = True
+
+
+        for attr in kwargs.keys():
+            if kwargs[attr] is not None:
+                if (type(kwargs[attr]) is list or
+                        type(kwargs[attr]) is np.ndarray):
+                    str2print = '[%s ...]' % repr(kwargs[attr][0])
+                else:
+                    str2print = repr(kwargs[attr])
+                self.prints('Synchrotron init. From kwargs: %s = %s'
+                            % (attr, str2print))
+                temp = kwargs[attr]
+                exec('%s = temp' % attr)
+
+
+        super(MultibunchMachine, self).__init__(
+            optics_mode='smooth', circumference=circumference,
+            n_segments=n_segments, s=s, name=name,
+            alpha_x=alpha_x, beta_x=self.beta_x_inj, D_x=D_x,
+            alpha_y=alpha_y, beta_y=self.beta_y_inj, D_y=D_y,
+            accQ_x=self.accQ_x, accQ_y=self.accQ_y, Qp_x=Qp_x, Qp_y=Qp_y,
+            app_x=app_x, app_y=app_y, app_xy=app_xy,
+            alpha_mom_compaction=alpha, longitudinal_mode='non-linear',
+            h_RF=np.atleast_1d(h_RF), V_RF=np.atleast_1d(V_RF),
+            dphi_RF=np.atleast_1d(dphi_RF), p0=p0, p_increment=p_increment,
+            charge=charge, mass=mass, wrap_z=wrap_z, verbose=verbose)
