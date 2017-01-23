@@ -183,6 +183,11 @@ if rank == 0:
         t, z, bins, signal = pick_signals(processor,'output')
         ax1.plot(z, bins*(0.9**i), label =  processor.label)
         ax2.plot(z, signal, label =  processor.label)
+	if i == 0:
+		print z
+		print feedback_map._mpi_gatherer.total_data
+		print feedback_map._mpi_gatherer.total_data.z_bins
+	
 
     # The first plot represents sampling in the each signal processor. The magnitudes of the curves do not represent
     # anything, but the change of the polarity represents a transition from one bin to other.
