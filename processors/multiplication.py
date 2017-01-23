@@ -32,7 +32,7 @@ class Multiplication(object):
         self.extensions = ['store']
         self._store_signal = store_signal
 
-        if self._seed not in ['bin_length','bin_midpoint','signal']:
+        if self._seed not in ['bin_length','bin_midpoint','signal','ones']:
             self.extensions.append('bunch')
             self.required_variables = [self._seed]
 
@@ -94,6 +94,9 @@ class Multiplication(object):
                 raise ValueError('Signal length does not correspond to the original signal length '
                                  'from the slice sets in the method Multiplication')
 
+
+        #TODO: fix normalizations
+        #TODO: total_sum, segment_sum, total_average, segment_average, total_integral, segment_integral, maximum, minimum
         # print 'self._multiplier: ' + str(self._multiplier)
         self._multiplier = self.multiplication_function(self._multiplier)
 
@@ -103,6 +106,10 @@ class Multiplication(object):
             norm_coeff = float(np.sum(self._multiplier))
         elif self._normalization == 'average':
             norm_coeff = float(np.sum(self._multiplier))/float(len(self._multiplier))
+        elif self._normalization == 'segment_sum':
+            i_from = 0
+            i_to = signal_parameters.n_bins_per_segment
+            norm_coeff = float(np.sum(self._multiplier[i_from:i_to]))
         elif self._normalization == 'maximum':
             norm_coeff = float(np.max(self._multiplier))
         elif self._normalization == 'minimum':
@@ -206,6 +213,16 @@ class IdealAmplifier(Multiplication):
     def multiplication_function(self, seed):
         return seed * self._gain
 
+
+class SegmentAverage(Multiplication):
+    def __init__(self,**kwargs):
+
+
+        super(self.__class__, self).__init__('ones',normalization = 'segment_sum', **kwargs)
+        self.label = 'SegmentAverage'
+
+    def multiplication_function(self, seed):
+        return seed
 
 class MultiplicationFromFile(Multiplication):
     """ Multiplies the signal with an array, which is produced by interpolation from the loaded data. Note the seed for

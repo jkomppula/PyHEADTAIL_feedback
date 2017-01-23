@@ -408,6 +408,14 @@ class ConvolutionFilter(Convolution):
             if (edges[0] <= 0.) and (0. < edges[1]):
                 impulse_values[i] = impulse_values[i] + self._zero_bin_value
 
+        if self._norm_type == 'max':
+            print 'self._norm_type == max'
+            impulse_values = impulse_values/np.max(impulse_values)
+        elif self._norm_type == 'min':
+            impulse_values = impulse_values/np.min(impulse_values)
+        elif self._norm_type == 'mean':
+            impulse_values = impulse_values/np.mean(impulse_values)
+
         return impulse_values
 
     @abstractmethod
@@ -423,7 +431,7 @@ class ConvolutionFilter(Convolution):
             is given, the value of the raw impulse response is set to constant at the time scale below that.
             The integral over the response function is normalized to value 1.
         """
-        if self._norm_type is None:
+        if (self._norm_type is None) or (self._norm_type in ['max','min','mean']):
             norm_from = -100.
             norm_to = 100.
         elif self._norm_type == 'impulse_length':
