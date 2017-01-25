@@ -153,6 +153,7 @@ pickup_processors_x = [
     ADC(f_ADC, n_bits = 8, input_range = (-1e-3,1e-3), signal_length = signal_length,store_signal  = True),
     HilbertPhaseShiftRegister(n_values, machine.accQ_x, delay,store_signal  = True)
 ]
+
 pickup_processors_y = [
     ChargeWeighter(normalization = 'average',store_signal  = True),
     ADC(f_ADC, n_bits = 8, input_range = (-1e-3,1e-3), signal_length = signal_length,store_signal  = True),

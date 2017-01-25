@@ -67,7 +67,7 @@ class Multiplication(object):
 
         if self._seed == 'ones':
             self._multiplier = self._multiplier + 1.
-        elif self._seed == 'bin_length':
+        elif self._seed == 'bin_width':
             np.copyto(self._multiplier, (signal_parameters.bin_edges[:,1]-signal_parameters.bin_edges[:,0]))
         elif self._seed == 'bin_midpoint':
             np.copyto(self._multiplier, ((signal_parameters.bin_edges[:,1]+signal_parameters.bin_edges[:,0])/2.))
@@ -94,26 +94,50 @@ class Multiplication(object):
                 raise ValueError('Signal length does not correspond to the original signal length '
                                  'from the slice sets in the method Multiplication')
 
-
-        #TODO: fix normalizations
-        #TODO: total_sum, segment_sum, total_average, segment_average, total_integral, segment_integral, maximum, minimum
-        # print 'self._multiplier: ' + str(self._multiplier)
         self._multiplier = self.multiplication_function(self._multiplier)
 
+        # TODO: add options for average bin integrals?
         if self._normalization is None:
             norm_coeff = 1.
-        elif self._normalization == 'total':
+
+        elif self._normalization == 'total_sum':
             norm_coeff = float(np.sum(self._multiplier))
-        elif self._normalization == 'average':
-            norm_coeff = float(np.sum(self._multiplier))/float(len(self._multiplier))
+
         elif self._normalization == 'segment_sum':
-            i_from = 0
-            i_to = signal_parameters.n_bins_per_segment
-            norm_coeff = float(np.sum(self._multiplier[i_from:i_to]))
-        elif self._normalization == 'maximum':
+            norm_coeff = np.ones(len(self._multiplier))
+            for i in xrange(signal_parameters.n_segments):
+                i_from = i*signal_parameters.n_bins_per_segment
+                i_to = (i+1)*signal_parameters.n_bins_per_segment
+                norm_coeff[i_from:i_to] = norm_coeff[i_from:i_to]*float(np.sum(self._multiplier[i_from:i_to]))
+
+        elif self._normalization == 'total_average':
+            norm_coeff = float(np.sum(self._multiplier))/float(len(self._multiplier))
+
+        elif self._normalization == 'segment_average':
+            norm_coeff = np.ones(len(self._multiplier))
+            for i in xrange(signal_parameters.n_segments):
+                i_from = i*signal_parameters.n_bins_per_segment
+                i_to = (i+1)*signal_parameters.n_bins_per_segment
+                norm_coeff[i_from:i_to] = norm_coeff[i_from:i_to]*float(np.sum(self._multiplier[i_from:i_to]))/float(signal_parameters.n_bins_per_segment)
+
+        elif self._normalization == 'total_integral':
+            bin_widths = signal_parameters.bin_edges[:,1] - signal_parameters.bin_edges[:,0]
+            norm_coeff = np.sum(self._multiplier*bin_widths)
+
+        elif self._normalization == 'segment_average':
+            bin_widths = signal_parameters.bin_edges[:,1] - signal_parameters.bin_edges[:,0]
+            norm_coeff = np.ones(len(self._multiplier))
+            for i in xrange(signal_parameters.n_segments):
+                i_from = i*signal_parameters.n_bins_per_segment
+                i_to = (i+1)*signal_parameters.n_bins_per_segment
+                norm_coeff[i_from:i_to] = norm_coeff[i_from:i_to]*float(np.sum(self._multiplier[i_from:i_to]*bin_widths[i_from:i_to]))
+
+        elif self._normalization == 'max':
             norm_coeff = float(np.max(self._multiplier))
-        elif self._normalization == 'minimum':
+
+        elif self._normalization == 'min':
             norm_coeff = float(np.min(self._multiplier))
+
         else:
             raise  ValueError('Unknown value in Multiplication._normalization')
 

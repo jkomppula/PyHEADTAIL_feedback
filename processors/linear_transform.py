@@ -21,7 +21,7 @@ class LinearTransform(object):
         the ref_bin to the bin)
     """
 
-    def __init__(self, mode = 'bunch_by_bunch', norm_type=None, norm_range=None,
+    def __init__(self, mode = 'bunch_by_bunch', normalization=None,
                  bin_middle = 'bin', store_signal = False):
         """
 
@@ -43,8 +43,7 @@ class LinearTransform(object):
 
         self._mode = mode
 
-        self._norm_type = norm_type
-        self._norm_range = norm_range
+        self._normalization = normalization
         self._bin_middle = bin_middle
 
         self._z_bin_set = None
@@ -160,51 +159,38 @@ class LinearTransform(object):
                                                                 midpoint_j, bin_edges[j, 0], bin_edges[j, 1])
 
         else:
-            raise ValueError('Unknown value in LinearTransform._mode')
+            raise ValueError('Unrecognized value in LinearTransform._mode')
 
         matrix_size = self._matrix.shape
 
-        if self._norm_type == 'bunch_average':
-            self._norm_coeff = norm_bin_edges[-1,1] - norm_bin_edges[0,0]
-        elif self._norm_type == 'total_average':
-            self._norm_coeff = bin_edges[-1,1] - bin_edges[0,0]
-        elif self._norm_type == 'fixed_average':
-            self._norm_coeff = self._norm_range[1] - self._norm_range[0]
-        elif self._norm_type == 'bunch_integral':
-            self._norm_coeff = self.response_function(0., -0.5 * bin_spacing, 0.5 * bin_spacing,
-                                                      0., norm_bin_edges[0,1], norm_bin_edges[-1,1])
-        elif self._norm_type == 'total_integral':
+        total_impulse = np.append(self._matrix[:,-1],self._matrix[1:,0])
+        bin_widths = bin_edges[:, 1]-bin_edges[:, 0]
+        total_bin_widths = np.append(bin_widths,bin_widths[1:])
 
-            self._norm_coeff = self.response_function(total_mid,
-                                                      total_mid - 0.5 * bin_spacing,
-                                                      total_mid + 0.5 * bin_spacing,
-                                                      total_mid , bin_edges[0,1],
-                                                      bin_edges[-1,1])
-        elif self._norm_type == 'fixed_integral':
-            self._norm_coeff = self.response_function(0., -0.5 * bin_spacing, 0.5 * bin_spacing,
-                                                     0, self._norm_range[0], self._norm_range[-1])
-        elif self._norm_type == 'column_min':
-            self._norm_coeff= np.min(self._matrix[:,int(matrix_size[1]/2)])
-        elif self._norm_type == 'column_max':
-            self._norm_coeff= np.max(self._matrix[:,int(matrix_size[1]/2)])
-        elif self._norm_type == 'column_mean':
-            self._norm_coeff= np.mean(self._matrix[:,int(matrix_size[1]/2)])
-        elif self._norm_type == 'column_sum':
-            self._norm_coeff= np.sum(self._matrix[:,int(matrix_size[1]/2)])
-        elif self._norm_type is None:
-            self._norm_coeff = 1.
+        if self._normalization is None:
+            pass
+        elif self._normalization == 'max':
+            self._matrix = self._matrix/np.max(total_impulse)
+        elif self._normalization == 'min':
+            self._matrix = self._matrix/np.min(total_impulse)
+        elif self._normalization == 'average':
+            self._matrix = self._matrix/np.abs(np.mean(total_impulse))
+        elif self._normalization == 'sum':
+            self._matrix = self._matrix/np.abs(np.sum(total_impulse))
+        elif self._normalization == 'column_sum':
+            self._matrix = self._matrix/np.abs(np.sum(self._matrix[:,0]))
+        elif self._normalization == 'integral':
+            self._matrix = self._matrix / np.abs(np.sum(total_impulse* total_bin_widths))
         else:
-            raise ValueError('Unknown value in LinearTransform._norm_type')
-
-        self._matrix = self._matrix / float(self._norm_coeff)
+            raise ValueError('Unrecognized value in LinearTransform._normalization')
 
 class Averager(LinearTransform):
     """ Returns a signal, which consists an average value of the input signal. A sums of the rows in the matrix
         are normalized to be one (i.e. a sum of the input signal doesn't change).
     """
 
-    def __init__(self, mode = 'bunch_by_bunch', norm_type = 'column_sum', **kwargs):
-        super(self.__class__, self).__init__(mode, norm_type, **kwargs)
+    def __init__(self, mode = 'bunch_by_bunch', normalization = 'column_sum', **kwargs):
+        super(self.__class__, self).__init__(mode, normalization, **kwargs)
         self.label = 'Averager'
 
     def response_function(self, ref_bin_mid, ref_bin_from, ref_bin_to, bin_mid, bin_from, bin_to):
@@ -233,14 +219,14 @@ class Delay(LinearTransform):
 class LinearTransformFromFile(LinearTransform):
     """ Interpolates matrix columns by using inpulse response data from a file. """
 
-    def __init__(self,filename, x_axis = 'time', norm_type = 'max_column', **kwargs):
+    def __init__(self,filename, x_axis = 'time', **kwargs):
         self._filename = filename
         self._x_axis = x_axis
         self._data = np.loadtxt(self._filename)
         if self._x_axis == 'time':
             self._data[:, 0]=self._data[:, 0]*c
 
-        super(self.__class__, self).__init__(norm_type, **kwargs)
+        super(self.__class__, self).__init__( **kwargs)
         self.label = 'LT from file'
 
     def response_function(self, ref_bin_mid, ref_bin_from, ref_bin_to, bin_mid, bin_from, bin_to):

@@ -97,18 +97,50 @@ class Addition(object):
 
         self._addend = self.addend_function(self._addend)
 
+        # TODO: add options for average bin integrals?
         if self._normalization is None:
             norm_coeff = 1.
-        elif self._normalization == 'total':
+
+        elif self._normalization == 'total_sum':
             norm_coeff = float(np.sum(self._addend))
-        elif self._normalization == 'average':
+
+        elif self._normalization == 'segment_sum':
+            norm_coeff = np.ones(len(self._addend))
+            for i in xrange(signal_parameters.n_segments):
+                i_from = i*signal_parameters.n_bins_per_segment
+                i_to = (i+1)*signal_parameters.n_bins_per_segment
+                norm_coeff[i_from:i_to] = norm_coeff[i_from:i_to]*float(np.sum(self._addend[i_from:i_to]))
+
+        elif self._normalization == 'total_average':
             norm_coeff = float(np.sum(self._addend))/float(len(self._addend))
-        elif self._normalization == 'maximum':
+
+        elif self._normalization == 'segment_average':
+            norm_coeff = np.ones(len(self._addend))
+            for i in xrange(signal_parameters.n_segments):
+                i_from = i*signal_parameters.n_bins_per_segment
+                i_to = (i+1)*signal_parameters.n_bins_per_segment
+                norm_coeff[i_from:i_to] = norm_coeff[i_from:i_to]*float(np.sum(self._addend[i_from:i_to]))/float(signal_parameters.n_bins_per_segment)
+
+        elif self._normalization == 'total_integral':
+            bin_widths = signal_parameters.bin_edges[:,1] - signal_parameters.bin_edges[:,0]
+            norm_coeff = np.sum(self._addend*bin_widths)
+
+        elif self._normalization == 'segment_average':
+            bin_widths = signal_parameters.bin_edges[:,1] - signal_parameters.bin_edges[:,0]
+            norm_coeff = np.ones(len(self._addend))
+            for i in xrange(signal_parameters.n_segments):
+                i_from = i*signal_parameters.n_bins_per_segment
+                i_to = (i+1)*signal_parameters.n_bins_per_segment
+                norm_coeff[i_from:i_to] = norm_coeff[i_from:i_to]*float(np.sum(self._addend[i_from:i_to]*bin_widths[i_from:i_to]))
+
+        elif self._normalization == 'max':
             norm_coeff = float(np.max(self._addend))
-        elif self._normalization == 'minimum':
+
+        elif self._normalization == 'min':
             norm_coeff = float(np.min(self._addend))
+
         else:
-            raise  ValueError('Unknown value in Addition._normalization')
+            raise  ValueError('Unknown value in Multiplication._normalization')
 
         # TODO: try to figure out why this can not be written as
         # TODO:      self._addend /= norm_coeff
