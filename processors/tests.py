@@ -1,5 +1,7 @@
-from processors import LinearTransform, Addition, Multiplication
-from digital_processors import DigitalFilter
+from linear_transform import LinearTransform
+from addition import Addition
+from multiplication import Multiplication
+from convolution import FIRfilter
 
 
 class BypassLinearTransform(LinearTransform):
@@ -35,7 +37,7 @@ class BypassAddition(Addition):
         return 0.
 
 
-class BypassFIR(DigitalFilter):
+class BypassFIR(FIRfilter):
 
     def __init__(self):
         coefficients = [1.]

@@ -8,6 +8,8 @@ import time
 # TODO:
 #   * add analytical formula for excitation
 #   * multi plane for Signal handling
+#   * add extract signals
+#   * rewrite signal class to be based on the general abstract classes
 
 """ This file contains tools for testing signal processors, calculating signal responses for different processor chains
     and studying the control theory behind the damping.
