@@ -395,7 +395,7 @@ class ConvolutionFilter(Convolution):
         self._zero_bin_value = zero_bin_value
         super(ConvolutionFilter, self).__init__(impulse_range, **kwargs)
 
-        # TODO: is the tip cut needed? How to work with the sharp tips of the ideal filters?
+        # NOTE: is the tip cut needed? How to work with the sharp tips of the ideal filters?
         if (self._normalization is None) and (tip_cut_width is not None):
             self._normalization = 'integral'
         self._impulse_response = self._impulse_response_generator(tip_cut_width)

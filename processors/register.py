@@ -217,11 +217,6 @@ class CosineSumRegister(Register):
 
         return 2.*math.cos(delta_phi)*x1[0]
 
-
-
-
-
-
 class FIR_Register(Register):
     def __init__(self, n_taps, tune, delay, zero_idx, in_processor_chain,**kwargs):
         """ A general class for the register object, which uses FIR (finite impulse response) method to calculate
