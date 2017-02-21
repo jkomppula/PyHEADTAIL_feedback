@@ -350,8 +350,6 @@ class WaveletGenerator(Convolution):
         else:
             return 1.
 
-
-
 class ConvolutionFromFile(Convolution):
     """ Interpolates matrix columns by using inpulse response data from a file. """
 

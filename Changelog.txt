@@ -1,18 +1,30 @@
 # Changelog
 
-## v0.1.2 -> v0.1.3
+## v0.2
+    * critical changes in API!
+    * processors to separate folder and files basing on the mathematical operation
+    * processor specifications
+        * processors can be specified for different signal classes
+    * rewrited abstract classes for convolution and resampling
+    * MPI support
+    * specifications for the beam
+        * explicit support for beta function and betatron phase advance
+    * base unit changed from length to time
+
+
+## v0.1.3
     * Bug fix: Impulse response was not properly normalized, when the second cut off frequency was set to filters
 
-## v0.1.1 -> v0.1.2
+## v0.1.2
     * The previous solution to the np.dot performance issue in LSF did not work with all python versions. Thus in this
       version matrix product has been written in Cython which seems to be a stable solution to the problem.
 
-## v0.1.0 -> v0.1.1
+## v0.1.1
     * np.dot slowed down the calculations in LSF by a factor of two or more. It has been solved by using a solution which
       utilizes Gemm function from BLAS (scipy.linalg.get_blas_funcs("gemm"))
     * Minor modifications to the comments
 
-## v0.0.3 -> v0.1.0
+## v0.1.0
     * critical changes in API!
     * statistical variable check has been add to feedback classes in feedback.py file
         * Calculations of the statistical variables in the Slicer of PyHEADTAIL are heavy. In earlier versions
