@@ -5,7 +5,7 @@ import copy
 from abc import ABCMeta, abstractmethod
 import timeit
 from PyHEADTAIL_MPI.mpi import mpi_data
-from processors.signal import SignalParameters, BeamParameters
+from core import get_processor_variables, SignalParameters, BeamParameters
 """
     This file contains modules, which can be used as a feedback module/object in PyHEADTAIL. Actual signal processing is
     done by using signal processors written to files processors.py and digital_processors.py. A list of signal
@@ -19,36 +19,8 @@ from processors.signal import SignalParameters, BeamParameters
 """
     Must be discussed:
         - turn by turn varying slice width -> will be forgot
-        - varying slice width in the bunch -> is it necessary
         - future of matrix filters?
-        -
-
 """
-
-# TODO: add beta function
-
-def get_processor_variables(processors, required_variables = None):
-    """Function which checks statistical variables required by signal processors
-
-    :param processors: a list of signal processors
-    :param variables: a list of statistical variables determined earlier
-    :return: a list of statistical variables, which is a sum of variables from input list and those found from
-    the signal processors
-    """
-
-    if required_variables is None:
-        required_variables = []
-
-    for processor in processors:
-        if 'bunch' in processor.extensions:
-            required_variables.extend(processor.required_variables)
-
-    required_variables = list(set(required_variables))
-
-    if 'z_bins' in required_variables:
-        required_variables.remove('z_bins')
-
-    return required_variables
 
 
 class IdealBunchFeedback(object):

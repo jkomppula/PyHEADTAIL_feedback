@@ -5,7 +5,7 @@ import pyximport; pyximport.install()
 from cython_hacks import cython_matrix_product
 # from scipy.interpolate import interp1d
 from scipy import interpolate
-from signal import SignalParameters
+from ..core import SignalParameters
 
 """
     This file contains signal processors which can be used for emulating digital signal processing in the feedback

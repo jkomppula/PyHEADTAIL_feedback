@@ -1,7 +1,7 @@
 import collections
-""" This file contains core data types and functions for the feedback simulations. These , i.e.
-
-
+""" This file contains the core code for the feedback simulations including basic data stuctures for signals as well as
+    functions for passing signal through the signal processors, etc. The code can be used for building interfaces between
+    the framework and PyHEADTAIL or other simplified models for bunches.
 """
 
 
@@ -26,6 +26,31 @@ SignalParameters = collections.namedtuple('SignalParameters', ['signal_class','b
 """
 BeamParameters = collections.namedtuple('BeamParameters', ['phase_advance','beta_function'])
 
+
+def get_processor_variables(processors, required_variables = None):
+    """Function which checks bunch variables required by signal processors. In PyHEADTAIL bunch variables are
+        the statistical variables of a slice_set object inlcuding n_macroparticles_per_slice. See more details from
+        the document processors/processor_specifications.md.
+
+    :param processors: a list of signal processors
+    :param required_variables: an additional list of bunch variables
+    :return: a list of bunch variables, which is a combination of those variables given as input parameter and
+        found from the processors
+    """
+
+    if required_variables is None:
+        required_variables = []
+
+    for processor in processors:
+        if 'bunch' in processor.extensions:
+            required_variables.extend(processor.required_variables)
+
+    required_variables = list(set(required_variables))
+
+    if 'z_bins' in required_variables:
+        required_variables.remove('z_bins')
+
+    return required_variables
 
 
 def process(signal_parameters,signal, processors ):
