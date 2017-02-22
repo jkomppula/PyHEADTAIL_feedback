@@ -1,4 +1,10 @@
 import collections
+""" This file contains core data types and functions for the feedback simulations. These , i.e.
+
+
+"""
+
+
 
 """ External parameters describing signal:
         signal_class: A class of the signal, which determines what kind of assumptions can be made from the signal.
@@ -19,3 +25,8 @@ SignalParameters = collections.namedtuple('SignalParameters', ['signal_class','b
 
 """
 BeamParameters = collections.namedtuple('BeamParameters', ['phase_advance','beta_function'])
+
+
+
+def process(signal_parameters,signal, processors ):
+    pass

@@ -25,7 +25,7 @@ from PyHEADTAIL_feedback.feedback import Kicker, PickUp
 from PyHEADTAIL_feedback.processors.multiplication import ChargeWeighter
 from PyHEADTAIL_feedback.processors.register import HilbertPhaseShiftRegister
 from PyHEADTAIL_feedback.processors.signal import BeamParameters
-from PyHEADTAIL_feedback.processors.convolution import Sinc
+from PyHEADTAIL_feedback.processors.convolution import Sinc, Lowpass
 from PyHEADTAIL_feedback.processors.resampling import ADC, DAC, UpSampler
 
 plt.switch_backend('TkAgg')
@@ -99,7 +99,7 @@ rank = comm.Get_rank()
 
 # SIMULATION, BEAM AND MACHNINE PARAMETERS
 # ========================================
-n_turns = 100
+n_turns = 4
 n_segments = 1
 n_macroparticles = 40000
 
@@ -145,17 +145,17 @@ bunch_spacing = 2.49507468767912e-08
 f_ADC = 1./(bunch_spacing)
 signal_length = 2.*bunch_spacing
 
-f_c = 50e6
+f_c = 40e6
 
 pickup_processors_x = [
-    ChargeWeighter(normalization = 'average',store_signal  = True),
+    ChargeWeighter(normalization = 'segment_average',store_signal  = True),
     # In this example a sample per bunch sampling rate is used for the ADC
     ADC(f_ADC, n_bits = 8, input_range = (-1e-3,1e-3), signal_length = signal_length,store_signal  = True),
     HilbertPhaseShiftRegister(n_values, machine.accQ_x, delay,store_signal  = True)
 ]
 
 pickup_processors_y = [
-    ChargeWeighter(normalization = 'average',store_signal  = True),
+    ChargeWeighter(normalization = 'segment_average',store_signal  = True),
     ADC(f_ADC, n_bits = 8, input_range = (-1e-3,1e-3), signal_length = signal_length,store_signal  = True),
     HilbertPhaseShiftRegister(n_values, machine.accQ_x, delay,store_signal  = True)
 ]
@@ -173,12 +173,14 @@ registers_y = [pickup_processors_y[2]]
 kicker_processors_x = [
     # multiplies the sampling rate by a factor of three by adding zeros values between the samples
     UpSampler(3,kernel=[0,1,0],store_signal  = True),
+    # Lowpass(1*f_c,store_signal  = True),
     Sinc(1*f_c,store_signal  = True),
     # returns to the bin set of the original slice set. The values for the slices are determined by using spline interpolation
     DAC(store_signal  = True)
 ]
 kicker_processors_y = [
     UpSampler(3,kernel=[0,1,0],store_signal  = True),
+    # Lowpass(1*f_c,store_signal  = True),
     Sinc(1*f_c,store_signal  = True),
     DAC(store_signal  = True)
 ]

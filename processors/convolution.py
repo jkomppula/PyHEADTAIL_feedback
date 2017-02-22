@@ -72,9 +72,9 @@ class Impulse(object):
             # TODO: check rounding errors here
             if impulse_edges[0] <= signal_edges[0]:
                 idx_target_from = 0
-                idx_impulse_from = int((signal_edges[0]-impulse_edges[0])/self._bin_spacing)
+                idx_impulse_from = int(round((signal_edges[0]-impulse_edges[0])/self._bin_spacing))
             else:
-                idx_target_from = int((impulse_edges[0]-signal_edges[0])/self._bin_spacing)
+                idx_target_from = int(round((impulse_edges[0]-signal_edges[0])/self._bin_spacing))
                 idx_impulse_from = 0
 
             if impulse_edges[1] <= signal_edges[1]:
@@ -171,6 +171,7 @@ class Convolution(object):
             for target_bunch, impulse_view in zip(impulse_object.target_bunches, impulse_object.impulse_views):
                 if self._impulse_objects[target_bunch].signal_views[i] is not None:
                     self._impulse_objects[target_bunch].signal_views[i] += impulse_view
+                    # self._impulse_objects[target_bunch].signal_views[i] = np.add(self._impulse_objects[target_bunch].signal_views[i],impulse_view)
                 else:
                     raise ValueError('Memviews are not synchronized!')
 
@@ -216,7 +217,7 @@ class Convolution(object):
             idx_from = i * self._n_bins_per_segment
             idx_to = (i + 1) * self._n_bins_per_segment
 
-            impulse_limits = (self._impulse_bin_edges[0,0], self._impulse_bin_edges[-1,1])
+            impulse_limits = (self._impulse_bin_edges[0,0]+ 0.5*self._bin_spacing, self._impulse_bin_edges[-1,1]+ 0.5*self._bin_spacing)
             signal_from = bin_edges[self._n_bins_per_segment * i,0]
             signal_to = bin_edges[self._n_bins_per_segment * (i + 1)-1, 1]
 
@@ -401,6 +402,8 @@ class ConvolutionFilter(Convolution):
     def calculate_response(self, impulse_bin_mids, impulse_bin_edges):
 
         impulse_values = np.zeros(len(impulse_bin_mids))
+        print 'impulse_bin_edges:'
+        print impulse_bin_edges
         for i, edges in enumerate(impulse_bin_edges):
             integral_from = edges[0] * self._scaling
             integral_to = edges[1] * self._scaling
@@ -425,6 +428,9 @@ class ConvolutionFilter(Convolution):
             for i, edges in enumerate(impulse_bin_edges):
                 if (edges[0] <= 0.) and (0. < edges[1]):
                     impulse_values[i] = impulse_values[i] + self._zero_bin_value
+
+        print 'impulse_values:'
+        print impulse_values
 
         return impulse_values
 

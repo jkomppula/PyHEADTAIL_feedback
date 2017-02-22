@@ -1,6 +1,6 @@
 # Signal processor specifications
 
-This file contains specifications for a signal processor, which can be used in the feedback module of PyHEADTAIL or in a separate tool for studying feedback systems from the control theory point of view.
+This file contains specifications for signal processors, which can be used in the feedback module of PyHEADTAIL or as a separate tool for studying feedback systems from the control theory point of view.
 
 The concept of signal processor might be rather abstract, and the purpose of this document is not to scare users. Thus, at first, it is recommended to explore examples in the examples folder. After that, if one wants to develope a new signal processor, it is recommended to copy the code of *MinimalSignalProcessor* from below and play with that. Only after that, when problems occur or, especially, when the new signal processor is ready for other users, it is recommended to read this document carefully.
 
@@ -20,7 +20,7 @@ signal_parameters = SignalParameters(signal_class, bin_edges, n_segments, n_bins
                                                                 original_segment_mids, phase_advance])
 ~~~
 
-It inlcudes six auxiliary paramaters for the signal:
+It includes six auxiliary parameters for the signal:
 
     - *signal class*: a signal class
     - *bin_edges*: a 2D numpy array, which is equal length to the signal, but each row includes two floating point numbers, the positions of the bin edges in the physical space
@@ -30,22 +30,23 @@ It inlcudes six auxiliary paramaters for the signal:
     - *original_segment_mids*: a numpy array of original middle points for the segments
     - *phase_advance*: a location of the signal in betatron phase
 
-Note, that it is not allowed to modify parameters *n_segments* or *original_mids* in the signal processors. This is because it might be necessary to know the original middle points of the segments/bunches in some of the signal processors.
+Note, that it is not allowed to modify parameters *n_segments* or *original_mids* in the signal processors. This is because it might be necessary to know the original middle points of the segments/bunches in some signal processors as reference points
 
 ##### Class 0
 There are no limitations for Class 0 signal, i.e. bin spacing and bin length might vary randomly. If the signal can be divided into segments, each segment must have an equal number of bins and bin spacing and bin lengths must be equal for each segment.
 
-Class 0 signal gives a large freedom to use any kind of signal as an input for the signal processors valid for this class. Particularly it means that a single array of the slice values from multiple bunches can be used directly as a signal.
+Class 0 signal gives a large freedom to use any kind of signal as an input for the signal processors. Particularly it means that a single array of the slice values from multiple bunches can be used directly as a signal.
 
 ##### Class 1
-In this class, it is assumed that signal might be divided into sequences which are separated by empty spaces, but bin spacing/width is constant in the segments.
+In this class, it is assumed that signal might be divided into equal length sequences which are separated by empty spaces. Bin spacing and width must be constant and equal in each segment.
 
 In practice this means that signals from each bunch has an equal number of equally spaced slices/samples.
 
 ##### Class 2
 Signal is equally spaced and continuous in time.
 
-In practice this means that the signal is continuously sliced/sampled over all bunches including empty spaces between bunches. In many cases it helps if the slicing/sampling rate is a fraction of the bunch spacing, i.e. signal can be divided into segments if necessary.
+In practice this means that the signal is continuously sliced/sampled over all bunches including empty spaces between bunches. This also limits the slicing/sampling rate to be a fraction of the bunch spacing in the case of multi bunch simulations.
+
 
 ### Signal processors
 A signal processor is a Python object which processes/modifies signals. The signal processing occurs in the method *process(signal_parameters, signal, ...)*, which takes arguments *signal_parameters* and *signal* and returns possibly modified versions of them. The code of the minimal signal processor is following:

@@ -2,7 +2,7 @@ import numpy as np
 from scipy.constants import c, pi
 import copy, collections
 import pyximport; pyximport.install()
-from cython_functions import cython_matrix_product
+from cython_hacks import cython_matrix_product
 # from scipy.interpolate import interp1d
 from scipy import interpolate
 from signal import SignalParameters
