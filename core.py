@@ -1,31 +1,75 @@
 import collections
 import numpy as np
-""" This file contains the core code for the feedback simulations including basic data the structures for signals as
-    well as the functions for passing signals through the signal processors, etc. The code can be used for building
-    interfaces between the framework and PyHEADTAIL or other simplified models for bunches.
-"""
 
+""" This file contains the core functions and variables for signal processing.
+    That code can be used for implementing interfaces for other codes and
+    libraries (e.g. PyHEADTAIL).
+"""
 
 """ External parameters describing signal:
-        signal_class: A class of the signal, which determines what kind of assumptions can be made from the signal.
-                See more details from the file processor_specifications.md
-        bin_edges: A 2D numpy array, where each row determines edges of the bin (value of the signal)
-        n_segments: A number of equally length segments with equal bin pattern the signal can be divided
+        signal_class: A class of the signal, which determines what kind of
+            assumptions can be made from the signal. See more details from
+            the file processor_specifications.md
+        bin_edges: A 2D numpy array, where each row determines edges of
+            the bin (value of the signal)
+        n_segments: A number of equally length segments with equal bin pattern
+            the signal can be divided
         n_bins_per_segment: A number of bins in the segments determined above
-        original_segment_mids: This value is used as a reference point in some signal processors (i.e. resampling)
-        beam_parameters: Beam parameters which determined by a physical location in the accelerator. The input is
-                a namedtuple containing a betatron phase advance and a value of the betafunction (see below).
+        original_segment_mids: This value is used as a reference point in some
+            signal processors (i.e. resampling)
+        additional_parameters: A dictionary of additional paramters which are
+            carried with the signal (e.g. beam parameteres).
 """
-SignalParameters = collections.namedtuple('SignalParameters', ['signal_class','bin_edges','n_segments',
-                                                               'n_bins_per_segment',
-                                                               'original_segment_mids', 'beam_parameters'])
+SignalParameters = collections.namedtuple('SignalParameters', ['signal_class',
+                            'bin_edges', 'n_segments', 'n_bins_per_segment',
+                            'original_segment_mids', 'additional_parameters'])
+
+
+
+def process(signal_parameters, signal, processors, **kwargs):
+    """
+    A function which processes the signal, i.e. passes the signal through the signal processors
+    :param signal_parameters: A standardized namedtuple for additional parameters for the signal
+    :param signal: A Numpy array, which is the actual signal to be processed
+    :param processors: A list of signal processors
+    :param **kwargs: Extra parameters related to the extensions of the processors (e.g. slice_set)
+    :return:
+    """
+
+    for processor in processors:
+        signal_parameters, signal = processor.process(signal_parameters,
+                                                      signal, **kwargs)
+
+    return signal_parameters, signal
+
+
+def get_processor_extensions(processors, available_extensions=None):
+    """ A function, which checks available extensions from the processors
+    """
+
+    if available_extensions is None:
+        available_extensions = []
+
+    for processor in processors:
+        if processor.extensions is not None:
+            available_extensions.extend(processor.extensions)
+
+    available_extensions = list(set(available_extensions))
+
+    return available_extensions
+
+
+
+# Extension specific code 
+#########################
+
 
 """ A namedtuple which contains beam parameters related to a physical location in the accelerator, i.e. a location in
     the betatron phase advance from the reference point of the accelerator and a value of the beta function
 
 """
+# TODO: rename beta_function to beta
 BeamParameters = collections.namedtuple('BeamParameters', ['phase_advance','beta_function'])
-
 
 def get_processor_variables(processors, required_variables = None):
     """Function which checks bunch variables required by signal processors. In PyHEADTAIL bunch variables are
@@ -52,21 +96,6 @@ def get_processor_variables(processors, required_variables = None):
 
     return required_variables
 
-#TODO:
-def process(signal_parameters,signal, processors, slice_sets = None):
-    """
-    A function which processes the signal, i.e. passes the signal through the signal processors
-    :param signal_parameters: A standardized namedtuple for additional parameters for the signal
-    :param signal: A Numpy array, which is the actual signal to be processed
-    :param processors: A list of signal processors
-    :param slice_sets: A list of slice set objects from PyHEADTAIL (or objects emulating that) for bunches
-    :return:
-    """
-
-    for processor in processors:
-        signal_parameters, signal = processor.process(signal_parameters, signal, slice_sets=slice_sets)
-
-    return signal_parameters, signal
 
 #TODO:
 def combine(target_beam_parameters,registers):
@@ -130,3 +159,5 @@ def combine(target_beam_parameters,registers):
         total_signal /= float(n_signals)
 
     return total_signal
+
+# general generator for signals?

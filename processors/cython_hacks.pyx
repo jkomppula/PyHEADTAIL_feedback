@@ -1,3 +1,5 @@
+#TODO: maybe this could be simplified/avoided by using cimport scipy.linalg.cython_blas
+
 import numpy as np
 cimport numpy as np
 cimport cython
