@@ -401,9 +401,10 @@ class ConvolutionFilter(Convolution):
 
     def calculate_response(self, impulse_bin_mids, impulse_bin_edges):
 
+        # FIXME: take into account the symmetry of the impulse response
+
         impulse_values = np.zeros(len(impulse_bin_mids))
-        print 'impulse_bin_edges:'
-        print impulse_bin_edges
+
         for i, edges in enumerate(impulse_bin_edges):
             integral_from = edges[0] * self._scaling
             integral_to = edges[1] * self._scaling
@@ -428,9 +429,6 @@ class ConvolutionFilter(Convolution):
             for i, edges in enumerate(impulse_bin_edges):
                 if (edges[0] <= 0.) and (0. < edges[1]):
                     impulse_values[i] = impulse_values[i] + self._zero_bin_value
-
-        print 'impulse_values:'
-        print impulse_values
 
         return impulse_values
 

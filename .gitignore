@@ -120,3 +120,4 @@ settings.py
 
 ;;directories to ignore
 .idea/
+.spyproject/

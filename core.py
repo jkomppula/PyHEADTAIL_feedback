@@ -1,9 +1,9 @@
 import collections
-""" This file contains the core code for the feedback simulations including basic data stuctures for signals as well as
-    functions for passing signal through the signal processors, etc. The code can be used for building interfaces between
-    the framework and PyHEADTAIL or other simplified models for bunches.
+import numpy as np
+""" This file contains the core code for the feedback simulations including basic data the structures for signals as
+    well as the functions for passing signals through the signal processors, etc. The code can be used for building
+    interfaces between the framework and PyHEADTAIL or other simplified models for bunches.
 """
-
 
 
 """ External parameters describing signal:
@@ -52,6 +52,81 @@ def get_processor_variables(processors, required_variables = None):
 
     return required_variables
 
+#TODO:
+def process(signal_parameters,signal, processors, slice_sets = None):
+    """
+    A function which processes the signal, i.e. passes the signal through the signal processors
+    :param signal_parameters: A standardized namedtuple for additional parameters for the signal
+    :param signal: A Numpy array, which is the actual signal to be processed
+    :param processors: A list of signal processors
+    :param slice_sets: A list of slice set objects from PyHEADTAIL (or objects emulating that) for bunches
+    :return:
+    """
 
-def process(signal_parameters,signal, processors ):
-    pass
+    for processor in processors:
+        signal_parameters, signal = processor.process(signal_parameters, signal, slice_sets=slice_sets)
+
+    return signal_parameters, signal
+
+#TODO:
+def combine(target_beam_parameters,registers):
+    """This will be a general function for combining signal from different betatron phase advances """
+    target_phase_advance = target_beam_parameters.phase_advance
+    target_beta = target_beam_parameters.beta_function
+
+    source_phase_advances = []
+    source_betas = []
+
+    for register in registers:
+        source_phase_advances.append(register.beam_parameters.phase_advance)
+        source_betas.append(register.beam_parameters.beta_function)
+
+    target_signal = None
+    n_source_signal = None
+
+
+
+    total_signal = None
+    n_signals = 0
+
+    if len(registers) == 1:
+        # If there is only one register, uses signals from different turns for combination
+
+        prev_signal = None
+        for signal in registers[0]:
+            if total_signal is None:
+                prev_signal = signal
+                total_signal = np.zeros(len(signal[0]))
+            phase_conv_coeff = 1. / np.sqrt(beam_parameters.beta_function * registers[0].beam_parameters.beta_function)
+            total_signal += phase_conv_coeff * registers[0].combine(signal, prev_signal, target_phase_advance, True)
+            n_signals += 1
+            prev_signal = signal
+
+    else:
+        # if len(registers) == 2 and registers[0].combination == 'combined':
+
+        if registers[0].combination == 'combined':
+            # If there are only two register and the combination requires signals from two register, there is only
+            # one pair of registers
+            prev_register = registers[0]
+            first_iterable = 1
+        else:
+            # In other cases, loop can go through all successive register pairs
+            prev_register = registers[-1]
+            first_iterable = 0
+
+        for register in registers[first_iterable:]:
+            # print prev_register
+            # print register
+            phase_conv_coeff = 1. / np.sqrt(beam_parameters.beta_function * prev_register.beam_parameters.beta_function)
+            for signal_1, signal_2 in itertools.izip(prev_register, register):
+                if total_signal is None:
+                    total_signal = np.zeros(len(signal_1[0]))
+                total_signal += phase_conv_coeff * prev_register.combine(signal_1, signal_2, reader_phase_advance, True)
+                n_signals += 1
+            prev_register = register
+
+    if total_signal is not None:
+        total_signal /= float(n_signals)
+
+    return total_signal
