@@ -4,115 +4,384 @@ from abc import ABCMeta, abstractmethod
 import numpy as np
 from scipy.constants import c, pi
 
+from ..core import SignalParameters
+
+# TODO: program a new register:
+#   - Does not modify the signal
+#   - Iteration returns value from the register
+#   - delay can be set
+#
+# TODO: phase shift algorithms
+#   - takes data from a list of registers
+#   - does those signals what ever wants, can be a signal source
+#
+# TODO: special processors which utilize a register and algorithms
+#   - delay
+#   - Turn by turn fir filter
+
+
 class Register(object):
-    __metaclass__ = ABCMeta
-
-    """ An abstract class for a signal register. A signal is stored to the register, when the function process() is
-        called. The register is iterable and returns values which have been kept in register longer than
-        delay requires. Normally this means that a number of returned signals corresponds to a paremeter avg_length, but
-        it is less during the first turns. The values from the register can be calculated together by using a abstract
-        function combine(*). It manipulates values (in terms of a phase advance) such way they can be calculated
-        together in the reader position.
-
-        When the register is a part of a signal processor chain, the function process() returns np.array() which
-        is an average of register values determined by a paremeter avg_length. The exact functionality of the register
-        is determined by in the abstract iterator combine(*args).
-
     """
+    Stores signals to the register. The obejct is iterable, i.e. iteration
+    returns the stored signals after the given delay.
+    """
+    def __init__(self, n_values, tune, delay=0, store_signal=False):
+        """
+        Parameters
+        ----------
+        n_values : number
+          A maximum number of signals stored and returned (in addition to
+          the delay)
+        tune : number
+          A real number value of a betatron tune
+        delay : number
+          A number of turns the signal kept in the register before returning it
 
-    def __init__(self, n_avg, tune, delay, in_processor_chain,store_signal = False):
         """
-        :param n_avg: a number of register values (in turns) have been stored after the delay
-        :param tune: a real number value of a betatron tune (e.g. 59.28 in horizontal or 64.31 in vertical direction
-                for LHC)
-        :param delay: a delay between storing to reading values  in turns
-        :param in_processor_chain: if True, process() returns a signal
-        """
-        self.signal_parameters = None
-        self.beam_parameters = None
+
+        self._n_values = n_values
         self._delay = delay
-        self._n_avg = n_avg
-        self._phase_shift_per_turn = 2.*pi * tune
-        self._in_processor_chain = in_processor_chain
-        self.combination = None
+        self._phase_advance_per_turn = 2. * np.pi * tune
 
-        self._max_reg_length = self._delay+self._n_avg
-        self._register = deque()
-
-        self._n_iter_left = -1
-
-        self._reader_position = None
-
-        # if n_bins is not None:
-        #     self._register.append(np.zeros(n_bins))
-
+        self._max_reg_length = self._n_values + self._delay
+        self._n_iter_left = 0
+        self._signal_register = deque()
+        self._parameter_register = deque()
 
         self.extensions = ['store', 'register']
 
-        self.label = None
         self._store_signal = store_signal
+        self.label = 'Register'
         self.input_signal = None
         self.input_signal_parameters = None
         self.output_signal = None
         self.output_signal_parameters = None
 
-    def __iter__(self):
-        # calculates a maximum number of iterations. If there is no enough values in the register, sets -1, which
-        # indicates that next() can return zero value
-
-        self._n_iter_left =  len(self)
-        if self._n_iter_left == 0:
-            # return None
-            self._n_iter_left = -1
-        return self
+    @property
+    def phase_advance_per_turn(self):
+        return self._phase_advance_per_turn
 
     def __len__(self):
-        # returns a number of signals in the register after delay
+        """
+        Returns a number of signals in the register after the delay.
+        """
         return max((len(self._register) - self._delay), 0)
+
+    def __iter__(self):
+        """
+        Calculates how many iterations are required
+        """
+        self._n_iter_left = len(self)
+
+        return self
 
     def next(self):
         if self._n_iter_left < 1:
             raise StopIteration
-        else:
-            delay = -1. * (len(self._register) - self._n_iter_left) * self._phase_shift_per_turn
-            self._n_iter_left -= 1
-            return (self._register[self._n_iter_left],None,delay,self.beam_parameters.phase_advance)
 
-    def process(self,signal_parameters, signal, *args, **kwargs):
+        else:
+            delay = -1. * (len(self._register) - self._n_iter_left) \
+                            * self._phase_shift_per_turn
+            self._n_iter_left -= 1
+
+            return (self._parameter_register[self._n_iter_left],
+                    self._signal_register[self._n_iter_left], delay)
+
+    def process(self, parameters, signal, *args, **kwargs):
 
         if self._store_signal:
             self.input_signal = np.copy(signal)
-            self.input_signal_parameters = copy.copy(signal_parameters)
+            self.input_parameters = copy.copy(parameters)
+            self.output_signal = np.copy(signal)
+            self.output_parameters = copy.copy(parameters)
 
-        if self.beam_parameters is None:
-            self.signal_parameters = signal_parameters
-            self.beam_parameters = signal_parameters.beam_parameters
+        self._parameter_register.append(parameters)
+        self._signal_register.append(signal)
 
-        self._register.append(signal)
+        if len(self._parameter_register) > self._max_reg_length:
+            self._parameter_register.popleft()
 
-        if len(self._register) > self._max_reg_length:
-            self._register.popleft()
+        if len(self._signal_register) > self._max_reg_length:
+            self._signal_register.popleft()
 
-        if self._in_processor_chain == True:
-            temp_signal = np.zeros(len(signal))
-            if len(self) > 0:
-                prev = (np.zeros(len(self._register[0])),None,0,self.beam_parameters.phase_advance)
+        return parameters, signal
 
-                for value in self:
-                    combined = self.combine(value,prev,None)
-                    prev = value
-                    temp_signal += combined / float(len(self))
 
-            if self._store_signal:
-                self.output_signal = np.copy(temp_signal)
-                self.output_signal_parameters = copy.copy(signal_parameters)
+class Combiner(object):
+    __metaclass__ = ABCMeta
 
-            return signal_parameters, temp_signal
+    def __init__(self, registers, target_location, target_beta,
+                 additional_phase_advance, store_signal):
+        """
+        Parameters
+        ----------
+        registers : list
+          A list of registers, which are a source for the signal
+        target_location : number
+          A target phase advance in radians of betatron motion
+        additional_phase_advance : number
+          Additional phase advance for the target location.
+          For example, np.pi/2. for shift from displacement in the pick up to
+          divergenve in the kicker
+        """
+
+        self._registers = registers
+        self._target_location = target_location
+        self._target_beta = target_beta
+        self._additional_phase_advance = additional_phase_advance
+
+        self._combined_parameters = None
+
+        self.extensions = ['store', 'combiner']
+
+        self._store_signal = store_signal
+        self.label = 'Register'
+        self.input_signal = None
+        self.input_parameters = None
+        self.output_signal = None
+        self.output_parameters = None
 
     @abstractmethod
-    def combine(self,x1,x2,reader_position,x_to_xp = False):
-
+    def combine(self, registers, target_location, additional_phase_advance):
         pass
+
+    def process(self, *args, **kwargs):
+
+        signal = self.combine(self._registers, self._target_location,
+                              self._additional_phase_advance)
+
+        self._output_parameters is None:
+            for (parameters, signal, delay) in registers[0]:
+                self._combined_parameters = copy.copy(parameters)
+                self._combined_parameters.additional['location'] = self._target_location
+                self._combined_parameters.additional['beta'] = self._target_beta
+
+        if self._store_signal:
+            self.input_signal = None
+            self.input_parameters = None
+            self.output_signal = np.copy(signal)
+            self.output_parameters = copy.copy(self._combined_parameters)
+
+        return parameters, signal
+
+# TODO: add beta correction
+class CosineSumCombiner(Combiner):
+    def __init__(self, *args, **kwargs):
+        super(self.__class__, self).__init__(*args, **kwargs)
+        self.label = 'Cosine sum combiner'
+
+    def combine(self, registers, target_location, additional_phase_advance):
+        combined_signal = None
+        n_signals = 0
+
+        for register in registers:
+            for (parameters, signal, delay) in register:
+                if combined_signal is None:
+                    combined_signal = np.zeros(len(signal))
+                delta_position = parameters.additional.phase_advance \
+                                - target_location
+
+                if delta_position > 0:
+                    delta_position -= register.phase_advance_per_turn
+
+                delta_phi = delay + delta_position - additional_phase_advance
+                n_signals += 1
+                combined_signal += 2. * math.cos(delta_phi) * signal
+
+        if combined_signal is not None:
+            combined_signal = combined_signal/float(n_signals)
+
+        return combined_signal
+
+#class HilbertCombiner(Combiner):
+#    def __init__(self, n_taps, *args, **kwargs):
+#        self._n_taps = n_taps
+#
+#        self._coefficients = None
+#        super(self.__class__, self).__init__(*args, **kwargs)
+#        self.label = 'Hilbert combiner'
+#
+#    def combine(self, registers, target_location, additional_phase_advance):
+#        if self._coefficients is None:
+#            self._coefficients = [None]*len(registers)
+#
+#        combined_signal = None
+#
+#        for i, register in enumerate(registers):
+#            if len(register) >= len(self._coefficients):
+#                if self._coefficients[i] is None:
+#
+#                for i, (parameters, signal, delay) in enumerate(register):
+#                    if combined_signal is None:
+#                        combined_signal = np.zeros(len(signal))
+#                    combined_signal += coefficients[i] * signal
+#
+#        return combined_signal
+#
+#
+#    def generate_coefficients(self, source_location, source_delay, target_location, additional_phase_advance):
+#        h = 0.
+#
+#        if n == 0:
+#            h = np.cos(delta_phi)
+#        elif n % 2 == 1:
+#            h = -2. * np.sin(delta_phi) / (pi * float(n))
+#
+#        return h
+#
+#
+#        delta_phi = -1. * float(self._
+#                                delay) * self._phase_shift_per_turn
+#
+#        if self._zero_idx == 'middle':
+#            delta_phi -= float(self._n_taps/2) * self._phase_shift_per_turn
+#
+#        if reader_phase_advance is not None:
+#            delta_position = self.beam_parameters.phase_advance - reader_phase_advance
+#            delta_phi += delta_position
+#            if delta_position > 0:
+#                delta_phi -= self._phase_shift_per_turn
+#            if x_to_xp == True:
+#                delta_phi -= pi/2.
+#
+#        n = self._n_iter_left
+#
+#        if self._zero_idx == 'middle':
+#            n -= self._n_taps/2
+#        # print delta_phi
+#        h = self.coeff_generator(n, delta_phi)
+#        h *= self._n_taps
+#
+#
+#class FIRCombiner(Combiner):
+#    def __init__(self, coefficients, *args, **kwargs):
+#        self._coefficients = coefficients
+#        super(self.__class__, self).__init__(*args, **kwargs)
+#        self.label = 'FIR combiner'
+#
+#    def combine(self, registers, target_location, additional_phase_advance):
+#        combined_signal = None
+#        n_signals = 0
+#
+#        for register in registers:
+#            if len(register) >= len(self._coefficients)
+#                for i, (parameters, signal, delay) in enumerate(register):
+#                    if combined_signal is None:
+#                        combined_signal = np.zeros(len(signal))
+#                    combined_signal += coefficients[i] * signal
+#
+#        return combined_signal
+
+
+#class Register(object):
+#    __metaclass__ = ABCMeta
+#
+#    """ An abstract class for a signal register. A signal is stored to the register, when the function process() is
+#        called. The register is iterable and returns values which have been kept in register longer than
+#        delay requires. Normally this means that a number of returned signals corresponds to a paremeter avg_length, but
+#        it is less during the first turns. The values from the register can be calculated together by using a abstract
+#        function combine(*). It manipulates values (in terms of a phase advance) such way they can be calculated
+#        together in the reader position.
+#
+#        When the register is a part of a signal processor chain, the function process() returns np.array() which
+#        is an average of register values determined by a paremeter avg_length. The exact functionality of the register
+#        is determined by in the abstract iterator combine(*args).
+#
+#    """
+#
+#    def __init__(self, n_avg, tune, delay, in_processor_chain,store_signal = False):
+#        """
+#        :param n_avg: a number of register values (in turns) have been stored after the delay
+#        :param tune: a real number value of a betatron tune (e.g. 59.28 in horizontal or 64.31 in vertical direction
+#                for LHC)
+#        :param delay: a delay between storing to reading values  in turns
+#        :param in_processor_chain: if True, process() returns a signal
+#        """
+#        self.signal_parameters = None
+#        self.beam_parameters = None
+#        self._delay = delay
+#        self._n_avg = n_avg
+#        self._phase_shift_per_turn = 2.*pi * tune
+#        self._in_processor_chain = in_processor_chain
+#        self.combination = None
+#
+#        self._max_reg_length = self._delay+self._n_avg
+#        self._register = deque()
+#
+#        self._n_iter_left = -1
+#
+#        self._reader_position = None
+#
+#        # if n_bins is not None:
+#        #     self._register.append(np.zeros(n_bins))
+#
+#
+#        self.extensions = ['store', 'register']
+#
+#        self.label = None
+#        self._store_signal = store_signal
+#        self.input_signal = None
+#        self.input_signal_parameters = None
+#        self.output_signal = None
+#        self.output_signal_parameters = None
+#
+#    def __iter__(self):
+#        # calculates a maximum number of iterations. If there is no enough values in the register, sets -1, which
+#        # indicates that next() can return zero value
+#
+#        self._n_iter_left =  len(self)
+#        if self._n_iter_left == 0:
+#            # return None
+#            self._n_iter_left = -1
+#        return self
+#
+#    def __len__(self):
+#        # returns a number of signals in the register after delay
+#        return max((len(self._register) - self._delay), 0)
+#
+#    def next(self):
+#        if self._n_iter_left < 1:
+#            raise StopIteration
+#        else:
+#            delay = -1. * (len(self._register) - self._n_iter_left) * self._phase_shift_per_turn
+#            self._n_iter_left -= 1
+#            return (self._register[self._n_iter_left],None,delay,self.beam_parameters.phase_advance)
+#
+#    def process(self,signal_parameters, signal, *args, **kwargs):
+#
+#        if self._store_signal:
+#            self.input_signal = np.copy(signal)
+#            self.input_signal_parameters = copy.copy(signal_parameters)
+#
+#        if self.beam_parameters is None:
+#            self.signal_parameters = signal_parameters
+#            self.beam_parameters = signal_parameters.beam_parameters
+#
+#        self._register.append(signal)
+#
+#        if len(self._register) > self._max_reg_length:
+#            self._register.popleft()
+#
+#        if self._in_processor_chain == True:
+#            temp_signal = np.zeros(len(signal))
+#            if len(self) > 0:
+#                prev = (np.zeros(len(self._register[0])),None,0,self.beam_parameters.phase_advance)
+#
+#                for value in self:
+#                    combined = self.combine(value,prev,None)
+#                    prev = value
+#                    temp_signal += combined / float(len(self))
+#
+#            if self._store_signal:
+#                self.output_signal = np.copy(temp_signal)
+#                self.output_signal_parameters = copy.copy(signal_parameters)
+#
+#            return signal_parameters, temp_signal
+#
+#    @abstractmethod
+#    def combine(self,x1,x2,reader_position,x_to_xp = False):
+#
+#        pass
 
 
 class VectorSumRegister(Register):
@@ -193,103 +462,103 @@ class VectorSumRegister(Register):
         # return c*re-s*im
 
 
-class CosineSumRegister(Register):
-    """ Returns register values by multiplying the values with a cosine of the betatron phase angle from the reader.
-        If there are multiple values in different phases, the sum approaches a value equal to half of the displacement
-        in the reader's position.
-    """
-    def __init__(self, n_avg, tune, delay = 0, in_processor_chain=True,**kwargs):
-
-        self.combination = 'individual'
-
-        super(self.__class__, self).__init__(n_avg, tune, delay, in_processor_chain,**kwargs)
-        self.label = 'Cosine sum register'
-
-    def combine(self,x1,x2,reader_phase_advance,x_to_xp = False):
-        delta_phi = x1[2]
-        if reader_phase_advance is not None:
-            delta_position = self.beam_parameters.phase_advance - reader_phase_advance
-            delta_phi += delta_position
-            if delta_position > 0:
-                delta_phi -= self._phase_shift_per_turn
-            if x_to_xp == True:
-                delta_phi -= pi/2.
-
-        return 2.*math.cos(delta_phi)*x1[0]
-
-class FIR_Register(Register):
-    def __init__(self, n_taps, tune, delay, zero_idx, in_processor_chain,**kwargs):
-        """ A general class for the register object, which uses FIR (finite impulse response) method to calculate
-            a correct signal for kick from the register values. Because the register can be used for multiple kicker
-            (in different locations), the filter coefficients are calculated in every call with
-            the function namely coeff_generator.
-
-        :param n_taps: length of the register (and length of filter)
-        :param tune: a real number value of a betatron tune (e.g. 59.28 in horizontal or 64.31 in vertical direction
-                for LHC)
-        :param delay: a delay between storing to reading values  in turns
-        :param zero_idx: location of the zero index of the filter coeffients
-            'middle': an index of middle value in the register is 0. Values which have spend less time than that
-                    in the register have negative indexes and vice versa
-        :param in_processor_chain: if True, process() returns a signal, if False saves computing time
-        """
-        self.combination = 'individual'
-        # self.combination = 'combined'
-        self._zero_idx = zero_idx
-        self._n_taps = n_taps
-
-        super(FIR_Register, self).__init__(n_taps, tune, delay, in_processor_chain,**kwargs)
-        self.required_variables = []
-
-    def combine(self,x1,x2,reader_phase_advance,x_to_xp = False):
-        delta_phi = -1. * float(self._delay) * self._phase_shift_per_turn
-
-        if self._zero_idx == 'middle':
-            delta_phi -= float(self._n_taps/2) * self._phase_shift_per_turn
-
-        if reader_phase_advance is not None:
-            delta_position = self.beam_parameters.phase_advance - reader_phase_advance
-            delta_phi += delta_position
-            if delta_position > 0:
-                delta_phi -= self._phase_shift_per_turn
-            if x_to_xp == True:
-                delta_phi -= pi/2.
-
-        n = self._n_iter_left
-
-        if self._zero_idx == 'middle':
-            n -= self._n_taps/2
-        # print delta_phi
-        h = self.coeff_generator(n, delta_phi)
-        h *= self._n_taps
-
-        # print str(len(self)/2) + 'n: ' + str(n) + ' -> ' + str(h)  + ' (phi = ' + str(delta_phi) + ') from ' + str(self._phase_advance) + ' to ' + str(reader_phase_advance)
-
-        return h*x1[0]
-
-    def coeff_generator(self, n, delta_phi):
-        """ Calculates filter coefficients
-        :param n: index of the value
-        :param delta_phi: total phase advance to the kicker for the value which index is 0
-        :return: filter coefficient h
-        """
-        return 0.
-
-
-class HilbertPhaseShiftRegister(FIR_Register):
-    """ A register used in some damper systems at CERN. The correct signal is calculated by using FIR phase shifter,
-    which is based on the Hilbert transform. It is recommended to use odd number of taps (e.g. 7) """
-
-    def __init__(self,n_taps, tune, delay = 0, in_processor_chain=True,**kwargs):
-        super(self.__class__, self).__init__(n_taps, tune, delay, 'middle', in_processor_chain,**kwargs)
-        self.label = 'HilbertPhaseShiftRegister'
-
-    def coeff_generator(self, n, delta_phi):
-        h = 0.
-
-        if n == 0:
-            h = np.cos(delta_phi)
-        elif n % 2 == 1:
-            h = -2. * np.sin(delta_phi) / (pi * float(n))
-
-        return h
+#class CosineSumRegister(Register):
+#    """ Returns register values by multiplying the values with a cosine of the betatron phase angle from the reader.
+#        If there are multiple values in different phases, the sum approaches a value equal to half of the displacement
+#        in the reader's position.
+#    """
+#    def __init__(self, n_avg, tune, delay = 0, in_processor_chain=True,**kwargs):
+#
+#        self.combination = 'individual'
+#
+#        super(self.__class__, self).__init__(n_avg, tune, delay, in_processor_chain,**kwargs)
+#        self.label = 'Cosine sum register'
+#
+#    def combine(self,x1,x2,reader_phase_advance,x_to_xp = False):
+#        delta_phi = x1[2]
+#        if reader_phase_advance is not None:
+#            delta_position = self.beam_parameters.phase_advance - reader_phase_advance
+#            delta_phi += delta_position
+#            if delta_position > 0:
+#                delta_phi -= self._phase_shift_per_turn
+#            if x_to_xp == True:
+#                delta_phi -= pi/2.
+#
+#        return 2.*math.cos(delta_phi)*x1[0]
+#
+#class FIR_Register(Register):
+#    def __init__(self, n_taps, tune, delay, zero_idx, in_processor_chain,**kwargs):
+#        """ A general class for the register object, which uses FIR (finite impulse response) method to calculate
+#            a correct signal for kick from the register values. Because the register can be used for multiple kicker
+#            (in different locations), the filter coefficients are calculated in every call with
+#            the function namely coeff_generator.
+#
+#        :param n_taps: length of the register (and length of filter)
+#        :param tune: a real number value of a betatron tune (e.g. 59.28 in horizontal or 64.31 in vertical direction
+#                for LHC)
+#        :param delay: a delay between storing to reading values  in turns
+#        :param zero_idx: location of the zero index of the filter coeffients
+#            'middle': an index of middle value in the register is 0. Values which have spend less time than that
+#                    in the register have negative indexes and vice versa
+#        :param in_processor_chain: if True, process() returns a signal, if False saves computing time
+#        """
+#        self.combination = 'individual'
+#        # self.combination = 'combined'
+#        self._zero_idx = zero_idx
+#        self._n_taps = n_taps
+#
+#        super(FIR_Register, self).__init__(n_taps, tune, delay, in_processor_chain,**kwargs)
+#        self.required_variables = []
+#
+#    def combine(self,x1,x2,reader_phase_advance,x_to_xp = False):
+#        delta_phi = -1. * float(self._delay) * self._phase_shift_per_turn
+#
+#        if self._zero_idx == 'middle':
+#            delta_phi -= float(self._n_taps/2) * self._phase_shift_per_turn
+#
+#        if reader_phase_advance is not None:
+#            delta_position = self.beam_parameters.phase_advance - reader_phase_advance
+#            delta_phi += delta_position
+#            if delta_position > 0:
+#                delta_phi -= self._phase_shift_per_turn
+#            if x_to_xp == True:
+#                delta_phi -= pi/2.
+#
+#        n = self._n_iter_left
+#
+#        if self._zero_idx == 'middle':
+#            n -= self._n_taps/2
+#        # print delta_phi
+#        h = self.coeff_generator(n, delta_phi)
+#        h *= self._n_taps
+#
+#        # print str(len(self)/2) + 'n: ' + str(n) + ' -> ' + str(h)  + ' (phi = ' + str(delta_phi) + ') from ' + str(self._phase_advance) + ' to ' + str(reader_phase_advance)
+#
+#        return h*x1[0]
+#
+#    def coeff_generator(self, n, delta_phi):
+#        """ Calculates filter coefficients
+#        :param n: index of the value
+#        :param delta_phi: total phase advance to the kicker for the value which index is 0
+#        :return: filter coefficient h
+#        """
+#        return 0.
+#
+#
+#class HilbertPhaseShiftRegister(FIR_Register):
+#    """ A register used in some damper systems at CERN. The correct signal is calculated by using FIR phase shifter,
+#    which is based on the Hilbert transform. It is recommended to use odd number of taps (e.g. 7) """
+#
+#    def __init__(self,n_taps, tune, delay = 0, in_processor_chain=True,**kwargs):
+#        super(self.__class__, self).__init__(n_taps, tune, delay, 'middle', in_processor_chain,**kwargs)
+#        self.label = 'HilbertPhaseShiftRegister'
+#
+#    def coeff_generator(self, n, delta_phi):
+#        h = 0.
+#
+#        if n == 0:
+#            h = np.cos(delta_phi)
+#        elif n % 2 == 1:
+#            h = -2. * np.sin(delta_phi) / (pi * float(n))
+#
+#        return h

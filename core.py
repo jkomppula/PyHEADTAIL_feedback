@@ -22,7 +22,7 @@ import numpy as np
 """
 SignalParameters = collections.namedtuple('SignalParameters', ['signal_class',
                             'bin_edges', 'n_segments', 'n_bins_per_segment',
-                            'original_segment_mids', 'additional_parameters'])
+                            'original_segment_mids', 'additional'])
 
 
 
@@ -60,7 +60,7 @@ def get_processor_extensions(processors, available_extensions=None):
 
 
 
-# Extension specific code 
+# Extension specific code
 #########################
 
 
