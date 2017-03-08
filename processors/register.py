@@ -58,8 +58,23 @@ class Register(object):
         self.output_signal_parameters = None
 
     @property
+    def parameters(self):
+        if len(self._parameter_register) > 0:
+            return self._parameter_register[0]
+        else:
+            return None
+
+    @property
     def phase_advance_per_turn(self):
         return self._phase_advance_per_turn
+
+    @property
+    def delay(self):
+        return self._delay
+
+    @property
+    def max_length(self):
+        return self._n_values
 
     def __len__(self):
         """
@@ -150,11 +165,10 @@ class Combiner(object):
         signal = self.combine(self._registers, self._target_location,
                               self._additional_phase_advance)
 
-        self._output_parameters is None:
-            for (parameters, signal, delay) in registers[0]:
-                self._combined_parameters = copy.copy(parameters)
-                self._combined_parameters.additional['location'] = self._target_location
-                self._combined_parameters.additional['beta'] = self._target_beta
+        if self._output_parameters is None:
+            self._combined_parameters = copy.copy(registers[0].parameters)
+            self._combined_parameters.additional['location'] = self._target_location
+            self._combined_parameters.additional['beta'] = self._target_beta
 
         if self._store_signal:
             self.input_signal = None
@@ -164,7 +178,7 @@ class Combiner(object):
 
         return parameters, signal
 
-# TODO: add beta correction
+# TODO: add beta correction, which depends if x -> x or x -> xp
 class CosineSumCombiner(Combiner):
     def __init__(self, *args, **kwargs):
         super(self.__class__, self).__init__(*args, **kwargs)
@@ -178,7 +192,7 @@ class CosineSumCombiner(Combiner):
             for (parameters, signal, delay) in register:
                 if combined_signal is None:
                     combined_signal = np.zeros(len(signal))
-                delta_position = parameters.additional.phase_advance \
+                delta_position = parameters.additional.['location'] \
                                 - target_location
 
                 if delta_position > 0:
@@ -193,84 +207,83 @@ class CosineSumCombiner(Combiner):
 
         return combined_signal
 
-#class HilbertCombiner(Combiner):
-#    def __init__(self, n_taps, *args, **kwargs):
-#        self._n_taps = n_taps
-#
-#        self._coefficients = None
-#        super(self.__class__, self).__init__(*args, **kwargs)
-#        self.label = 'Hilbert combiner'
-#
-#    def combine(self, registers, target_location, additional_phase_advance):
-#        if self._coefficients is None:
-#            self._coefficients = [None]*len(registers)
-#
-#        combined_signal = None
-#
-#        for i, register in enumerate(registers):
-#            if len(register) >= len(self._coefficients):
-#                if self._coefficients[i] is None:
-#
-#                for i, (parameters, signal, delay) in enumerate(register):
-#                    if combined_signal is None:
-#                        combined_signal = np.zeros(len(signal))
-#                    combined_signal += coefficients[i] * signal
-#
-#        return combined_signal
-#
-#
-#    def generate_coefficients(self, source_location, source_delay, target_location, additional_phase_advance):
-#        h = 0.
-#
-#        if n == 0:
-#            h = np.cos(delta_phi)
-#        elif n % 2 == 1:
-#            h = -2. * np.sin(delta_phi) / (pi * float(n))
-#
-#        return h
-#
-#
-#        delta_phi = -1. * float(self._
-#                                delay) * self._phase_shift_per_turn
-#
-#        if self._zero_idx == 'middle':
-#            delta_phi -= float(self._n_taps/2) * self._phase_shift_per_turn
-#
-#        if reader_phase_advance is not None:
-#            delta_position = self.beam_parameters.phase_advance - reader_phase_advance
-#            delta_phi += delta_position
-#            if delta_position > 0:
-#                delta_phi -= self._phase_shift_per_turn
-#            if x_to_xp == True:
-#                delta_phi -= pi/2.
-#
-#        n = self._n_iter_left
-#
-#        if self._zero_idx == 'middle':
-#            n -= self._n_taps/2
-#        # print delta_phi
-#        h = self.coeff_generator(n, delta_phi)
-#        h *= self._n_taps
-#
-#
-#class FIRCombiner(Combiner):
-#    def __init__(self, coefficients, *args, **kwargs):
-#        self._coefficients = coefficients
-#        super(self.__class__, self).__init__(*args, **kwargs)
-#        self.label = 'FIR combiner'
-#
-#    def combine(self, registers, target_location, additional_phase_advance):
-#        combined_signal = None
-#        n_signals = 0
-#
-#        for register in registers:
-#            if len(register) >= len(self._coefficients)
-#                for i, (parameters, signal, delay) in enumerate(register):
-#                    if combined_signal is None:
-#                        combined_signal = np.zeros(len(signal))
-#                    combined_signal += coefficients[i] * signal
-#
-#        return combined_signal
+class HilbertCombiner(Combiner):
+    def __init__(self, n_taps, *args, **kwargs):
+        self._n_taps = n_taps
+
+        self._coefficients = None
+        super(self.__class__, self).__init__(*args, **kwargs)
+        self.label = 'Hilbert combiner'
+
+    def combine(self, registers, target_location, additional_phase_advance):
+        if self._coefficients is None:
+            self._coefficients = [None]*len(registers)
+
+        combined_signal = None
+
+        for i, register in enumerate(registers):
+            if len(register) >= len(self._coefficients):
+                if self._coefficients[i] is None:
+                    self._coefficients[i] = self.generate_coefficients(
+                            register, target_location,
+                            additional_phase_advance)
+
+                for j, (parameters, signal, delay) in enumerate(register):
+                    if combined_signal is None:
+                        combined_signal = np.zeros(len(signal))
+                    combined_signal += coefficients[i][j] * signal
+
+        combined_signal = combined_signal/float(len(registers))
+
+        return combined_signal
+
+    def generate_coefficients(self, register, target_location, additional_phase_advance):
+        parameters = register.parameters
+
+        delta_phi = -1. * float(register.delay) \
+                    * register.phase_advance_per_turn
+
+        delta_phi -= float(self._n_taps/2) * register.phase_advance_per_turn
+
+        delta_position = parameters.additional.['location'] - target_location
+        delta_phi += delta_position
+        if delta_position > 0:
+            delta_phi -= self._phase_shift_per_turn
+
+        delta_phi -= additional_phase_advance
+
+
+        coefficients = np.zeros(self._n_taps)
+
+        for i in xrange(self._n_taps):
+            n = i
+            n -= self._n_taps/2
+            h = 0.
+
+            if n == 0:
+                h = np.cos(delta_phi)
+            elif n % 2 == 1:
+                h = -2. * np.sin(delta_phi) / (pi * float(n))
+            coefficients[i] = h
+
+class FIRCombiner(Combiner):
+    def __init__(self, coefficients, *args, **kwargs):
+        self._coefficients = coefficients
+        super(self.__class__, self).__init__(*args, **kwargs)
+        self.label = 'FIR combiner'
+
+    def combine(self, registers, target_location, additional_phase_advance):
+        combined_signal = None
+        n_signals = 0
+
+        for register in registers:
+            if len(register) >= len(self._coefficients)
+                for i, (parameters, signal, delay) in enumerate(register):
+                    if combined_signal is None:
+                        combined_signal = np.zeros(len(signal))
+                    combined_signal += coefficients[i] * signal
+
+        return combined_signal
 
 
 #class Register(object):
@@ -384,49 +397,49 @@ class CosineSumCombiner(Combiner):
 #        pass
 
 
-class VectorSumRegister(Register):
-
-    def __init__(self, n_avg, tune, delay = 0, in_processor_chain=True,**kwargs):
-        self.combination = 'combined'
-        super(self.__class__, self).__init__(n_avg, tune, delay, in_processor_chain,**kwargs)
-        self.label = 'Vector sum register'
-
-    def combine(self,x1,x2,reader_phase_advance,x_to_xp = False):
-        # determines a complex number representation from two signals (e.g. from two pickups or different turns), by using
-        # knowledge about phase advance between signals. After this turns the vector to the reader's phase
-        # TODO: Why not x2[3]-x1[3]?
-
-        if (x1[3] is not None) and (x1[3] != x2[3]):
-            phi_x1_x2 = x1[3]-x2[3]
-            if phi_x1_x2 < 0:
-                # print "correction"
-                phi_x1_x2 += self._phase_shift_per_turn
-        else:
-            phi_x1_x2 = -1. * self._phase_shift_per_turn
-
-        print "Delta phi: " + str(phi_x1_x2*360./(2*pi)%360.)
-
-        s = np.sin(phi_x1_x2/2.)
-        c = np.cos(phi_x1_x2/2.)
-
-        re = 0.5 * (x1[0] + x2[0]) * (c + s * s / c)
-        im = -s * x2[0] + c / s * (re - c * x2[0])
-
-        delta_phi = x1[2]-phi_x1_x2/2.
-
-        if reader_phase_advance is not None:
-            delta_position = x1[3] - reader_phase_advance
-            delta_phi += delta_position
-            if delta_position > 0:
-                delta_phi -= self._phase_shift_per_turn
-            if x_to_xp == True:
-                delta_phi -= pi/2.
-
-        s = np.sin(delta_phi)
-        c = np.cos(delta_phi)
-
-
-        return c*re-s*im
+#class VectorSumRegister(Register):
+#
+#    def __init__(self, n_avg, tune, delay = 0, in_processor_chain=True,**kwargs):
+#        self.combination = 'combined'
+#        super(self.__class__, self).__init__(n_avg, tune, delay, in_processor_chain,**kwargs)
+#        self.label = 'Vector sum register'
+#
+#    def combine(self,x1,x2,reader_phase_advance,x_to_xp = False):
+#        # determines a complex number representation from two signals (e.g. from two pickups or different turns), by using
+#        # knowledge about phase advance between signals. After this turns the vector to the reader's phase
+#        # TODO: Why not x2[3]-x1[3]?
+#
+#        if (x1[3] is not None) and (x1[3] != x2[3]):
+#            phi_x1_x2 = x1[3]-x2[3]
+#            if phi_x1_x2 < 0:
+#                # print "correction"
+#                phi_x1_x2 += self._phase_shift_per_turn
+#        else:
+#            phi_x1_x2 = -1. * self._phase_shift_per_turn
+#
+#        print "Delta phi: " + str(phi_x1_x2*360./(2*pi)%360.)
+#
+#        s = np.sin(phi_x1_x2/2.)
+#        c = np.cos(phi_x1_x2/2.)
+#
+#        re = 0.5 * (x1[0] + x2[0]) * (c + s * s / c)
+#        im = -s * x2[0] + c / s * (re - c * x2[0])
+#
+#        delta_phi = x1[2]-phi_x1_x2/2.
+#
+#        if reader_phase_advance is not None:
+#            delta_position = x1[3] - reader_phase_advance
+#            delta_phi += delta_position
+#            if delta_position > 0:
+#                delta_phi -= self._phase_shift_per_turn
+#            if x_to_xp == True:
+#                delta_phi -= pi/2.
+#
+#        s = np.sin(delta_phi)
+#        c = np.cos(delta_phi)
+#
+#
+#        return c*re-s*im
 
         # An old piece. It should work as well as the code above, but it has different forbidden values for phi_x1_x2
         # (where re or im variables go to infinity). Thus it is stored to here, so that it can be found easily but it
