@@ -126,7 +126,7 @@ class Combiner(object):
     __metaclass__ = ABCMeta
 
     def __init__(self, registers, target_location, target_beta,
-                 additional_phase_advance, store_signal):
+                 additional_phase_advance, store_signal = False):
         """
         Parameters
         ----------
@@ -266,6 +266,95 @@ class HilbertCombiner(Combiner):
                 h = -2. * np.sin(delta_phi) / (pi * float(n))
             coefficients[i] = h
 
+class VectorSumCombiner(Combiner):
+    def __init__(self, *args, **kwargs):
+        super(self.__class__, self).__init__(*args, **kwargs)
+        self.label = 'Vector sum combiner'
+
+    def combine(self, registers, target_location, additional_phase_advance):
+        # determines a complex number representation from two signals (e.g. from two pickups or different turns), by using
+        # knowledge about phase advance between signals. After this turns the vector to the reader's phase
+        # TODO: Why not x2[3]-x1[3]?
+
+        combined_signal = None
+        n_signals = 0
+
+        if len(registers) == 1:
+            prev_parameters = None
+            prev_signal = None
+            prev_delay = None
+
+            for i, (parameters, signal, delay) in enumerate(registers[0]):
+                if i == 0:
+                    pass
+                else:
+                    delta_phi = delay - prev_delay
+                    re, im = self.determine_vector(prev_signal, 0, signal,
+                                                   delta_phi)
+
+                    rotation_angle = prev_delay - delta_phi/2.
+                    delta_position = parameters_1.additional['location'] - target_location
+                    rotation_angle += delta_position
+                    if delta_position > 0:
+                        rotation_angle -= register.phase_advance_per_turn
+
+                    calculated_signal = self.rotate_vector(re, im, rotation_angle)
+                    n_signals += 1
+                    combined_signal = combined_signal + calculated_signal
+
+                prev_parameters = parameters
+                prev_signal = signal
+                prev_delay = delay
+
+        elif len(registers) > 1:
+            prev_register = registers[0]
+
+            for register in resgisters:
+                for (parameters_1, signal_1, delay_1), (parameters_2, signal_2, delay_2) in zip(prev_register,register):
+                    phi_1 = delay_1 + parameters_1.additional['location']
+                    phi_2 = delay_2 + parameters_2.additional['location']
+
+                    delta_phi = phi_1 - phi_2
+
+                    re, im = self.determine_vector(signal_1, signal_2, delta_phi)
+
+                    rotation_angle = delay_1 - delta_phi/2.
+                    delta_position = parameters_1.additional['location'] - target_location
+                    rotation_angle += delta_position
+                    if delta_position > 0:
+                        rotation_angle -= register.phase_advance_per_turn
+
+                    calculated_signal = self.rotate_vector(re, im, rotation_angle)
+                    n_signals += 1
+                    combined_signal = combined_signal + calculated_signal
+
+                prev_register = register
+        else:
+            raise ValueError('At least one register must be given.')
+
+        if combined_signal is not None:
+            combined_signal = combined_signal/float(n_signals)
+
+        return combined_signal
+
+    def determine_vector(signal_1, signal_2, delta_phi):
+
+        s = np.sin(delta_phi/2.)
+        c = np.cos(delta_phi/2.)
+
+        re = 0.5 * (signal_1 + signal_2) * (c + s * s / c)
+        im = -s * signal_2 + c / s * (re - c * signal_2)
+
+        return re, im
+
+    def rotate_vector(re, im, angle):
+
+        s = np.sin(angle)
+        c = np.cos(angle)
+
+        return c*re-s*im
+
+
 class FIRCombiner(Combiner):
     def __init__(self, coefficients, *args, **kwargs):
         self._coefficients = coefficients
@@ -284,6 +373,66 @@ class FIRCombiner(Combiner):
                     combined_signal += coefficients[i] * signal
 
         return combined_signal
+
+
+class TurnDelay(object):
+    def __init__(delay, tune, n_taps = 2, combiner='vector_sum',
+                 additional_phase_advance=0, store_signal=False):
+
+        self._delay = delay
+        self._tune = tune
+        self._n_taps = n_taps
+        self._combiner_type = combiner
+
+        self._register = Register(self._n_turns, self._tune, self._delay)
+        self._combiner = None
+
+
+        self.extensions = ['store', 'bunch']
+
+        self._store_signal = store_signal
+        self.label = 'TurnDelay'
+        self.input_signal = None
+        self.input_parameters = None
+        self.output_signal = None
+        self.output_parameters = None
+
+     def process(self, parameters, signal, *args, **kwargs):
+        self._register.process(parameters, signal, *args, **kwargs)
+
+        if self._combiner is None:
+            self.__init_combiner(parameters)
+
+       output_parameters, output_signal = self._combiner.process(parameters, signal, *args, **kwargs)
+
+
+         if self._store_signal:
+             self.input_signal = np.copy(signal)
+             self.input_parameters = copy.copy(parameters)
+             self.output_signal = np.copy(output_signal)
+             self.output_parameters = copy.copy(output_parameters)
+
+        return output_parameters, output_signal
+
+    def __init_combiner(parameters):
+        registers = [self._register]
+        target_location = parameters.addiational['location']
+        target_beta = parameters.addiational[beta]
+        extra_phase = self._additional_phase_advance
+
+        if isinstance(combiner_type, str):
+            if self._combiner_type == 'vector_sum':
+                self._combiner = VectorSumCombiner(registers, target_location, extra_phase)
+            elif self._combiner_type == 'cosine_sum':
+                self._combiner = CosineSumCombiner(registers, target_location, extra_phase)
+            elif self._combiner_type == 'hilbert':
+                self._combiner = HilbertCombiner(registers, target_location, extra_phase)
+            else:
+                raise ValueError('Unknown combiner type')
+        else:
+            self._combiner = self._combiner_type(registers, target_location, extra_phase)
+
+
 
 
 #class Register(object):
