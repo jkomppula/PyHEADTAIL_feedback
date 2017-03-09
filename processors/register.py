@@ -366,7 +366,7 @@ class FIRCombiner(Combiner):
         n_signals = 0
 
         for register in registers:
-            if len(register) >= len(self._coefficients)
+            if len(register) >= len(self._coefficients):
                 for i, (parameters, signal, delay) in enumerate(register):
                     if combined_signal is None:
                         combined_signal = np.zeros(len(signal))
@@ -375,18 +375,13 @@ class FIRCombiner(Combiner):
         return combined_signal
 
 
-class TurnDelay(object):
-    def __init__(delay, tune, n_taps = 2, combiner='vector_sum',
-                 additional_phase_advance=0, store_signal=False):
-
-        self._delay = delay
+class FIRTurnFilter(object):
+    def __init__(self, coefficients, tune, store_signal=False):
+        self._coefficients = coefficients
         self._tune = tune
-        self._n_taps = n_taps
-        self._combiner_type = combiner
 
-        self._register = Register(self._n_turns, self._tune, self._delay)
-        self._combiner = None
-
+        self._register = Register(len(self._coefficients), self._tune)
+        self._combiner = FIRCombiner(self._coefficients)
 
         self.extensions = ['store', 'bunch']
 
@@ -397,20 +392,60 @@ class TurnDelay(object):
         self.output_signal = None
         self.output_parameters = None
 
-     def process(self, parameters, signal, *args, **kwargs):
+    def process(self, parameters, signal, *args, **kwargs):
+        self._register.process(parameters, signal, *args, **kwargs)
+
+        output_parameters, output_signal = self._combiner.process(parameters,
+                                                                  signal,
+                                                                  *args,
+                                                                  **kwargs)
+
+        if self._store_signal:
+            self.input_signal = np.copy(signal)
+            self.input_parameters = copy.copy(parameters)
+            self.output_signal = np.copy(output_signal)
+            self.output_parameters = copy.copy(output_parameters)
+
+        return output_parameters, output_signal
+
+
+class TurnDelay(object):
+    def __init__(delay, tune, n_taps=2, combiner='vector_sum',
+                 additional_phase_advance=0, store_signal=False):
+
+        self._delay = delay
+        self._tune = tune
+        self._n_taps = n_taps
+        self._combiner_type = combiner
+
+        self._register = Register(self._n_taps, self._tune, self._delay)
+        self._combiner = None
+
+        self.extensions = ['store', 'bunch']
+
+        self._store_signal = store_signal
+        self.label = 'TurnDelay'
+        self.input_signal = None
+        self.input_parameters = None
+        self.output_signal = None
+        self.output_parameters = None
+
+    def process(self, parameters, signal, *args, **kwargs):
         self._register.process(parameters, signal, *args, **kwargs)
 
         if self._combiner is None:
             self.__init_combiner(parameters)
 
-       output_parameters, output_signal = self._combiner.process(parameters, signal, *args, **kwargs)
+        output_parameters, output_signal = self._combiner.process(parameters,
+                                                                  signal,
+                                                                  *args,
+                                                                  **kwargs)
 
-
-         if self._store_signal:
-             self.input_signal = np.copy(signal)
-             self.input_parameters = copy.copy(parameters)
-             self.output_signal = np.copy(output_signal)
-             self.output_parameters = copy.copy(output_parameters)
+        if self._store_signal:
+            self.input_signal = np.copy(signal)
+            self.input_parameters = copy.copy(parameters)
+            self.output_signal = np.copy(output_signal)
+            self.output_parameters = copy.copy(output_parameters)
 
         return output_parameters, output_signal
 
@@ -422,15 +457,19 @@ class TurnDelay(object):
 
         if isinstance(combiner_type, str):
             if self._combiner_type == 'vector_sum':
-                self._combiner = VectorSumCombiner(registers, target_location, extra_phase)
+                self._combiner = VectorSumCombiner(registers, target_location,
+                                                   extra_phase)
             elif self._combiner_type == 'cosine_sum':
-                self._combiner = CosineSumCombiner(registers, target_location, extra_phase)
+                self._combiner = CosineSumCombiner(registers, target_location,
+                                                   extra_phase)
             elif self._combiner_type == 'hilbert':
-                self._combiner = HilbertCombiner(registers, target_location, extra_phase)
+                self._combiner = HilbertCombiner(registers, target_location,
+                                                 extra_phase)
             else:
                 raise ValueError('Unknown combiner type')
         else:
-            self._combiner = self._combiner_type(registers, target_location, extra_phase)
+            self._combiner = self._combiner_type(registers, target_location,
+                                                 extra_phase)
 
 
 
