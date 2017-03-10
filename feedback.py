@@ -242,6 +242,9 @@ class OneboxFeedback(object):
         kick_bunches(bunch_slice_sets, bunch_list, self._local_bunch_indexes,
                  kick_signal_x, kick_signal_y, self._axis)
 
+        if self._mpi:
+            self._mpi_gatherer.rebunch(bunch)
+
 class PickUp(object):
     def __init__(self, slicer, processors_x, processors_y, location_x, beta_x,
                  location_y, beta_y, mpi=False):
@@ -397,3 +400,6 @@ class Kicker(object):
 
         kick_bunches(bunch_slice_sets, bunch_list, self._local_bunch_indexes,
                      signal_x, signal_y, self._axis)
+
+        if self._mpi:
+            self._mpi_gatherer.rebunch(bunch)
