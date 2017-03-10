@@ -20,13 +20,20 @@ import numpy as np
         additional_parameters: A dictionary of additional paramters which are
             carried with the signal (e.g. beam parameteres).
 """
-SignalParameters = collections.namedtuple('SignalParameters', ['signal_class',
-                            'bin_edges', 'n_segments', 'n_bins_per_segment',
-                            'original_segment_mids', 'additional'])
 
 
+def Parameters():
+    """ Returns a prototype for signal parameters."""
+    return {'class': 0, 'bin_edges': np.array([]), 'n_segments': 0,
+              'n_bins_per_segment': 0, 'segment_midpoints': np.array([])}
 
-def process(signal_parameters, signal, processors, **kwargs):
+
+def Signal():
+    """ Returns a prototype for a signal."""
+    return np.array([])
+
+
+def process(parameters, signal, processors, **kwargs):
     """
     A function which processes the signal, i.e. passes the signal through the signal processors
     :param signal_parameters: A standardized namedtuple for additional parameters for the signal
@@ -37,10 +44,10 @@ def process(signal_parameters, signal, processors, **kwargs):
     """
 
     for processor in processors:
-        signal_parameters, signal = processor.process(signal_parameters,
+        parameters, signal = processor.process(parameters,
                                                       signal, **kwargs)
 
-    return signal_parameters, signal
+    return parameters, signal
 
 
 def get_processor_extensions(processors, available_extensions=None):
