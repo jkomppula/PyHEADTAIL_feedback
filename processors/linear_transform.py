@@ -65,9 +65,9 @@ class LinearTransform(object):
         self.label = None
         self._store_signal = store_signal
         self.input_signal = None
-        self.input_signal_parameters = None
+        self.input_parameters = None
         self.output_signal = None
-        self.output_signal_parameters = None
+        self.output_parameters = None
 
 
 
@@ -76,7 +76,7 @@ class LinearTransform(object):
         # Impulse response function of the processor
         pass
 
-    def process(self,signal_parameters, signal, slice_sets = None, *args, **kwargs):
+    def process(self,parameters, signal, slice_sets = None, *args, **kwargs):
 
         if self._matrix is None:
 
@@ -85,14 +85,14 @@ class LinearTransform(object):
                 for slice_set in slice_sets:
                     bin_midpoints = np.append(bin_midpoints, slice_set.mean_z)
             elif self._bin_middle == 'bin':
-                bin_midpoints = (signal_parameters.bin_edges[:, 1] + signal_parameters.bin_edges[:, 0]) / 2.
+                bin_midpoints = (parameters['bin_edges'][:, 1] + parameters['bin_edges'][:, 0]) / 2.
             else:
                 raise ValueError('Unknown value for LinearTransform._bin_middle ')
 
-            self._n_segments = signal_parameters.n_segments
-            self._n_bins_per_segment = signal_parameters.n_bins_per_segment
+            self._n_segments = parameters['n_segments']
+            self._n_bins_per_segment = parameters['n_bins_per_segment']
 
-            self.__generate_matrix(signal_parameters.bin_edges,bin_midpoints)
+            self.__generate_matrix(parameters['bin_edges'],bin_midpoints)
 
         if self._mode == 'total':
             output_signal = np.array(cython_matrix_product(self._matrix, signal))
@@ -108,11 +108,11 @@ class LinearTransform(object):
 
         if self._store_signal:
             self.input_signal = np.copy(signal)
-            self.input_signal_parameters = copy.copy(signal_parameters)
+            self.input_parameters = copy.copy(parameters)
             self.output_signal = np.copy(output_signal)
-            self.output_signal_parameters = copy.copy(signal_parameters)
+            self.output_parameters = copy.copy(parameters)
 
-        return signal_parameters, output_signal
+        return parameters, output_signal
 
         # np.dot can't be used, because it slows down the calculations in LSF by a factor of two or more
         # return np.dot(self._matrix,signal)

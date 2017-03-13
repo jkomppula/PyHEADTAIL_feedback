@@ -61,7 +61,7 @@ class IdealSliceFeedback(object):
 
 
 def get_local_slice_sets(bunch, slicer, required_variables):
-    signal_slice_sets = bunch.get_slices(slicer, statistics=required_variables)
+    signal_slice_sets = [bunch.get_slices(slicer, statistics=required_variables)]
     bunch_slice_sets = signal_slice_sets
     bunch_list = [bunch]
 
@@ -111,10 +111,10 @@ def read_signal(signal_x, signal_y, signal_slice_sets, axis):
     total_length = len(signal_slice_sets) * n_slices_per_bunch
 
     if (signal_x is None) or (len(signal_x) != total_length):
-        signal_x = np.zeros(len(signal_slice_sets) * n_slices_per_bunch)
+        raise ValueError('Wrong signal length')
 
     if (signal_y is None) or (len(signal_x) != total_length):
-        signal_y = np.zeros(len(signal_slice_sets) * n_slices_per_bunch)
+        raise ValueError('Wrong signal length')
 
     for idx, slice_set in enumerate(signal_slice_sets):
         idx_from = idx * n_slices_per_bunch
@@ -127,9 +127,7 @@ def read_signal(signal_x, signal_y, signal_slice_sets, axis):
             np.copyto(signal_x[idx_from:idx_to], slice_set.mean_x)
             np.copyto(signal_y[idx_from:idx_to], slice_set.mean_y)
         else:
-            return ValueError('Unknown axis')
-
-    return signal_x, signal_y
+            raise ValueError('Unknown axis')
 
 
 def kick_bunches(local_slice_sets, bunch_list, local_bunch_indexes,
@@ -213,24 +211,40 @@ class OneboxFeedback(object):
     def track(self, bunch):
         if self._mpi:
             signal_slice_sets, bunch_slice_sets, bunch_list \
-            = get_local_slice_sets(bunch, self._slicer, self._required_variables)
+            = get_mpi_slice_sets(bunch, self._mpi_gatherer)
         else:
             signal_slice_sets, bunch_slice_sets, bunch_list \
-            = get_mpi_slice_sets(bunch, self._mpi_gatherer)
+            = get_local_slice_sets(bunch, self._slicer, self._required_variables)
 
         if self._parameters_x is None:
             self._parameters_x = generate_parameters(signal_slice_sets)
         if self._parameters_y is None:
             self._parameters_y = generate_parameters(signal_slice_sets)
 
+        if self._signal_x is None:
+            n_segments = self._parameters_x['n_segments']
+            n_bins_per_segment = self._parameters_x['n_bins_per_segment']
+            self._signal_x = np.zeros(n_segments * n_bins_per_segment)
+
+        if self._signal_y is None:
+            n_segments = self._parameters_y['n_segments']
+            n_bins_per_segment = self._parameters_y['n_bins_per_segment']
+            self._signal_y = np.zeros(n_segments * n_bins_per_segment)
+
+
         read_signal(self._signal_x, self._signal_y, signal_slice_sets,
                     self._axis)
+
         if self._signal_x is not None:
             kick_parameters_x, kick_signal_x = process(self._parameters_x,
                                                        self._signal_x,
                                                        self._processors_x,
                                                        slice_sets=signal_slice_sets)
             kick_signal_x = kick_signal_x * self._gain_x
+        else:
+            print 'kick_signal_x = None'
+            kick_parameters_x = None
+            kick_signal_x = None
 
         if self._signal_y is not None:
             kick_parameters_y, kick_signal_y = process(self._parameters_y,
@@ -238,6 +252,10 @@ class OneboxFeedback(object):
                                                        self._processors_y,
                                                        slice_sets=signal_slice_sets)
             kick_signal_y = kick_signal_y * self._gain_y
+        else:
+            print 'kick_signal_y = None'
+            kick_parameters_y = None
+            kick_signal_y = None
 
         kick_bunches(bunch_slice_sets, bunch_list, self._local_bunch_indexes,
                  kick_signal_x, kick_signal_y, self._axis)

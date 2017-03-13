@@ -43,49 +43,49 @@ class Multiplication(object):
             self.required_variables = [self._seed]
 
         self.input_signal = None
-        self.input_signal_parameters = None
+        self.input_parameters = None
 
         self.output_signal = None
-        self.output_signal_parameters = None
+        self.output_parameters = None
 
     @abstractmethod
     def multiplication_function(self, seed):
         pass
 
-    def process(self,signal_parameters, signal, slice_sets = None, *args, **kwargs):
+    def process(self,parameters, signal, slice_sets = None, *args, **kwargs):
 
         if (self._multiplier is None) or self._recalculate_multiplier:
-            self.__calculate_multiplier(signal_parameters, signal, slice_sets)
+            self.__calculate_multiplier(parameters, signal, slice_sets)
 
         output_signal =  self._multiplier*signal
 
         if self._store_signal:
             self.input_signal = np.copy(signal)
-            self.input_signal_parameters = copy.copy(signal_parameters)
+            self.input_parameters = copy.copy(parameters)
             self.output_signal = np.copy(output_signal)
-            self.output_signal_parameters = copy.copy(signal_parameters)
+            self.output_parameters = copy.copy(parameters)
 
         # process the signal
-        return signal_parameters, output_signal
+        return parameters, output_signal
 
-    def __calculate_multiplier(self,signal_parameters, signal, slice_sets):
+    def __calculate_multiplier(self,parameters, signal, slice_sets):
         self._multiplier = np.zeros(len(signal))
 
         if self._seed == 'ones':
             self._multiplier = self._multiplier + 1.
         elif self._seed == 'bin_width':
-            np.copyto(self._multiplier, (signal_parameters.bin_edges[:,1]-signal_parameters.bin_edges[:,0]))
+            np.copyto(self._multiplier, (parameters['bin_edges'][:,1]-parameters['bin_edges'][:,0]))
         elif self._seed == 'bin_midpoint':
-            np.copyto(self._multiplier, ((signal_parameters.bin_edges[:,1]+signal_parameters.bin_edges[:,0])/2.))
+            np.copyto(self._multiplier, ((parameters['bin_edges'][:,1]+parameters['bin_edges'][:,0])/2.))
         elif self._seed == 'normalized_bin_midpoint':
 
-            for i in xrange(signal_parameters.n_segments):
-                i_from = i * signal_parameters.n_bins_per_segment
-                i_to = (i + 1) * signal_parameters.n_bins_per_segment
+            for i in xrange(parameters['n_segments']):
+                i_from = i * parameters['n_bins_per_segment']
+                i_to = (i + 1) * parameters['n_bins_per_segment']
 
-                np.copyto(self._multiplier[i_from:i_to], ((signal_parameters.bin_edges[i_from:i_to,1]+
-                                                           signal_parameters.bin_edges[i_from:i_to,0])/2.
-                                                          -signal_parameters.original_z_mids[i]))
+                np.copyto(self._multiplier[i_from:i_to], ((parameters['bin_edges'][i_from:i_to,1]+
+                                                           parameters['bin_edges'][i_from:i_to,0])/2.
+                                                          -parameters['segment_midpoints'][i]))
 
         elif self._seed == 'signal':
             np.copyto(self._multiplier,signal)
@@ -111,9 +111,9 @@ class Multiplication(object):
 
         elif self._normalization == 'segment_sum':
             norm_coeff = np.ones(len(self._multiplier))
-            for i in xrange(signal_parameters.n_segments):
-                i_from = i*signal_parameters.n_bins_per_segment
-                i_to = (i+1)*signal_parameters.n_bins_per_segment
+            for i in xrange(parameters['n_segments']):
+                i_from = i*parameters['n_bins_per_segment']
+                i_to = (i+1)*parameters['n_bins_per_segment']
                 norm_coeff[i_from:i_to] = norm_coeff[i_from:i_to]*float(np.sum(self._multiplier[i_from:i_to]))
 
         elif self._normalization == 'total_average':
@@ -121,21 +121,21 @@ class Multiplication(object):
 
         elif self._normalization == 'segment_average':
             norm_coeff = np.ones(len(self._multiplier))
-            for i in xrange(signal_parameters.n_segments):
-                i_from = i*signal_parameters.n_bins_per_segment
-                i_to = (i+1)*signal_parameters.n_bins_per_segment
-                norm_coeff[i_from:i_to] = norm_coeff[i_from:i_to]*float(np.sum(self._multiplier[i_from:i_to]))/float(signal_parameters.n_bins_per_segment)
+            for i in xrange(parameters['n_segments']):
+                i_from = i*parameters['n_bins_per_segment']
+                i_to = (i+1)*parameters['n_bins_per_segment']
+                norm_coeff[i_from:i_to] = norm_coeff[i_from:i_to]*float(np.sum(self._multiplier[i_from:i_to]))/float(parameters['n_bins_per_segment'])
 
         elif self._normalization == 'total_integral':
-            bin_widths = signal_parameters.bin_edges[:,1] - signal_parameters.bin_edges[:,0]
+            bin_widths = parameters['bin_edges'][:,1] - parameters['bin_edges'][:,0]
             norm_coeff = np.sum(self._multiplier*bin_widths)
 
         elif self._normalization == 'segment_integral':
-            bin_widths = signal_parameters.bin_edges[:,1] - signal_parameters.bin_edges[:,0]
+            bin_widths = parameters['bin_edges'][:,1] - parameters['bin_edges'][:,0]
             norm_coeff = np.ones(len(self._multiplier))
-            for i in xrange(signal_parameters.n_segments):
-                i_from = i*signal_parameters.n_bins_per_segment
-                i_to = (i+1)*signal_parameters.n_bins_per_segment
+            for i in xrange(parameters['n_segments']):
+                i_from = i*parameters['n_bins_per_segment']
+                i_to = (i+1)*parameters['n_bins_per_segment']
                 norm_coeff[i_from:i_to] = norm_coeff[i_from:i_to]*float(np.sum(self._multiplier[i_from:i_to]*bin_widths[i_from:i_to]))
 
         elif self._normalization == 'total_min':
@@ -143,9 +143,9 @@ class Multiplication(object):
 
         elif self._normalization == 'segment_min':
             norm_coeff = np.ones(len(self._multiplier))
-            for i in xrange(signal_parameters.n_segments):
-                i_from = i*signal_parameters.n_bins_per_segment
-                i_to = (i+1)*signal_parameters.n_bins_per_segment
+            for i in xrange(parameters['n_segments']):
+                i_from = i*parameters['n_bins_per_segment']
+                i_to = (i+1)*parameters['n_bins_per_segment']
                 norm_coeff[i_from:i_to] = norm_coeff[i_from:i_to]*float(np.min(self._multiplier[i_from:i_to]))
 
         elif self._normalization == 'total_max':
@@ -153,9 +153,9 @@ class Multiplication(object):
 
         elif self._normalization == 'segment_max':
             norm_coeff = np.ones(len(self._multiplier))
-            for i in xrange(signal_parameters.n_segments):
-                i_from = i*signal_parameters.n_bins_per_segment
-                i_to = (i+1)*signal_parameters.n_bins_per_segment
+            for i in xrange(parameters['n_segments']):
+                i_from = i*parameters['n_bins_per_segment']
+                i_to = (i+1)*parameters['n_bins_per_segment']
                 norm_coeff[i_from:i_to] = norm_coeff[i_from:i_to]*float(np.max(self._multiplier[i_from:i_to]))
         else:
             raise  ValueError('Unknown value in Multiplication._normalization')

@@ -4,7 +4,7 @@ from abc import ABCMeta, abstractmethod
 import numpy as np
 from scipy.constants import pi
 
-from ..core import SignalParameters
+from ..core import Parameters
 
 # TODO: program a new register:
 #   - Does not modify the signal
@@ -53,9 +53,9 @@ class Register(object):
         self._store_signal = store_signal
         self.label = 'Register'
         self.input_signal = None
-        self.input_signal_parameters = None
+        self.input_parameters = None
         self.output_signal = None
-        self.output_signal_parameters = None
+        self.output_parameters = None
 
     @property
     def parameters(self):
@@ -169,8 +169,8 @@ class Combiner(object):
 
         if self._output_parameters is None:
             self._combined_parameters = copy.copy(registers[0].parameters)
-            self._combined_parameters.additional['location'] = self._target_location
-            self._combined_parameters.additional['beta'] = self._target_beta
+            self._combined_parameters['location'] = self._target_location
+            self._combined_parameters['beta'] = self._target_beta
 
         if self._store_signal:
             self.input_signal = None
@@ -331,15 +331,15 @@ class VectorSumCombiner(Combiner):
             # TODO: beta from both pickups must be taken into account. Fix it!
             for register in registers:
                 for (parameters_1, signal_1, delay_1), (parameters_2, signal_2, delay_2) in zip(prev_register,register):
-                    phi_1 = delay_1 + parameters_1.additional['location']
-                    phi_2 = delay_2 + parameters_2.additional['location']
+                    phi_1 = delay_1 + parameters_1['location']
+                    phi_2 = delay_2 + parameters_2['location']
 
                     delta_phi = phi_1 - phi_2
 
                     re, im = self.determine_vector(signal_1, signal_2, delta_phi)
 
                     rotation_angle = delay_1 - delta_phi/2.
-                    delta_position = parameters_1.additional['location'] - target_location
+                    delta_position = parameters_1['location'] - target_location
                     rotation_angle += delta_position
                     if delta_position > 0:
                         rotation_angle -= register.phase_advance_per_turn
