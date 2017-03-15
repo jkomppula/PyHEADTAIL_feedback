@@ -163,6 +163,8 @@ def kick_bunches(local_slice_sets, bunch_list, local_bunch_indexes,
             if signal_y is not None:
                 correction_y = np.array(signal_y[idx_from:idx_to], copy=False)
                 bunch.y[p_idx] -= correction_y[s_idx]
+        else:
+            raise ValueError('Unknown axis')
 
 
 class OneboxFeedback(object):
@@ -216,17 +218,14 @@ class OneboxFeedback(object):
             signal_slice_sets, bunch_slice_sets, bunch_list \
             = get_local_slice_sets(bunch, self._slicer, self._required_variables)
 
-        if self._parameters_x is None:
+        if (self._parameters_x is None) or (self._signal_x is None):
             self._parameters_x = generate_parameters(signal_slice_sets)
-        if self._parameters_y is None:
-            self._parameters_y = generate_parameters(signal_slice_sets)
-
-        if self._signal_x is None:
             n_segments = self._parameters_x['n_segments']
             n_bins_per_segment = self._parameters_x['n_bins_per_segment']
             self._signal_x = np.zeros(n_segments * n_bins_per_segment)
 
-        if self._signal_y is None:
+        if (self._parameters_y is None) or (self._signal_y is None):
+            self._parameters_y = generate_parameters(signal_slice_sets)
             n_segments = self._parameters_y['n_segments']
             n_bins_per_segment = self._parameters_y['n_bins_per_segment']
             self._signal_y = np.zeros(n_segments * n_bins_per_segment)
@@ -235,27 +234,24 @@ class OneboxFeedback(object):
         read_signal(self._signal_x, self._signal_y, signal_slice_sets,
                     self._axis)
 
-        if self._signal_x is not None:
-            kick_parameters_x, kick_signal_x = process(self._parameters_x,
-                                                       self._signal_x,
-                                                       self._processors_x,
-                                                       slice_sets=signal_slice_sets)
-            kick_signal_x = kick_signal_x * self._gain_x
-        else:
-            print 'kick_signal_x = None'
-            kick_parameters_x = None
-            kick_signal_x = None
+        kick_parameters_x, kick_signal_x = process(self._parameters_x,
+                                                   self._signal_x,
+                                                   self._processors_x,
+                                                   slice_sets=signal_slice_sets)
 
-        if self._signal_y is not None:
-            kick_parameters_y, kick_signal_y = process(self._parameters_y,
-                                                       self._signal_y,
-                                                       self._processors_y,
-                                                       slice_sets=signal_slice_sets)
+        if kick_signal_x is not None:
+            kick_signal_x = kick_signal_x * self._gain_x
+
+        kick_parameters_y, kick_signal_y = process(self._parameters_y,
+                                                   self._signal_y,
+                                                   self._processors_y,
+                                                   slice_sets=signal_slice_sets)
+        if kick_signal_x is not None:
             kick_signal_y = kick_signal_y * self._gain_y
-        else:
-            print 'kick_signal_y = None'
-            kick_parameters_y = None
-            kick_signal_y = None
+
+
+#        print 'signal_x: ' + str(kick_signal_x)
+#        print 'self._gain_x: ' + str(self._gain_x)
 
         kick_bunches(bunch_slice_sets, bunch_list, self._local_bunch_indexes,
                  kick_signal_x, kick_signal_y, self._axis)
@@ -302,18 +298,25 @@ class PickUp(object):
     def track(self, bunch):
         if self._mpi:
             signal_slice_sets, bunch_slice_sets, bunch_list \
-            = get_local_slice_sets(bunch, self._slicer, self._required_variables)
+            = get_mpi_slice_sets(bunch, self._mpi_gatherer)
         else:
             signal_slice_sets, bunch_slice_sets, bunch_list \
-            = get_mpi_slice_sets(bunch, self._mpi_gatherer)
+            = get_local_slice_sets(bunch, self._slicer, self._required_variables)
 
-        if self._parameters_x is None:
-            self._parameters_x = generate_parameters(signal_slice_sets)
-        if self._parameters_y is None:
-            self._parameters_y = generate_parameters(signal_slice_sets)
+        if (self._parameters_x is None) or (self._signal_x is None):
+            self._parameters_x = generate_parameters(signal_slice_sets, self._location_x, self._beta_x)
+            n_segments = self._parameters_x['n_segments']
+            n_bins_per_segment = self._parameters_x['n_bins_per_segment']
+            self._signal_x = np.zeros(n_segments * n_bins_per_segment)
+
+        if (self._parameters_y is None) or (self._signal_y is None):
+            self._parameters_y = generate_parameters(signal_slice_sets, self._location_y, self._beta_y)
+            n_segments = self._parameters_y['n_segments']
+            n_bins_per_segment = self._parameters_y['n_bins_per_segment']
+            self._signal_y = np.zeros(n_segments * n_bins_per_segment)
 
         read_signal(self._signal_x, self._signal_y, signal_slice_sets,
-                    self._axis)
+                    'displacement')
 
         if self._signal_x is not None:
             end_parameters_x, end_signal_x = process(self._parameters_x,
@@ -331,7 +334,7 @@ class PickUp(object):
 class Kicker(object):
     def __init__(self, gain, slicer, processors_x, processors_y,
                  registers_x, registers_y, location_x, beta_x,
-                 location_y, beta_y, combiner_type='vector_sum', mpi=False):
+                 location_y, beta_y, combiner='vector_sum', mpi=False):
 
         if isinstance(gain, collections.Container):
             self._gain_x = gain[0]
@@ -345,23 +348,26 @@ class Kicker(object):
         self._processors_x = processors_x
         self._processors_y = processors_y
 
-        self._registers_x = registers_x
-        self._registers_y = registers_y
+        self._parameters_x = None
+        self._parameters_y = None
+        self._signal_x = None
+        self._signal_y = None
 
-        if isinstance(combiner_type, str):
-            if combiner_type == 'vector_sum':
+
+        if isinstance(combiner, (str,unicode)):
+            if combiner == 'vector_sum':
                 self._combiner_x = VectorSumCombiner(registers_x, location_x,
                                                    beta_x, np.pi/2.)
                 self._combiner_y = VectorSumCombiner(registers_y, location_y,
                                                    beta_y, np.pi/2.)
 
-            elif self._combiner_type == 'cosine_sum':
+            elif combiner == 'cosine_sum':
                 self._combiner_x = CosineSumCombiner(registers_x, location_x,
                                                    beta_x, np.pi/2.)
                 self._combiner_y = CosineSumCombiner(registers_y, location_y,
                                                    beta_y, np.pi/2.)
 
-            elif self._combiner_type == 'hilbert':
+            elif combiner == 'hilbert':
                 self._combiner_x = HilbertCombiner(registers_x, location_x,
                                                    beta_x, np.pi/2.)
                 self._combiner_y = HilbertCombiner(registers_y, location_y,
@@ -369,12 +375,12 @@ class Kicker(object):
             else:
                 raise ValueError('Unknown combiner type')
         else:
-            self._combiner_x = self._combiner_type(registers_x, location_x,
+            self._combiner_x = combiner(registers_x, location_x,
                                                    beta_x, np.pi/2.)
-            self._combiner_y = self._combiner_type(registers_y, location_y,
+            self._combiner_y = combiner(registers_y, location_y,
                                                    beta_y, np.pi/2.)
 
-        self._required_variables = ['mean_xp', 'mean_yp']
+        self._required_variables = ['mean_x', 'mean_y', 'mean_xp', 'mean_yp']
         self._required_variables = get_processor_variables(self._processors_x,
                                                      self._required_variables)
         self._required_variables = get_processor_variables(self._processors_y,
@@ -393,10 +399,10 @@ class Kicker(object):
     def track(self, bunch):
         if self._mpi:
             signal_slice_sets, bunch_slice_sets, bunch_list \
-            = get_local_slice_sets(bunch, self._slicer, self._required_variables)
+            = get_mpi_slice_sets(bunch, self._mpi_gatherer)
         else:
             signal_slice_sets, bunch_slice_sets, bunch_list \
-            = get_mpi_slice_sets(bunch, self._mpi_gatherer)
+            = get_local_slice_sets(bunch, self._slicer, self._required_variables)
 
         if (self._combiner_x is None) or (self._combiner_y is None):
             self.__init_combiners
@@ -404,20 +410,23 @@ class Kicker(object):
         parameters_x, signal_x = self._combiner_x.process()
         parameters_y, signal_y = self._combiner_y.process()
 
-        if self._signal_x is not None:
+        if signal_x is not None:
             parameters_x, signal_x = process(parameters_x, signal_x,
                                              self._processors_x,
                                              slice_sets=signal_slice_sets)
             signal_x = signal_x * self._gain_x
 
-        if self._signal_y is not None:
+        if signal_y is not None:
             parameters_y, signal_y = process(parameters_y, signal_y,
                                              self._processors_y,
                                              slice_sets=signal_slice_sets)
             signal_y = signal_y * self._gain_y
 
+
+#        kick_bunches(bunch_slice_sets, bunch_list, self._local_bunch_indexes,
+#                     signal_x, signal_y, 'divergence')
         kick_bunches(bunch_slice_sets, bunch_list, self._local_bunch_indexes,
-                     signal_x, signal_y, self._axis)
+                     signal_x, signal_y, 'divergence')
 
         if self._mpi:
             self._mpi_gatherer.rebunch(bunch)

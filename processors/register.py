@@ -80,7 +80,7 @@ class Register(object):
         """
         Returns a number of signals in the register after the delay.
         """
-        return max((len(self._register) - self._delay), 0)
+        return max((len(self._signal_register) - self._delay), 0)
 
     def __iter__(self):
         """
@@ -95,14 +95,15 @@ class Register(object):
             raise StopIteration
 
         else:
-            delay = -1. * (len(self._register) - self._n_iter_left) \
-                            * self._phase_shift_per_turn
+            delay = -1. * (len(self._signal_register) - self._n_iter_left) \
+                            * self._phase_advance_per_turn
             self._n_iter_left -= 1
 
             return (self._parameter_register[self._n_iter_left],
                     self._signal_register[self._n_iter_left], delay)
 
     def process(self, parameters, signal, *args, **kwargs):
+#        print 'Register input: ' + str(signal)
 
         if self._store_signal:
             self.input_signal = np.copy(signal)
@@ -167,8 +168,8 @@ class Combiner(object):
                               self._target_beta,
                               self._additional_phase_advance)
 
-        if self._output_parameters is None:
-            self._combined_parameters = copy.copy(registers[0].parameters)
+        if self._combined_parameters is None:
+            self._combined_parameters = copy.copy(self._registers[0].parameters)
             self._combined_parameters['location'] = self._target_location
             self._combined_parameters['beta'] = self._target_beta
 
@@ -178,7 +179,9 @@ class Combiner(object):
             self.output_signal = np.copy(signal)
             self.output_parameters = copy.copy(self._combined_parameters)
 
-        return parameters, signal
+#        print 'Combiner output: ' + str(signal)
+
+        return self._combined_parameters, signal
 
 # TODO: add beta correction, which depends if x -> x or x -> xp
 class CosineSumCombiner(Combiner):
@@ -216,15 +219,30 @@ class CosineSumCombiner(Combiner):
         return combined_signal
 
 class HilbertCombiner(Combiner):
-    def __init__(self, n_taps, *args, **kwargs):
-        self._n_taps = n_taps
+    def __init__(self, *args, **kwargs):
+        if 'n_taps' in kwargs:
+            self._n_taps = kwargs['n_taps']
+        else:
+            self._n_taps = None
 
         self._coefficients = None
         super(self.__class__, self).__init__(*args, **kwargs)
         self.label = 'Hilbert combiner'
 
+    @property
+    def n_taps(self):
+        return self._n_taps
+
+    @n_taps.setter
+    def n_taps(self, value):
+        self._n_taps = value
+
+
     def combine(self, registers, target_location, target_beta, additional_phase_advance):
         if self._coefficients is None:
+            print registers
+            if self._n_taps is None:
+                self._n_taps = registers[0].max_length
             self._coefficients = [None]*len(registers)
 
         combined_signal = None
@@ -232,8 +250,8 @@ class HilbertCombiner(Combiner):
         for i, register in enumerate(registers):
             if len(register) >= len(self._coefficients):
                 if self._coefficients[i] is None:
-                    self._coefficients[i] = self.generate_coefficients(
-                            register, target_location,
+                    self._coefficients[i] = self.__generate_coefficients(
+                            register, target_location, target_beta,
                             additional_phase_advance)
 
                 for j, (parameters, signal, delay) in enumerate(register):
@@ -245,13 +263,15 @@ class HilbertCombiner(Combiner):
 
                     if combined_signal is None:
                         combined_signal = np.zeros(len(signal))
-                    combined_signal += beta_correction * self.coefficients[i][j] * signal
 
-        combined_signal = combined_signal/float(len(registers))
+                    combined_signal += beta_correction * self._coefficients[i][j] * signal
+
+        if combined_signal is not None:
+            combined_signal = combined_signal/float(len(registers))
 
         return combined_signal
 
-    def generate_coefficients(self, register, target_location, target_beta, additional_phase_advance):
+    def __generate_coefficients(self, register, target_location, target_beta, additional_phase_advance):
         parameters = register.parameters
 
         delta_phi = -1. * float(register.delay) \
@@ -262,15 +282,14 @@ class HilbertCombiner(Combiner):
         delta_position = parameters['location'] - target_location
         delta_phi += delta_position
         if delta_position > 0:
-            delta_phi -= self._phase_shift_per_turn
+            delta_phi -= register.phase_advance_per_turn
 
         delta_phi -= additional_phase_advance
-
 
         coefficients = np.zeros(self._n_taps)
 
         for i in xrange(self._n_taps):
-            n = i
+            n = self._n_taps-i-1
             n -= self._n_taps/2
             h = 0.
 
@@ -279,6 +298,7 @@ class HilbertCombiner(Combiner):
             elif n % 2 == 1:
                 h = -2. * np.sin(delta_phi) / (pi * float(n))
             coefficients[i] = h
+        return coefficients
 
 class VectorSumCombiner(Combiner):
     def __init__(self, *args, **kwargs):
@@ -297,32 +317,53 @@ class VectorSumCombiner(Combiner):
             prev_parameters = None
             prev_signal = None
             prev_delay = None
-            for i, (parameters, signal, delay) in enumerate(registers[0]):
-                if i == 0:
-                    pass
-                else:
-                    delta_phi = delay - prev_delay
-                    re, im = self.determine_vector(prev_signal, 0, signal,
-                                                   delta_phi)
 
-                    rotation_angle = prev_delay - delta_phi/2.
-                    delta_position = parameters.additional['location'] - target_location
-                    rotation_angle += delta_position
-                    if delta_position > 0:
-                        rotation_angle -= registers[0].phase_advance_per_turn
+            if len(registers[0]) > 1:
 
-                    calculated_signal = self.rotate_vector(re, im, rotation_angle)
-                    n_signals += 1
-
-                    if target_beta is not None:
-                        beta_correction = 1. / np.sqrt(parameters['beta'] * target_beta)
+                for i, (parameters, signal, delay) in enumerate(registers[0]):
+                    if i == 0:
+                        combined_signal = np.zeros(len(signal))
+                        prev_signal = np.zeros(len(signal))
+#                        print 'len(registers[0])' + str(len(registers[0]))
                     else:
-                        beta_correction = 1.
-                    combined_signal = combined_signal + beta_correction * calculated_signal
+#                        print 'signal: ' + str(signal)
+                        delta_phi = delay - prev_delay
+#                        print 'delta_phi: ' + str(delta_phi)
+                        re, im = self.__determine_vector(prev_signal, signal,
+                                                         delta_phi)
 
-                prev_parameters = parameters
-                prev_signal = signal
-                prev_delay = delay
+                        rotation_angle = delay - delta_phi/2.
+
+
+                        delta_position = parameters['location'] - target_location
+#                        print 'delta_position: ' + str(delta_position)
+
+                        rotation_angle += delta_position
+
+                        if delta_position > 0:
+                            rotation_angle -= registers[0].phase_advance_per_turn
+
+                        rotation_angle -= additional_phase_advance
+#                        rotation_angle -= pi/2.
+#                        print 'additional_phase_advance: ' + str(additional_phase_advance)
+
+#                        print 'rotation_angle: ' + str(rotation_angle)
+                        calculated_signal = self.__rotate_vector(re, im, rotation_angle)
+                        n_signals += 1
+
+
+                        if target_beta is not None:
+                            beta_correction = 1. / np.sqrt(parameters['beta'] * target_beta)
+                        else:
+                            beta_correction = 1.
+#                        beta_correction = 1.
+                        combined_signal = combined_signal + beta_correction * calculated_signal
+
+    #                print 'signal: ' + str(signal)
+    #                print 'prev_signal: ' + str(prev_signal)
+                    prev_parameters = parameters
+                    np.copyto(prev_signal,signal)
+                    prev_delay = delay
 
         elif len(registers) > 1:
             prev_register = registers[0]
@@ -331,6 +372,9 @@ class VectorSumCombiner(Combiner):
             # TODO: beta from both pickups must be taken into account. Fix it!
             for register in registers:
                 for (parameters_1, signal_1, delay_1), (parameters_2, signal_2, delay_2) in zip(prev_register,register):
+                    if combined_signal is None:
+                        combined_signal = np.zeros(len(signal_1))
+
                     phi_1 = delay_1 + parameters_1['location']
                     phi_2 = delay_2 + parameters_2['location']
 
@@ -344,7 +388,7 @@ class VectorSumCombiner(Combiner):
                     if delta_position > 0:
                         rotation_angle -= register.phase_advance_per_turn
 
-                    calculated_signal = self.rotate_vector(re, im, rotation_angle)
+                    calculated_signal = self.__rotate_vector(re, im, rotation_angle)
                     n_signals += 1
                     if target_beta is not None:
                         beta_correction = 1. / np.sqrt(parameters_1['beta'] * target_beta)
@@ -357,21 +401,25 @@ class VectorSumCombiner(Combiner):
             raise ValueError('At least one register must be given.')
 
         if combined_signal is not None:
+#            print 'combined_signal: ' + str(combined_signal)
+#            print 'float(n_signals): ' + str(float(n_signals))
             combined_signal = combined_signal/float(n_signals)
+
+#        print 'combined_signal: ' + str(combined_signal)
 
         return combined_signal
 
-    def determine_vector(signal_1, signal_2, delta_phi):
+    def __determine_vector(self,signal_1, signal_2, delta_phi):
 
         s = np.sin(delta_phi/2.)
         c = np.cos(delta_phi/2.)
 
-        re = 0.5 * (signal_1 + signal_2) * (c + s * s / c)
-        im = -s * signal_2 + c / s * (re - c * signal_2)
+        re = 0.5 * (signal_2 + signal_1) * (c + s * s / c)
+        im = -s * signal_1 + c / s * (re - c * signal_1)
 
         return re, im
 
-    def rotate_vector(re, im, angle):
+    def __rotate_vector(self,re, im, angle):
 
         s = np.sin(angle)
         c = np.cos(angle)
@@ -440,11 +488,12 @@ class TurnDelay(object):
         self._tune = tune
         self._n_taps = n_taps
         self._combiner_type = combiner
+        self._additional_phase_advance = additional_phase_advance
 
         self._register = Register(self._n_taps, self._tune, self._delay)
         self._combiner = None
 
-        self.extensions = ['store', 'bunch']
+        self.extensions = ['store']
 
         self._store_signal = store_signal
         self.label = 'TurnDelay'
@@ -478,7 +527,7 @@ class TurnDelay(object):
         target_beta = parameters['beta']
         extra_phase = self._additional_phase_advance
 
-        if isinstance(self._combiner_type, str):
+        if isinstance(self._combiner_type, (str,unicode)):
             if self._combiner_type == 'vector_sum':
                 self._combiner = VectorSumCombiner(registers, target_location,
                                                    target_beta, extra_phase)

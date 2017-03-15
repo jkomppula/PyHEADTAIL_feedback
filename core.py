@@ -25,7 +25,8 @@ import numpy as np
 def Parameters():
     """ Returns a prototype for signal parameters."""
     return {'class': 0, 'bin_edges': np.array([]), 'n_segments': 0,
-              'n_bins_per_segment': 0, 'segment_midpoints': np.array([])}
+            'n_bins_per_segment': 0, 'segment_midpoints': np.array([]),
+            'location': 0., 'beta': 0.}
 
 
 def Signal():
@@ -75,8 +76,6 @@ def get_processor_extensions(processors, available_extensions=None):
     the betatron phase advance from the reference point of the accelerator and a value of the beta function
 
 """
-# TODO: rename beta_function to beta
-BeamParameters = collections.namedtuple('BeamParameters', ['phase_advance','beta_function'])
 
 def get_processor_variables(processors, required_variables = None):
     """Function which checks bunch variables required by signal processors. In PyHEADTAIL bunch variables are
@@ -102,69 +101,3 @@ def get_processor_variables(processors, required_variables = None):
         required_variables.remove('z_bins')
 
     return required_variables
-
-
-#TODO:
-def combine(target_beam_parameters,registers):
-    """This will be a general function for combining signal from different betatron phase advances """
-    target_phase_advance = target_beam_parameters.phase_advance
-    target_beta = target_beam_parameters.beta_function
-
-    source_phase_advances = []
-    source_betas = []
-
-    for register in registers:
-        source_phase_advances.append(register.beam_parameters.phase_advance)
-        source_betas.append(register.beam_parameters.beta_function)
-
-    target_signal = None
-    n_source_signal = None
-
-
-
-    total_signal = None
-    n_signals = 0
-
-    if len(registers) == 1:
-        # If there is only one register, uses signals from different turns for combination
-
-        prev_signal = None
-        for signal in registers[0]:
-            if total_signal is None:
-                prev_signal = signal
-                total_signal = np.zeros(len(signal[0]))
-            phase_conv_coeff = 1. / np.sqrt(beam_parameters.beta_function * registers[0].beam_parameters.beta_function)
-            total_signal += phase_conv_coeff * registers[0].combine(signal, prev_signal, target_phase_advance, True)
-            n_signals += 1
-            prev_signal = signal
-
-    else:
-        # if len(registers) == 2 and registers[0].combination == 'combined':
-
-        if registers[0].combination == 'combined':
-            # If there are only two register and the combination requires signals from two register, there is only
-            # one pair of registers
-            prev_register = registers[0]
-            first_iterable = 1
-        else:
-            # In other cases, loop can go through all successive register pairs
-            prev_register = registers[-1]
-            first_iterable = 0
-
-        for register in registers[first_iterable:]:
-            # print prev_register
-            # print register
-            phase_conv_coeff = 1. / np.sqrt(beam_parameters.beta_function * prev_register.beam_parameters.beta_function)
-            for signal_1, signal_2 in itertools.izip(prev_register, register):
-                if total_signal is None:
-                    total_signal = np.zeros(len(signal_1[0]))
-                total_signal += phase_conv_coeff * prev_register.combine(signal_1, signal_2, reader_phase_advance, True)
-                n_signals += 1
-            prev_register = register
-
-    if total_signal is not None:
-        total_signal /= float(n_signals)
-
-    return total_signal
-
-# general generator for signals?
