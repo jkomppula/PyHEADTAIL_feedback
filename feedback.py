@@ -356,29 +356,34 @@ class Kicker(object):
 
         if isinstance(combiner, (str,unicode)):
             if combiner == 'vector_sum':
-                self._combiner_x = VectorSumCombiner(registers_x, location_x,
-                                                   beta_x, np.pi/2.)
-                self._combiner_y = VectorSumCombiner(registers_y, location_y,
-                                                   beta_y, np.pi/2.)
-
+                self._combiner_x = VectorSumCombiner(registers_x,
+                                                     location_x, beta_x,
+                                                     beta_conversion = '90_deg')
+                self._combiner_y = VectorSumCombiner(registers_y,
+                                                     location_y, beta_y,
+                                                     beta_conversion = '90_deg')
             elif combiner == 'cosine_sum':
-                self._combiner_x = CosineSumCombiner(registers_x, location_x,
-                                                   beta_x, np.pi/2.)
-                self._combiner_y = CosineSumCombiner(registers_y, location_y,
-                                                   beta_y, np.pi/2.)
+                self._combiner_x = CosineSumCombiner(registers_x,
+                                                     location_x, beta_x,
+                                                     beta_conversion = '90_deg')
+                self._combiner_y = CosineSumCombiner(registers_y,
+                                                     location_y, beta_y,
+                                                     beta_conversion = '90_deg')
 
             elif combiner == 'hilbert':
-                self._combiner_x = HilbertCombiner(registers_x, location_x,
-                                                   beta_x, np.pi/2.)
-                self._combiner_y = HilbertCombiner(registers_y, location_y,
-                                                   beta_y, np.pi/2.)
+                self._combiner_x = HilbertCombiner(registers_x,
+                                                     location_x, beta_x,
+                                                     beta_conversion = '90_deg')
+                self._combiner_y = HilbertCombiner(registers_y,
+                                                     location_y, beta_y,
+                                                     beta_conversion = '90_deg')
             else:
                 raise ValueError('Unknown combiner type')
         else:
-            self._combiner_x = combiner(registers_x, location_x,
-                                                   beta_x, np.pi/2.)
-            self._combiner_y = combiner(registers_y, location_y,
-                                                   beta_y, np.pi/2.)
+            self._combiner_x = combiner(registers_x, location_x, beta_x,
+                                        beta_conversion = '90_deg')
+            self._combiner_y = combiner(registers_y, location_y, beta_y,
+                                        beta_conversion = '90_deg')
 
         self._required_variables = ['mean_x', 'mean_y', 'mean_xp', 'mean_yp']
         self._required_variables = get_processor_variables(self._processors_x,

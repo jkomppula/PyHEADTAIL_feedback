@@ -127,7 +127,8 @@ class Combiner(object):
     __metaclass__ = ABCMeta
 
     def __init__(self, registers, target_location, target_beta=None,
-                 additional_phase_advance=0., store_signal=False):
+                 additional_phase_advance=0., beta_conversion = '0_deg',
+                 store_signal=False):
         """
         Parameters
         ----------
@@ -145,6 +146,14 @@ class Combiner(object):
         self._target_location = target_location
         self._target_beta = target_beta
         self._additional_phase_advance = additional_phase_advance
+        self._beta_conversion = beta_conversion
+
+        if self._beta_conversion == '0_deg':
+            pass
+        elif self._beta_conversion == '90_deg':
+            self._additional_phase_advance += pi/2.
+        else:
+            raise ValueError('Unknown beta conversion type.')
 
         self._combined_parameters = None
 
@@ -158,7 +167,7 @@ class Combiner(object):
         self.output_parameters = None
 
     @abstractmethod
-    def combine(self, registers, target_location, target_beta, additional_phase_advance):
+    def combine(self, registers, target_location, target_beta, additional_phase_advance, beta_conversion):
         pass
 
     def process(self, *args, **kwargs):
@@ -166,7 +175,8 @@ class Combiner(object):
         signal = self.combine(self._registers,
                               self._target_location,
                               self._target_beta,
-                              self._additional_phase_advance)
+                              self._additional_phase_advance,
+                              self._beta_conversion)
 
         if self._combined_parameters is None:
             self._combined_parameters = copy.copy(self._registers[0].parameters)
@@ -238,7 +248,7 @@ class HilbertCombiner(Combiner):
         self._n_taps = value
 
 
-    def combine(self, registers, target_location, target_beta, additional_phase_advance):
+    def combine(self, registers, target_location, target_beta, additional_phase_advance, beta_conversion):
         if self._coefficients is None:
             print registers
             if self._n_taps is None:
@@ -300,15 +310,15 @@ class HilbertCombiner(Combiner):
             coefficients[i] = h
         return coefficients
 
+
 class VectorSumCombiner(Combiner):
     def __init__(self, *args, **kwargs):
         super(self.__class__, self).__init__(*args, **kwargs)
         self.label = 'Vector sum combiner'
+        self._warning_printed = False
 
-    def combine(self, registers, target_location, target_beta, additional_phase_advance):
-        # determines a complex number representation from two signals (e.g. from two pickups or different turns), by using
-        # knowledge about phase advance between signals. After this turns the vector to the reader's phase
-        # TODO: Why not x2[3]-x1[3]?
+    def combine(self, registers, target_location, target_beta,
+                additional_phase_advance, beta_conversion):
 
         combined_signal = None
         n_signals = 0
@@ -324,108 +334,150 @@ class VectorSumCombiner(Combiner):
                     if i == 0:
                         combined_signal = np.zeros(len(signal))
                         prev_signal = np.zeros(len(signal))
-#                        print 'len(registers[0])' + str(len(registers[0]))
                     else:
-#                        print 'signal: ' + str(signal)
-                        delta_phi = delay - prev_delay
-#                        print 'delta_phi: ' + str(delta_phi)
-                        re, im = self.__determine_vector(prev_signal, signal,
-                                                         delta_phi)
+                        phase_advance_per_turn = (
+                                registers[0].phase_advance_per_turn)
+                        location_1 = prev_parameters['location']
+                        beta_1 = prev_parameters['beta']
+                        delay_1 = prev_delay
+                        location_2 = parameters['location']
+                        beta_2 = prev_parameters['beta']
+                        delay_2 = delay
 
-                        rotation_angle = delay - delta_phi/2.
+                        readings_angle_diff, final_rotation_angle = (
+                                self.__determine_angles(target_location,
+                                                        phase_advance_per_turn,
+                                                        location_1, delay_1,
+                                                        location_2, delay_2
+                                                        )
+                                )
 
+                        final_rotation_angle += additional_phase_advance
 
-                        delta_position = parameters['location'] - target_location
-#                        print 'delta_position: ' + str(delta_position)
+                        re, im = self.__determine_vector(prev_signal, beta_1,
+                                                         signal, beta_2,
+                                                         readings_angle_diff)
 
-                        rotation_angle += delta_position
-
-                        if delta_position > 0:
-                            rotation_angle -= registers[0].phase_advance_per_turn
-
-                        rotation_angle -= additional_phase_advance
-#                        rotation_angle -= pi/2.
-#                        print 'additional_phase_advance: ' + str(additional_phase_advance)
-
-#                        print 'rotation_angle: ' + str(rotation_angle)
-                        calculated_signal = self.__rotate_vector(re, im, rotation_angle)
-                        n_signals += 1
-
+                        calculated_signal = self.__rotate_vector(re, im,
+                                                                 final_rotation_angle)
 
                         if target_beta is not None:
-                            beta_correction = 1. / np.sqrt(parameters['beta'] * target_beta)
+                            if beta_conversion == '90_deg':
+                                beta_correction = 1./np.sqrt(beta_1*target_beta)
+                            elif beta_conversion == '0_deg':
+                                beta_correction = np.sqrt(target_beta/beta_1)
                         else:
                             beta_correction = 1.
-#                        beta_correction = 1.
-                        combined_signal = combined_signal + beta_correction * calculated_signal
 
-    #                print 'signal: ' + str(signal)
-    #                print 'prev_signal: ' + str(prev_signal)
-                    prev_parameters = parameters
+                        n_signals += 1
+                        combined_signal = combined_signal \
+                                        + beta_correction * calculated_signal
+
                     np.copyto(prev_signal,signal)
+                    prev_parameters = parameters
                     prev_delay = delay
 
         elif len(registers) > 1:
             prev_register = registers[0]
 
-
-            # TODO: beta from both pickups must be taken into account. Fix it!
-            for register in registers:
+            for register in registers[1:]:
                 for (parameters_1, signal_1, delay_1), (parameters_2, signal_2, delay_2) in zip(prev_register,register):
-                    if combined_signal is None:
-                        combined_signal = np.zeros(len(signal_1))
 
-                    phi_1 = delay_1 + parameters_1['location']
-                    phi_2 = delay_2 + parameters_2['location']
+                        phase_advance_per_turn = (
+                                prev_register.phase_advance_per_turn)
+                        location_1 = parameters_1['location']
+                        beta_1 = parameters_1['beta']
+                        location_2 = parameters_2['location']
+                        beta_2 = parameters_2['beta']
 
-                    delta_phi = phi_1 - phi_2
+                        readings_angle_diff, final_rotation_angle = (
+                                self.__determine_angles(target_location,
+                                                        phase_advance_per_turn,
+                                                        location_1, delay_1,
+                                                        location_2, delay_2
+                                                        )
+                                )
 
-                    re, im = self.determine_vector(signal_1, signal_2, delta_phi)
+                        final_rotation_angle += additional_phase_advance
 
-                    rotation_angle = delay_1 - delta_phi/2.
-                    delta_position = parameters_1['location'] - target_location
-                    rotation_angle += delta_position
-                    if delta_position > 0:
-                        rotation_angle -= register.phase_advance_per_turn
+                        re, im = self.__determine_vector(signal_1, beta_1,
+                                                         signal_2, beta_2,
+                                                         readings_angle_diff)
 
-                    calculated_signal = self.__rotate_vector(re, im, rotation_angle)
-                    n_signals += 1
-                    if target_beta is not None:
-                        beta_correction = 1. / np.sqrt(parameters_1['beta'] * target_beta)
-                    else:
-                        beta_correction = 1.
-                    combined_signal = combined_signal + beta_correction * calculated_signal
+                        calculated_signal = self.__rotate_vector(re, im,
+                                                                 final_rotation_angle
+                                                                 )
+
+                        if target_beta is not None:
+                            if beta_conversion == '90_deg':
+                                beta_correction = 1./np.sqrt(beta_1*target_beta)
+                            elif beta_conversion == '0_deg':
+                                beta_correction = np.sqrt(target_beta/beta_1)
+                        else:
+                            beta_correction = 1.
+
+                        n_signals += 1
+                        if combined_signal is None:
+                            combined_signal = np.zeros(len(signal_1))
+                        combined_signal = combined_signal \
+                                        + beta_correction * calculated_signal
 
                 prev_register = register
         else:
             raise ValueError('At least one register must be given.')
 
         if combined_signal is not None:
-#            print 'combined_signal: ' + str(combined_signal)
-#            print 'float(n_signals): ' + str(float(n_signals))
-            combined_signal = combined_signal/float(n_signals)
-
-#        print 'combined_signal: ' + str(combined_signal)
+            combined_signal = combined_signal / float(n_signals)
 
         return combined_signal
 
-    def __determine_vector(self,signal_1, signal_2, delta_phi):
+    def __determine_angles(self, target_location, phase_advance_per_turn,
+                           signal_1_location, signal_1_delay,
+                           signal_2_location, signal_2_delay):
 
-        s = np.sin(delta_phi/2.)
-        c = np.cos(delta_phi/2.)
+        readings_location_difference = signal_2_location - signal_1_location
+        if readings_location_difference < 0.:
+            readings_location_difference += readings_location_difference
 
-        re = 0.5 * (signal_2 + signal_1) * (c + s * s / c)
-        im = -s * signal_1 + c / s * (re - c * signal_1)
+        readings_delay_difference = signal_2_delay - signal_1_delay
+        readings_phase_difference = readings_location_difference \
+                                        + readings_delay_difference
 
+        if self._warning_printed == False:
+            if (readings_phase_difference%(-1.*np.pi) > 0.2) or (readings_phase_difference%np.pi < 0.2):
+                self._warning_printed = True
+                print "WARNING: It is recommended that the angle between the readings is at least 12 deg"
+
+        target_location_difference = target_location - signal_1_location
+        if target_location_difference < 0.:
+            target_location_difference += readings_location_difference
+
+        target_delay_difference = -1. * signal_1_delay
+        target_phase_difference = target_location_difference \
+                                        + target_delay_difference
+
+        return readings_phase_difference, target_phase_difference
+
+
+
+
+    def __determine_vector(self,signal_1, beta_1, signal_2, beta_2,
+                           angle_difference):
+        """
+        """
+        s = np.sin(angle_difference)
+        c = np.cos(angle_difference)
+
+        re = signal_1
+        im = (1./s) * np.sqrt(beta_1/beta_2) * signal_2 - (c/s) * signal_1
         return re, im
 
-    def __rotate_vector(self,re, im, angle):
+    def __rotate_vector(self,re, im, rotation_angle):
 
-        s = np.sin(angle)
-        c = np.cos(angle)
+        s = np.sin(rotation_angle)
+        c = np.cos(rotation_angle)
 
-        return c*re-s*im
-
+        return c*re+s*im
 
 class FIRCombiner(Combiner):
     def __init__(self, coefficients, *args, **kwargs):
