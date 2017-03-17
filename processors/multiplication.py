@@ -172,7 +172,7 @@ class ChargeWeighter(Multiplication):
     """ The signal is weighted by charge (a number of macroparticles per slice)
     """
 
-    def __init__(self, normalization = 'maximum', **kwargs):
+    def __init__(self, normalization = 'segment_max', **kwargs):
         super(self.__class__, self).__init__('n_macroparticles_per_slice', normalization,recalculate_multiplier = True
                                              , **kwargs)
         self.label = 'Charge weighter'

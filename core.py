@@ -24,9 +24,13 @@ import numpy as np
 
 def Parameters():
     """ Returns a prototype for signal parameters."""
-    return {'class': 0, 'bin_edges': np.array([]), 'n_segments': 0,
-            'n_bins_per_segment': 0, 'segment_midpoints': np.array([]),
-            'location': 0., 'beta': 0.}
+    return {'class': 0,
+            'bin_edges': np.array([]),
+            'n_segments': 0,
+            'n_bins_per_segment': 0,
+            'segment_midpoints': np.array([]),
+            'location': 0.,
+            'beta': 1.}
 
 
 def Signal():

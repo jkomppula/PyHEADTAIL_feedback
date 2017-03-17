@@ -148,17 +148,17 @@ class Convolution(object):
         self._store_signal  = store_signal
 
         self.input_signal = None
-        self.input_signal_parameters = None
+        self.input_parameters = None
 
         self.output_signal = None
-        self.output_signal_parameters = None
+        self.output_parameters = None
 
 
-    def process(self, signal_parameters, signal, *args, **kwargs):
+    def process(self, parameters, signal, *args, **kwargs):
 
         if self.output_signal is None:
-            self.__init_variables(signal_parameters.bin_edges,signal,signal_parameters.n_segments,
-                                  signal_parameters.n_bins_per_segment)
+            self.__init_variables(parameters['bin_edges'],signal,parameters['n_segments'],
+                                  parameters['n_bins_per_segment'])
         else:
             self.output_signal.fill(0.)
 
@@ -177,10 +177,10 @@ class Convolution(object):
 
         if self._store_signal:
             self.input_signal = copy.copy(signal)
-            self.input_signal_parameters = copy.copy(signal_parameters)
-            self.output_signal_parameters = copy.copy(signal_parameters)
+            self.input_parameters = copy.copy(parameters)
+            self.output_parameters = copy.copy(parameters)
 
-        return signal_parameters, self.output_signal
+        return parameters, self.output_signal
 
     def __init_variables(self,bin_edges,signal,n_segments,n_bins_per_segment):
 
@@ -589,20 +589,20 @@ class FIRfilter(object):
         self._store_signal = store_signal
 
         self.input_signal = None
-        self.input_signal_parameters = None
+        self.input_parameters = None
 
         self.output_signal = None
-        self.output_signal_parameters = None
+        self.output_parameters = None
 
         self.label = 'Digital filter'
 
-    def process(self,signal_parameters, signal, *args, **kwargs):
+    def process(self,parameters, signal, *args, **kwargs):
 
         if self._mode == 'bunch_by_bunch':
 
             if self._n_segments is None:
-                self._n_segments = signal_parameters.n_segments
-                self._n_bins_per_segment = signal_parameters.n_bins_per_segment
+                self._n_segments = parameters['n_segments']
+                self._n_bins_per_segment = parameters['n_bins_per_segment']
                 self.output_signal = np.zeros(self._n_segments*self._n_bins_per_segment)
 
 
@@ -618,10 +618,10 @@ class FIRfilter(object):
 
         if self._store_signal:
             self.input_signal = np.copy(signal)
-            self.input_signal_parameters = copy.copy(signal_parameters)
-            self.output_bin_edges = copy.copy(signal_parameters)
+            self.input_parameters = copy.copy(parameters)
+            self.output_bin_edges = copy.copy(parameters)
 
-        return signal_parameters, self.output_signal
+        return parameters, self.output_signal
 
 
 class NumpyFIRfilter(FIRfilter):
