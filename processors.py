@@ -755,13 +755,17 @@ class Register(object):
 
         if self._in_processor_chain == True:
             temp_signal = np.zeros(len(signal))
-            if len(self) > 0:
+
+            if len(self) > 1:
                 prev = (np.zeros(len(self._register[0])),None,0,self._phase_advance)
 
-                for value in self:
-                    combined = self.combine(value,prev,None)
-                    prev = value
-                    temp_signal += combined / float(len(self))
+                for i, value in enumerate(self):
+                    if i == 0:
+                        prev = value
+                    else:
+                        combined = self.combine(value,prev,None)
+                        prev = value
+                        temp_signal += combined / float(len(self)-1)
 
             return temp_signal
 
@@ -781,17 +785,15 @@ class VectorSumRegister(Register):
     def combine(self,x1,x2,reader_phase_advance,x_to_xp = False):
         # determines a complex number representation from two signals (e.g. from two pickups or different turns), by using
         # knowledge about phase advance between signals. After this turns the vector to the reader's phase
-        # TODO: Why not x2[3]-x1[3]?
 
         if (x1[3] is not None) and (x1[3] != x2[3]):
             phi_x1_x2 = x1[3]-x2[3]
             if phi_x1_x2 < 0:
                 # print "correction"
                 phi_x1_x2 += self._phase_shift_per_turn
+	    phi_x1_x2 += x1[2]-x2[2]
         else:
-            phi_x1_x2 = -1. * self._phase_shift_per_turn
-
-        print "Delta phi: " + str(phi_x1_x2*360./(2*pi)%360.)
+            phi_x1_x2 = x1[2]-x2[2]
 
         s = np.sin(phi_x1_x2/2.)
         c = np.cos(phi_x1_x2/2.)
