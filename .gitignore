@@ -1,10 +1,10 @@
 temp/
+cython_functions.html
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
 *$py.class
-.spyproject/
 
 # C extensions
 *.so
@@ -121,3 +121,4 @@ settings.py
 
 ;;directories to ignore
 .idea/
+.spyproject/
