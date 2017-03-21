@@ -651,6 +651,8 @@ class NoiseGenerator(Addition):
             randoms = np.random.randn(len(seed))
         elif self._distribution == 'uniform':
             randoms = 1./0.577263*(-1.+2.*np.random.rand(len(seed)))
+        else:
+            raise ValueError('Unknown distribution')
 
         if self._reference_level == 'absolute':
             addend = self._RMS_noise_level*randoms
@@ -658,8 +660,52 @@ class NoiseGenerator(Addition):
             addend = self._RMS_noise_level*np.max(seed)*randoms
         elif self._reference_level == 'local':
             addend = seed*self._RMS_noise_level*randoms
+        else:
+            raise ValueError('Unknown reference level')
 
         return addend
+
+
+class DCNoiseGenerator(Addition):
+    """ Adds DC turn by turn noise to a signal. The noise level is given as RMS value of
+        the absolute level (reference_level = 'absolute'), a relative RMS level to the maximum
+        signal (reference_level = 'maximum') or a relative RMS level to local signal values
+        (reference_level = 'local'). Options for the noise distribution are a Gaussian (normal)
+        distribution (distribution = 'normal') and an uniform distribution
+        (distribution = 'uniform')
+    """
+
+    def __init__(self,RMS_noise_level,reference_level = 'absolute', distribution = 'normal'):
+
+        self._RMS_noise_level = RMS_noise_level
+        self._reference_level = reference_level
+        self._distribution = distribution
+
+        super(self.__class__, self).__init__('signal', None, True)
+
+    def addend_function(self,seed):
+
+        addend = np.zeros(len(seed))
+
+        if self._distribution == 'normal' or self._distribution is None:
+            random = np.random.randn(1)[0]
+        elif self._distribution == 'uniform':
+            random = 1./0.577263*(-1.+2.*np.random.rand(1)[0])
+        else:
+            raise ValueError('Unknown distribution')
+
+        if self._reference_level == 'absolute':
+            random *= self._RMS_noise_level
+        elif self._reference_level == 'maximum':
+            random *= self._RMS_noise_level*np.max(seed)
+        else:
+            raise ValueError('Unknown reference level')
+
+        addend.fill(1.)
+        addend = addend*random
+
+        return addend
+
 
 class AdditionFromFile(Addition):
     """ Adds an array to the signal, which is produced by interpolation from the loaded data. Note the seed for
@@ -676,6 +722,7 @@ class AdditionFromFile(Addition):
 
     def addend_function(self, seed):
         return np.interp(seed, self._data[:, 0], self._data[:, 1])
+
 
 class Register(object):
     __metaclass__ = ABCMeta
