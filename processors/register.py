@@ -43,10 +43,9 @@ class Register(object):
         self._delay = delay
         self._phase_advance_per_turn = 2. * np.pi * tune
 
-        self._max_reg_length = self._n_values + self._delay
         self._n_iter_left = 0
-        self._signal_register = deque()
-        self._parameter_register = deque()
+        self._signal_register = deque(maxlen=(n_values + delay))
+        self._parameter_register = deque(maxlen=(n_values + delay))
 
         self.extensions = ['store', 'register']
 
@@ -73,7 +72,7 @@ class Register(object):
         return self._delay
 
     @property
-    def max_length(self):
+    def maxlen(self):
         return self._n_values
 
     def __len__(self):
@@ -103,7 +102,6 @@ class Register(object):
                     self._signal_register[self._n_iter_left], delay)
 
     def process(self, parameters, signal, *args, **kwargs):
-#        print 'Register input: ' + str(signal)
 
         if self._store_signal:
             self.input_signal = np.copy(signal)
@@ -113,12 +111,6 @@ class Register(object):
 
         self._parameter_register.append(parameters)
         self._signal_register.append(signal)
-
-        if len(self._parameter_register) > self._max_reg_length:
-            self._parameter_register.popleft()
-
-        if len(self._signal_register) > self._max_reg_length:
-            self._signal_register.popleft()
 
         return parameters, signal
 

@@ -49,7 +49,6 @@ class Resampler(object):
         self._length_rounding = length_rounding
         self._data_conversion = data_conversion
 
-
         self._n_segments = None
 
         self._input_parameters = None
