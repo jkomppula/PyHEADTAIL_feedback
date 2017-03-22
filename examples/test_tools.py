@@ -325,4 +325,4 @@ class MultibunchMachine(BasicSynchrotron):
             alpha_mom_compaction=alpha, longitudinal_mode='non-linear',
             h_RF=np.atleast_1d(h_RF), V_RF=np.atleast_1d(V_RF),
             dphi_RF=np.atleast_1d(dphi_RF), p0=p0, p_increment=p_increment,
-            charge=charge, mass=mass, wrap_z=wrap_z, verbose=verbose)
+            charge=charge, mass=mass, wrap_z=wrap_z)

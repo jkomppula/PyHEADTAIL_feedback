@@ -44,10 +44,10 @@ def pick_signals(processor, source = 'input'):
     """
 
     if source == 'input':
-        bin_edges = processor.input_signal_parameters.bin_edges
+        bin_edges = processor.input_parameters['bin_edges']
         raw_signal = processor.input_signal
     elif source == 'output':
-        bin_edges = processor.output_signal_parameters.bin_edges
+        bin_edges = processor.output_parameters['bin_edges']
         raw_signal = processor.output_signal
     else:
         raise ValueError('Unknown value for the data source')
@@ -141,11 +141,11 @@ slicer = UniformBinSlicer(50, n_sigma_z=3)
 
 processors_x = [
     Bypass(store_signal = True),
-    ChargeWeighter(normalization = 'average',store_signal  = True),
+    ChargeWeighter(normalization = 'segment_average',store_signal  = True),
 ]
 processors_y = [
     Bypass(store_signal = True),
-    ChargeWeighter(normalization = 'average',store_signal  = True),
+    ChargeWeighter(normalization = 'segment_average',store_signal  = True),
 ]
 gain = 0.1
 feedback_map = OneboxFeedback(gain, slicer, processors_x, processors_y, axis='displacement', mpi = True)
@@ -187,7 +187,7 @@ if rank == 0:
 		print z
 		print feedback_map._mpi_gatherer.total_data
 		print feedback_map._mpi_gatherer.total_data.z_bins
-	
+
 
     # The first plot represents sampling in the each signal processor. The magnitudes of the curves do not represent
     # anything, but the change of the polarity represents a transition from one bin to other.

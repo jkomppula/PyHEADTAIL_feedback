@@ -1,6 +1,6 @@
 import numpy as np
 import collections
-from PyHEADTAIL_MPI.mpi import mpi_data
+from PyHEADTAIL.mpi import mpi_data
 from core import get_processor_variables, process, Parameters
 from processors.register import VectorSumCombiner, CosineSumCombiner
 from processors.register import HilbertCombiner
@@ -107,7 +107,8 @@ def generate_parameters(signal_slice_sets, location=0., beta=1.):
 
 
 def read_signal(signal_x, signal_y, signal_slice_sets, axis):
-    n_slices_per_bunch = signal_slice_sets[0].n_slices
+    # TODO: change the mpi code to support n_slices
+    n_slices_per_bunch = signal_slice_sets[0]._n_slices
     total_length = len(signal_slice_sets) * n_slices_per_bunch
 
     if (signal_x is None) or (len(signal_x) != total_length):
@@ -206,17 +207,20 @@ class OneboxFeedback(object):
         if self._mpi:
             self._mpi_gatherer = mpi_data.MpiGatherer(self._slicer,
                                                       self._required_variables)
-            self._local_bunch_indexes = self._mpi_gatherer.local_bunch_indexes
-        else:
-            self._local_bunch_indexes = [0]
+        self._local_bunch_indexes = None
 
     def track(self, bunch):
         if self._mpi:
             signal_slice_sets, bunch_slice_sets, bunch_list \
             = get_mpi_slice_sets(bunch, self._mpi_gatherer)
+            if self._local_bunch_indexes is None:
+                self._local_bunch_indexes = self._mpi_gatherer.local_bunch_indexes
+
         else:
             signal_slice_sets, bunch_slice_sets, bunch_list \
             = get_local_slice_sets(bunch, self._slicer, self._required_variables)
+            if self._local_bunch_indexes is None:
+                self._local_bunch_indexes = [0]
 
         if (self._parameters_x is None) or (self._signal_x is None):
             self._parameters_x = generate_parameters(signal_slice_sets)
@@ -291,17 +295,22 @@ class PickUp(object):
         if self._mpi:
             self._mpi_gatherer = mpi_data.MpiGatherer(self._slicer,
                                                       self._required_variables)
-            self._local_bunch_indexes = self._mpi_gatherer.local_bunch_indexes
-        else:
-            self._local_bunch_indexes = [0]
+
+        self._local_bunch_indexes = None
 
     def track(self, bunch):
         if self._mpi:
             signal_slice_sets, bunch_slice_sets, bunch_list \
             = get_mpi_slice_sets(bunch, self._mpi_gatherer)
+            if self._local_bunch_indexes is None:
+                self._local_bunch_indexes = self._mpi_gatherer.local_bunch_indexes
+
         else:
             signal_slice_sets, bunch_slice_sets, bunch_list \
             = get_local_slice_sets(bunch, self._slicer, self._required_variables)
+            if self._local_bunch_indexes is None:
+                self._local_bunch_indexes = [0]
+
 
         if (self._parameters_x is None) or (self._signal_x is None):
             self._parameters_x = generate_parameters(signal_slice_sets, self._location_x, self._beta_x)
@@ -397,20 +406,20 @@ class Kicker(object):
         if self._mpi:
             self._mpi_gatherer = mpi_data.MpiGatherer(self._slicer,
                                                       self._required_variables)
-            self._local_bunch_indexes = self._mpi_gatherer.local_bunch_indexes
-        else:
-            self._local_bunch_indexes = [0]
+        self._local_bunch_indexes = None
 
     def track(self, bunch):
         if self._mpi:
             signal_slice_sets, bunch_slice_sets, bunch_list \
             = get_mpi_slice_sets(bunch, self._mpi_gatherer)
+            if self._local_bunch_indexes is None:
+                self._local_bunch_indexes = self._mpi_gatherer.local_bunch_indexes
+
         else:
             signal_slice_sets, bunch_slice_sets, bunch_list \
             = get_local_slice_sets(bunch, self._slicer, self._required_variables)
-
-        if (self._combiner_x is None) or (self._combiner_y is None):
-            self.__init_combiners
+            if self._local_bunch_indexes is None:
+                self._local_bunch_indexes = [0]
 
         parameters_x, signal_x = self._combiner_x.process()
         parameters_y, signal_y = self._combiner_y.process()
