@@ -1,4 +1,5 @@
 temp/
+cython_functions.html
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -120,3 +121,4 @@ settings.py
 
 ;;directories to ignore
 .idea/
+.spyproject/
