@@ -803,6 +803,7 @@ class Register(object):
             temp_signal = np.zeros(len(signal))
 
             if (self.combination == 'combined') and (len(self) > 1):
+#            if (len(self) > 1):
                 prev = (np.zeros(len(self._register[0])),None,0,self._phase_advance)
 
                 for i, value in enumerate(self):
@@ -819,7 +820,7 @@ class Register(object):
                 for i, value in enumerate(self):
                         combined = self.combine(value,prev,None)
                         prev = value
-                        temp_signal += combined / float(len(self)-1)
+                        temp_signal += combined / float(len(self))
 
             return temp_signal
 
@@ -832,8 +833,8 @@ class Register(object):
 class VectorSumRegister(Register):
 
     def __init__(self, n_avg, tune, delay = 0, in_processor_chain=True):
-        self.combination = 'combined'
         super(self.__class__, self).__init__(n_avg, tune, delay, in_processor_chain)
+        self.combination = 'combined'
         self.required_variables = []
 
     def combine(self,x1,x2,reader_phase_advance,x_to_xp = False):
@@ -912,9 +913,9 @@ class CosineSumRegister(Register):
     """
     def __init__(self, n_avg, tune, delay = 0, in_processor_chain=True):
 
-        self.combination = 'individual'
-
         super(self.__class__, self).__init__(n_avg, tune, delay, in_processor_chain)
+
+        self.combination = 'individual'
         self.required_variables = []
 
     def combine(self,x1,x2,reader_phase_advance,x_to_xp = False):

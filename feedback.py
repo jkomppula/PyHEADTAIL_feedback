@@ -304,10 +304,12 @@ class Kicker(object):
                 # one pair of registers
                 prev_register = registers[0]
                 first_iterable = 1
-            else:
+            elif registers[0].combination == 'individual':
                 # In other cases, loop can go through all successive register pairs
                 prev_register = registers[-1]
                 first_iterable = 0
+            else:
+                raise ValueError('Unknown type of combination')
 
             for register in registers[first_iterable:]:
                 # print prev_register
