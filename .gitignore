@@ -1,4 +1,5 @@
 temp/
+cython_hacks.html
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -80,6 +81,7 @@ celerybeat-schedule
 
 # dotenv
 .env
+cython_functions.html
 
 # virtualenv
 venv/
