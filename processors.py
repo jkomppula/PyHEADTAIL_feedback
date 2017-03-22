@@ -802,13 +802,21 @@ class Register(object):
         if self._in_processor_chain == True:
             temp_signal = np.zeros(len(signal))
 
-            if len(self) > 1:
+            if (self.combination == 'combined') and (len(self) > 1):
                 prev = (np.zeros(len(self._register[0])),None,0,self._phase_advance)
 
                 for i, value in enumerate(self):
                     if i == 0:
                         prev = value
                     else:
+                        combined = self.combine(value,prev,None)
+                        prev = value
+                        temp_signal += combined / float(len(self)-1)
+
+            elif (self.combination == 'individual') and (len(self) > 0):
+                prev = (np.zeros(len(self._register[0])),None,0,self._phase_advance)
+
+                for i, value in enumerate(self):
                         combined = self.combine(value,prev,None)
                         prev = value
                         temp_signal += combined / float(len(self)-1)
