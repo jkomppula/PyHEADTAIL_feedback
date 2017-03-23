@@ -413,6 +413,46 @@ class ConvolutionFilter(Convolution):
 
         if self._normalization is None:
             pass
+        elif isinstance(self._normalization, float):
+            impulse_values = impulse_values/self._normalization
+        elif isinstance(self._normalization, tuple):
+            if self._normalization[0] == 'bunch_by_bunch':
+                bunch_length = self._normalization[1] * c
+                bunch_spacing = self._normalization[2] * c
+
+                bunch_locations = np.array([])
+                if (impulse_bin_edges[0,0] < 0):
+                    bunch_locations = np.append(bunch_locations, -1.*np.arange(0.,-1.*impulse_bin_edges[0,0],bunch_spacing))
+                if (impulse_bin_edges[-1,1] > 0):
+                    bunch_locations = np.append(bunch_locations, np.arange(0.,impulse_bin_edges[-1,1],bunch_spacing))
+
+                bunch_locations = np.unique(bunch_locations)
+
+                min_mask = (bunch_locations >= impulse_bin_edges[0,0])
+                max_mask = (bunch_locations <= impulse_bin_edges[-1,1])
+
+                bunch_locations = bunch_locations[min_mask*max_mask]
+
+                total_sum = 0.
+#                print 'impulse_bin_edges[0,0]:'
+#                print impulse_bin_edges[0,0]
+#                print 'impulse_bin_edges[-1,1]:'
+#                print impulse_bin_edges[-1,1]
+#
+#                print 'bunch_locations:'
+#                print bunch_locations
+                total_sum = np.sum(np.interp([bunch_locations], impulse_bin_mids, impulse_values))
+#                for location in bunch_locations:
+#                    min_mask = (impulse_bin_mids > (location - bunch_length/2.))
+#                    max_mask = (impulse_bin_mids < (location + bunch_length/2.))
+#
+#                    total_sum += np.mean(impulse_values[min_mask*max_mask])
+
+                impulse_values = impulse_values/total_sum
+
+            else:
+                raise ValueError('Unknown normalization method')
+
         elif self._normalization == 'max':
             impulse_values = impulse_values/np.max(impulse_values)
         elif self._normalization == 'min':
@@ -424,6 +464,8 @@ class ConvolutionFilter(Convolution):
         elif self._normalization == 'integral':
             bin_widths = impulse_bin_edges[:,1]-impulse_bin_edges[:,0]
             impulse_values = impulse_values / np.abs(np.sum(impulse_values*bin_widths))
+        else:
+            raise ValueError('Unknown normalization method')
 
         if self._zero_bin_value is not None:
             for i, edges in enumerate(impulse_bin_edges):
