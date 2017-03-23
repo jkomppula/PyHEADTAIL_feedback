@@ -23,8 +23,7 @@ from scipy.constants import c, e, m_p, pi
 from PyHEADTAIL.particles.slicing import UniformBinSlicer
 from PyHEADTAIL_feedback.feedback import Kicker, PickUp
 from PyHEADTAIL_feedback.processors.multiplication import ChargeWeighter
-from PyHEADTAIL_feedback.processors.register import HilbertPhaseShiftRegister
-from PyHEADTAIL_feedback.processors.signal import BeamParameters
+from PyHEADTAIL_feedback.processors.register import Register
 from PyHEADTAIL_feedback.processors.convolution import Sinc, Lowpass
 from PyHEADTAIL_feedback.processors.resampling import ADC, DAC, UpSampler
 
@@ -45,12 +44,12 @@ def pick_signals(processor, source = 'input'):
     :return: (t, z, bins, signal), where 't' and 'z' are time or position values for the signal values (which can be used
         as x values for plotting), 'bins' are data for visualizing sampling and 'signal' is the actual signal.
     """
-
+    print processor
     if source == 'input':
-        bin_edges = processor.input_signal_parameters.bin_edges
+        bin_edges = processor.input_parameters['bin_edges']
         raw_signal = processor.input_signal
     elif source == 'output':
-        bin_edges = processor.output_signal_parameters.bin_edges
+        bin_edges = processor.output_parameters['bin_edges']
         raw_signal = processor.output_signal
     else:
         raise ValueError('Unknown value for the data source')
@@ -78,6 +77,7 @@ def pick_signals(processor, source = 'input'):
     t = z/c
 
     return (t, z, bins, signal)
+
 
 
 def kicker(bunch):
@@ -147,51 +147,74 @@ signal_length = 2.*bunch_spacing
 
 f_c = 40e6
 
-pickup_processors_x = [
+
+
+
+# FEEDBACK MAP
+# ==============
+# Actual PyHEADTAIL map for the feedback system is created here. It is exactly same as presented for a single bunch
+# in the file '002_separated_pickup_and_kicker.ipynb'. Only difference is that 'mpi' flag is set into 'True' in OneboxFeedback
+# object.
+#
+# Flags 'store_signal' are set into 'True' in the signal processors in order to visualize signal processing after the
+# simulation, However, the flag does not affect the actual simulation.
+
+pickup_beta_x = machine.beta_x_inj
+pickup_beta_y = machine.beta_y_inj
+
+kicker_beta_x = machine.beta_x_inj
+kicker_beta_y = machine.beta_y_inj
+
+pickup_location_x = 1.*2.*pi/float(n_segments)*machine.Q_x
+pickup_location_y = 1.*2.*pi/float(n_segments)*machine.Q_y
+
+kicker_location_x = 2.*2.*pi/float(n_segments)*machine.Q_x
+kicker_location_y = 2.*2.*pi/float(n_segments)*machine.Q_y
+
+delay = 1
+n_values = 3
+
+processors_pickup_x = [
     ChargeWeighter(normalization = 'segment_average',store_signal  = True),
     # In this example a sample per bunch sampling rate is used for the ADC
     ADC(f_ADC, n_bits = 8, input_range = (-1e-3,1e-3), signal_length = signal_length,store_signal  = True),
-    HilbertPhaseShiftRegister(n_values, machine.accQ_x, delay,store_signal  = True)
+    Register(n_values, machine.accQ_x, delay,store_signal  = True)
 ]
-
-pickup_processors_y = [
+processors_pickup_y = [
     ChargeWeighter(normalization = 'segment_average',store_signal  = True),
     ADC(f_ADC, n_bits = 8, input_range = (-1e-3,1e-3), signal_length = signal_length,store_signal  = True),
-    HilbertPhaseShiftRegister(n_values, machine.accQ_x, delay,store_signal  = True)
+    Register(n_values, machine.accQ_y, delay,store_signal  = True)
 ]
 
+pickup_map = PickUp(slicer,processors_pickup_x,processors_pickup_y,
+                    pickup_location_x, pickup_beta_x, pickup_location_y, pickup_beta_y, mpi = True)
 
-pickup_beam_parameters_x = BeamParameters(1.*2.*pi/float(n_segments)*machine.accQ_x,machine.beta_x_inj)
-pickup_beam_parameters_y = BeamParameters(1.*2.*pi/float(n_segments)*machine.accQ_y,machine.beta_y_inj)
-
-pickup_map = PickUp(slicer,pickup_processors_x,pickup_processors_y,
-       pickup_beam_parameters_x, pickup_beam_parameters_y, mpi = True)
-
-registers_x = [pickup_processors_x[2]]
-registers_y = [pickup_processors_y[2]]
-
-kicker_processors_x = [
+processors_kicker_x = [
     # multiplies the sampling rate by a factor of three by adding zeros values between the samples
     UpSampler(3,kernel=[0,1,0],store_signal  = True),
     # Lowpass(1*f_c,store_signal  = True),
     Sinc(1*f_c,store_signal  = True),
     # returns to the bin set of the original slice set. The values for the slices are determined by using spline interpolation
     DAC(store_signal  = True)
-]
-kicker_processors_y = [
+    ]
+processors_kicker_y = [
+    # multiplies the sampling rate by a factor of three by adding zeros values between the samples
     UpSampler(3,kernel=[0,1,0],store_signal  = True),
     # Lowpass(1*f_c,store_signal  = True),
     Sinc(1*f_c,store_signal  = True),
+    # returns to the bin set of the original slice set. The values for the slices are determined by using spline interpolation
     DAC(store_signal  = True)
-]
+    ]
 
-kicker_beam_parameters_x = BeamParameters(2.*2.*pi/float(n_segments)*machine.accQ_x,machine.beta_x_inj)
-kicker_beam_parameters_y = BeamParameters(2.*2.*pi/float(n_segments)*machine.accQ_y,machine.beta_y_inj)
+registers_x = [processors_pickup_x[-1]]
+registers_y = [processors_pickup_y[-1]]
 
 gain = 0.1
 
-kicker_map = Kicker(gain, slicer, kicker_processors_x, kicker_processors_y,
-                    registers_x, registers_y, kicker_beam_parameters_x, kicker_beam_parameters_y, mpi = True)
+kicker_map = Kicker(gain, slicer,
+                    processors_kicker_x, processors_kicker_y, registers_x, registers_y,
+                    kicker_location_x, kicker_beta_x, kicker_location_y, kicker_beta_y, mpi = True)
+
 
 
 # The one turn map of the machine is reconstructed and the kicker and the pickup are placed into the correct slots.
@@ -236,7 +259,7 @@ if rank == 0:
     fig, (ax1, ax2) = plt.subplots(2, figsize=(14, 14), sharex=False)
     fig.suptitle('Pickup processors', fontsize=20)
 
-    for i, processor in enumerate(pickup_processors_x):
+    for i, processor in enumerate(processors_pickup_x):
         t, z, bins, signal = pick_signals(processor,'output')
         ax1.plot(z, bins*(0.9**i), label =  processor.label)
         ax2.plot(z, signal, label =  processor.label)
@@ -256,7 +279,7 @@ if rank == 0:
     fig, (ax3, ax4) = plt.subplots(2, figsize=(14, 14), sharex=False)
     fig.suptitle('Kicker processors', fontsize=20)
 
-    for i, processor in enumerate(kicker_processors_x):
+    for i, processor in enumerate(processors_kicker_x):
         t, z, bins, signal = pick_signals(processor,'output')
         ax3.plot(z, bins*(0.9**i), label =  processor.label)
         ax4.plot(z, signal, label =  processor.label)
