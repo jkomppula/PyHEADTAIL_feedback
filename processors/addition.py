@@ -195,7 +195,7 @@ class AdditionFromFile(Addition):
 
 
 class NoiseGenerator(Addition):
-    """ Adds noise to a signal. The noise level is given as an absolute RMS noise level in the units of signal
+    """ Adds noise. The noise level is given as an absolute RMS noise level in the units of signal
         (reference_level = 'absolute') or a relative RMS level from the maximum value of the signal
         (reference_level = 'maximum'). Options for the noise distribution are a Gaussian (normal) distribution
         (distribution = 'normal') or an uniform distribution (distribution = 'uniform')

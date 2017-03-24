@@ -2,9 +2,9 @@
 #$ mpirun -np 4 python 008_multibunch_separated_pickup_and_kicker.py
 
 """
-    This example represent implementation of a feedback system consisting of a separate pickup and kicker.  It is based
-    on the example presented in the file '002_separated_pickup_and_kicker.ipynb'. The only difference is that multiple
-    bunches are simulated in parallel in this example.
+    This is a simple example for a multi bunch MPI feedback. It is based on the ideal bunch
+    feedback presented in the file '002_separated_pickup_and_kicker.ipynb'. The only difference
+    is that multiple bunches are simulated in parallel in this example.
 """
 
 
@@ -92,7 +92,6 @@ def kicker(bunch):
     bunch.x[:] += 2e-2 * np.sin(2.*pi*np.mean(bunch.z)/1000.)
 
 
-# MPI objects, which are used for visualizing the data only on the first processor
 comm = MPI.COMM_WORLD
 size = comm.Get_size()
 rank = comm.Get_rank()
@@ -114,15 +113,13 @@ sigma_z = 0.081
 
 # FILLING SCHEME
 # ==============
-# Bunches are created by creating a list of numbers which represent bunches in the RF buckets.
-# In the other words, this means that the length of the list corresponds to the number of bunches are simulated and
-# the numbers in the list correspond to the locations of the bunches in the machine.
+# Bunches are created by creating a list of numbers representing the RF buckets to be filled.
 
 n_bunches = 13
 filling_scheme = [401 + 20*i for i in range(n_bunches)]
 
-# multiple bunches are created by passing the filling scheme to the generator. It returns a super bunch, which contains
-# particles from the all of the bunches, but can be split into separated bunches
+# Machine returns a super bunch, which contains particles from all of the bunches
+# and can be split into separate bunches
 bunches = machine.generate_6D_Gaussian_bunch_matched(
     n_macroparticles, intensity, epsn_x, epsn_y, sigma_z=sigma_z,
     filling_scheme=filling_scheme, kicker=kicker)
@@ -135,12 +132,11 @@ slicer = UniformBinSlicer(50, n_sigma_z=3)
 
 # FEEDBACK MAP
 # ==============
-# Actual PyHEADTAIL map for the feedback system is created here. It is exactly same as presented for a single bunch
-# in the file '002_separated_pickup_and_kicker.ipynb'. Only difference is that 'mpi' flag is set into 'True' in OneboxFeedback
-# object.
+# Actual code for the feedback. It is exactly same as used in the file
+# '002_separated_pickup_and_kicker.ipynb' expect that 'mpi' flag is set into 'True'.
 #
-# Flags 'store_signal' are set into 'True' in the signal processors in order to visualize signal processing after the
-# simulation, However, the flag does not affect the actual simulation.
+# The flags 'store_signal' of the signal processors are set into 'True'
+#  in order to visualize signal processing after the simulation,
 
 pickup_beta_x = machine.beta_x_inj
 pickup_beta_y = machine.beta_y_inj
@@ -183,11 +179,7 @@ kicker_map = Kicker(gain, slicer,
                     processors_kicker_x, processors_kicker_y, registers_x, registers_y,
                     kicker_location_x, kicker_beta_x, kicker_location_y, kicker_beta_y, mpi = True)
 
-
-
-# The one turn map of the machine is reconstructed and the kicker and the pickup are placed into the correct slots.
-# The one turn map is created machine in suck a way that the first elements of the map are transverse elements
-# (but this might vary!).
+# The kicker and the pickup are placed into the correct slots of the one turn map
 
 new_one_turn_map = []
 for i, m in enumerate(machine.one_turn_map):
@@ -222,7 +214,8 @@ for i in range(n_turns):
             "%d/%m/%Y %H:%M:%S", time.localtime())))
 
 if rank == 0:
-    # On the first processor, the script plots signals passed each signal processor from the last simulated turn
+    # On the first processor, the script plots signals passed each signal processor from
+    # the last simulated turn of the simulation
 
     fig, (ax1, ax2) = plt.subplots(2, figsize=(14, 14), sharex=False)
     fig.suptitle('Pickup processors', fontsize=20)
@@ -233,13 +226,13 @@ if rank == 0:
         ax2.plot(z, signal, label =  processor.label)
 
     # The first plot represents sampling in the each signal processor. The magnitudes of the curves do not represent
-    # anything, but the change of the polarity represents a transition from one bin to other.
+    # anything, but the change of the polarity represents a transition from one bin to another.
     ax1.set_ylim([-1.1, 1.1])
     ax1.set_xlabel('Z position [m]')
     ax1.set_ylabel('Bin set')
     ax1.legend(loc='upper left')
 
-    # Actual signals are plotted in this figure
+    # Actual signals
     ax2.set_xlabel('Z position [m]')
     ax2.set_ylabel('Signal')
     ax2.legend(loc='upper left')
@@ -253,13 +246,13 @@ if rank == 0:
         ax4.plot(z, signal, label =  processor.label)
 
     # The first plot represents sampling in the each signal processor. The magnitudes of the curves do not represent
-    # anything, but the change of the polarity represents a transition from one bin to other.
+    # anything, but the change of the polarity represents a transition from one bin to another.
     ax3.set_ylim([-1.1, 1.1])
     ax3.set_xlabel('Z position [m]')
     ax3.set_ylabel('Bin set')
     ax3.legend(loc='upper left')
 
-    # Actual signals are plotted in this figure
+    # Actual signals
     ax4.set_xlabel('Z position [m]')
     ax4.set_ylabel('Signal')
     ax4.legend(loc='upper left')

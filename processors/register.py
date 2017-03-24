@@ -6,19 +6,6 @@ from scipy.constants import pi
 
 from ..core import Parameters
 
-# TODO: program a new register:
-#   - Does not modify the signal
-#   - Iteration returns value from the register
-#   - delay can be set
-#
-# TODO: phase shift algorithms
-#   - takes data from a list of registers
-#   - does those signals what ever wants, can be a signal source
-#
-# TODO: special processors which utilize a register and algorithms
-#   - delay
-#   - Turn by turn fir filter
-
 
 class Register(object):
     """

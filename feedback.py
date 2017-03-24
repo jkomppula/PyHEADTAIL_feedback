@@ -5,19 +5,12 @@ from core import get_processor_variables, process, Parameters
 from processors.register import VectorSumCombiner, CosineSumCombiner
 from processors.register import HilbertCombiner
 """
-    This file contains modules, which can be used as a feedback module/object in PyHEADTAIL. Actual signal processing is
-    done by using signal processors written to files processors.py and digital_processors.py. A list of signal
-    processors is given as a argument for feedback elements.
+    This file contains feedback modules for PyHEADTAIL, which can be used as interfaces between
+    PyHEADTAIL and the signal processors.
 
     @author Jani Komppula
-    @date 16/09/2016
+    @date 24/03/2017
     @copyright CERN
-"""
-
-"""
-    Must be discussed:
-        - turn by turn varying slice width -> will be forgot
-        - future of matrix filters?
 """
 
 
@@ -169,6 +162,7 @@ def kick_bunches(local_slice_sets, bunch_list, local_bunch_indexes,
 
 
 class OneboxFeedback(object):
+
     def __init__(self, gain, slicer, processors_x, processors_y,
                  axis='divergence', mpi=False):
 
@@ -436,9 +430,6 @@ class Kicker(object):
                                              slice_sets=signal_slice_sets)
             signal_y = signal_y * self._gain_y
 
-
-#        kick_bunches(bunch_slice_sets, bunch_list, self._local_bunch_indexes,
-#                     signal_x, signal_y, 'divergence')
         kick_bunches(bunch_slice_sets, bunch_list, self._local_bunch_indexes,
                      signal_x, signal_y, 'divergence')
 

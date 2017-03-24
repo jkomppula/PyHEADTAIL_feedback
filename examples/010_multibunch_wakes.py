@@ -2,9 +2,8 @@
 #$ mpirun -np 4 python 007_multibunch_ideal_feedback.py
 
 """
-    This a simple example for a multi bunch MPI feedback. It is based on the ideal bunch feedback presented
-    in the file 001_ideal_feedbacks.ipynb. The only difference is that multiple bunches are simulated in parallel
-    in this example.
+    This test is used for testing a bandwidth limited damper with multi turn wakes. The test is
+    based on the code in the file '009_multibunch_bandwidth_limited_feedback.py'
 """
 
 from __future__ import division
@@ -87,23 +86,24 @@ def kicker(bunch):
     A function which sets initial kicks for the bunches. The function is passed to the bunch generator
     in the machine object.
     """
+#    bunch.x[:] += 1e-3
+#    bunch.y[:] += 1e-3
     bunch.x *= 0
     bunch.xp *= 0
     bunch.y *= 0
     bunch.yp *= 0
-    bunch.x[:] += 2e-2 * np.sin(2.*pi*np.mean(bunch.z)/1000.)
+#    f = (1./20e6)*c
+#    bunch.x[:] += 1e-3 * np.sin(2.*pi*(np.mean(bunch.z)-bunch.z[0])*f)
 
-
-# MPI objects, which are used for visualizing the data only on the first processor
 comm = MPI.COMM_WORLD
 size = comm.Get_size()
 rank = comm.Get_rank()
 
 # SIMULATION, BEAM AND MACHNINE PARAMETERS
 # ========================================
-n_turns = 100
+n_turns = 1
 n_segments = 1
-n_macroparticles = 10000
+n_macroparticles = 40000
 
 from test_tools import MultibunchMachine
 machine = MultibunchMachine(n_segments=n_segments)
@@ -116,15 +116,13 @@ sigma_z = 0.081
 
 # FILLING SCHEME
 # ==============
-# Bunches are created by creating a list of numbers which represent bunches in the RF buckets.
-# In the other words, this means that the length of the list corresponds to the number of bunches are simulated and
-# the numbers in the list correspond to the locations of the bunches in the machine.
+# Bunches are created by creating a list of numbers representing the RF buckets to be filled.
 
-n_bunches = 61
+n_bunches = 13
 filling_scheme = [401 + 10*i for i in range(n_bunches)]
 
-# multiple bunches are created by passing the filling scheme to the generator. It returns a super bunch, which contains
-# particles from the all of the bunches, but can be split into separated bunches
+# Machine returns a super bunch, which contains particles from all of the bunches
+# and can be split into separate bunches
 bunches = machine.generate_6D_Gaussian_bunch_matched(
     n_macroparticles, intensity, epsn_x, epsn_y, sigma_z=sigma_z,
     filling_scheme=filling_scheme, kicker=kicker)
@@ -151,22 +149,41 @@ bunch_spacing = 2.49507468767912e-08
 f_ADC = 10./bunch_spacing
 
 processors_x = [
-#    Bypass(store_signal = True),
-    ChargeWeighter(normalization = 'segment_average',store_signal  = True),
-    ADC(f_ADC, signal_length = 0.5*bunch_spacing,store_signal  = True),
-    GaussianLowpass(fc,normalization=('bunch_by_bunch',bunch_length,bunch_spacing),store_signal  = True),
-#    Lowpass(fc,normalization=('bunch_by_bunch',bunch_length,bunch_spacing),store_signal  = True),
-#    Sinc(fc,normalization=('bunch_by_bunch',bunch_length,bunch_spacing),store_signal  = True),
-    DAC(store_signal  = True)
+#        Bypass(store_signal=True),
+        ChargeWeighter(normalization='segment_average', store_signal=True),
+
+        # It is recommended to resample the bunch in order to synchronize the slices
+        # with bunch spacing, which helps the convolution. Parameters f_ADC and signal_length
+        # should not affect significantly the reults, when signal_length is longer than
+        # bunch_length and f_ADC is a couple of times higher than bunch frequency
+        ADC(f_ADC, signal_length=0.5*bunch_spacing, store_signal=True),
+
+        # It is recommended to use a gaussian lowpass filter. Sharp edges in impulse responses
+        # are challenging from a simulation point of view (e.g. Lowpass and PhaseLinearizedLowpass)
+        # and Sinc filter is too sensitive to cut off frequency, because oscillations in
+        # the impulse response might be in resonance with the bunch spacing. Thus the gaussian
+        # filter is the most stable solution.
+        GaussianLowpass(fc, normalization=('bunch_by_bunch', bunch_length, bunch_spacing),
+                        store_signal=True),
+#        Lowpass(fc, normalization=('bunch_by_bunch', bunch_length, bunch_spacing),
+#               store_signal=True),
+#        Sinc(fc,normalization=('bunch_by_bunch', bunch_length,bunch_spacing),
+#             store_signal=True),
+
+        # DAC returs the signal to the original bin set.
+        DAC(store_signal=True)
 ]
 processors_y = [
-#    Bypass(store_signal = True),
-    ChargeWeighter(normalization = 'segment_average',store_signal  = True),
-    ADC(f_ADC, signal_length = 0.5*bunch_spacing,store_signal  = True),
-    GaussianLowpass(fc,normalization=('bunch_by_bunch',bunch_length,bunch_spacing),store_signal  = True),
-#    Lowpass(fc,normalization=('bunch_by_bunch',bunch_length,bunch_spacing),store_signal  = True),
-#    Sinc(fc,normalization=('bunch_by_bunch',bunch_length,bunch_spacing),store_signal  = True),
-    DAC(store_signal  = True)
+#        Bypass(store_signal=True),
+        ChargeWeighter(normalization='segment_average', store_signal=True),
+        ADC(f_ADC, signal_length=0.5*bunch_spacing, store_signal=True),
+        GaussianLowpass(fc, normalization=('bunch_by_bunch', bunch_length, bunch_spacing),
+                        store_signal=True),
+#        Lowpass(fc, normalization=('bunch_by_bunch', bunch_length, bunch_spacing),
+#               store_signal=True),
+#        Sinc(fc,normalization=('bunch_by_bunch', bunch_length,bunch_spacing),
+#             store_signal=True),
+        DAC(store_signal=True)
 ]
 gain = 0.1
 feedback_map = OneboxFeedback(gain, slicer, processors_x, processors_y, axis='displacement', mpi = True)
@@ -221,7 +238,8 @@ if rank == 0:
 # VISUALIZATION
 # =============
 if rank == 0:
-    # On the first processor, the script plots signals passed each signal processor from the last simulated turn
+    # On the first processor, the script plots signals passed each signal processor from
+    # the last simulated turn of the simulation
 
     fig, (ax1, ax2) = plt.subplots(2, figsize=(14, 14), sharex=False)
 
@@ -236,16 +254,17 @@ if rank == 0:
 
 
     # The first plot represents sampling in the each signal processor. The magnitudes of the curves do not represent
-    # anything, but the change of the polarity represents a transition from one bin to other.
+    # anything, but the change of the polarity represents a transition from one bin to another.
     ax1.set_ylim([-1.1, 1.1])
     ax1.set_xlabel('Z position [m]')
     ax1.set_ylabel('Bin set')
     ax1.legend(loc='upper left')
 
-    # Actual signals are plotted in this figure
+    # Actual signals
     ax2.set_xlabel('Z position [m]')
     ax2.set_ylabel('Signal')
     ax2.legend(loc='upper left')
 
     plt.legend()
     plt.show()
+

@@ -434,13 +434,8 @@ class ConvolutionFilter(Convolution):
                 bunch_locations = bunch_locations[min_mask*max_mask]
 
                 total_sum = 0.
-#                print 'impulse_bin_edges[0,0]:'
-#                print impulse_bin_edges[0,0]
-#                print 'impulse_bin_edges[-1,1]:'
-#                print impulse_bin_edges[-1,1]
-#
-#                print 'bunch_locations:'
-#                print bunch_locations
+
+                # TODO: check, which is the best way to calculate the normalization coefficient
                 total_sum = np.sum(np.interp([bunch_locations], impulse_bin_mids, impulse_values))
 #                for location in bunch_locations:
 #                    min_mask = (impulse_bin_mids > (location - bunch_length/2.))
@@ -567,7 +562,7 @@ class GaussianLowpass(ConvolutionFilter):
         tip_cut_width = None
 
         super(self.__class__, self).__init__( scaling, impulse_range, tip_cut_width = tip_cut_width, **kwargs)
-        self.label = 'Phaselinearized lowpass filter'
+        self.label = 'Gaussian lowpass filter'
 
     def _raw_impulse_response(self, x):
         return np.exp(-x ** 2. / 2.) / np.sqrt(2. * pi)

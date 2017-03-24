@@ -1,62 +1,98 @@
-import collections
 import numpy as np
 
 """ This file contains the core functions and variables for signal processing.
-    That code can be used for implementing interfaces for other codes and
-    libraries (e.g. PyHEADTAIL).
 """
 
-""" External parameters describing signal:
-        signal_class: A class of the signal, which determines what kind of
-            assumptions can be made from the signal. See more details from
-            the file processor_specifications.md
-        bin_edges: A 2D numpy array, where each row determines edges of
-            the bin (value of the signal)
-        n_segments: A number of equally length segments with equal bin pattern
-            the signal can be divided
-        n_bins_per_segment: A number of bins in the segments determined above
-        original_segment_mids: This value is used as a reference point in some
-            signal processors (i.e. resampling)
-        additional_parameters: A dictionary of additional paramters which are
-            carried with the signal (e.g. beam parameteres).
-"""
+# TODO: automated Debug extension
+# TODO: change the base unit from distance to time
 
 
-def Parameters():
-    """ Returns a prototype for signal parameters."""
-    return {'class': 0,
-            'bin_edges': np.array([]),
-            'n_segments': 0,
-            'n_bins_per_segment': 0,
-            'segment_midpoints': np.array([]),
-            'location': 0.,
-            'beta': 1.}
+def Parameters(signal_class=0, bin_edges=np.array([]), n_segments=0,
+               n_bins_per_segment=0, segment_midpoints=np.array([]),
+               location=0, beta=1.):
+    """
+    Returns a prototype for signal parameters.
+
+    Parameters
+    ----------
+    class : int
+        A signal class
+    bin_edges : NumPy array
+        A 2D numpy array, which is equal length to the signal. Each row
+        includes two floating point numbers, the edge positions of
+        the bin in the physical space.
+    n_segments : int
+        A number of equal length and equally binned segments where to
+        the signal can be divided
+    n_bins_per_segment : int
+        A number of bins per segment. `len(bin_edges)/n_segments`
+    segment_midpoints : NumPy array
+        A numpy array of original midpoints of the segments
+    location : float
+        A location of the signal in betatron phase.
+    beta : float
+        A vale of beta function in the source of the signal. Value 1
+        is neutral for signal processing
+    """
+    return {'class': signal_class,
+            'bin_edges': bin_edges,
+            'n_segments': n_segments,
+            'n_bins_per_segment': n_bins_per_segment,
+            'segment_midpoints': segment_midpoints,
+            'location': location,
+            'beta': beta
+            }
 
 
-def Signal():
+def Signal(signal=[]):
     """ Returns a prototype for a signal."""
-    return np.array([])
+    return np.array(signal)
 
 
 def process(parameters, signal, processors, **kwargs):
     """
-    A function which processes the signal, i.e. passes the signal through the signal processors
-    :param signal_parameters: A standardized namedtuple for additional parameters for the signal
-    :param signal: A Numpy array, which is the actual signal to be processed
-    :param processors: A list of signal processors
-    :param **kwargs: Extra parameters related to the extensions of the processors (e.g. slice_set)
-    :return:
+    Returns a prototype for signal parameters.
+
+    Parameters
+    ----------
+    parameters : dict
+        A standardized dict of the additional parameters describing the signal
+    signal : NumPy array
+        The signal
+    processors : list
+        A list of signal processors.
+    **kwargs : -
+        Other arguments which will be passed to the signal processors
+
+    Returns
+    -------
+    dict
+        Possibly modified dict of the signal parameters
+    NumPy array
+        The processed signal
     """
 
     for processor in processors:
-        parameters, signal = processor.process(parameters,
-                                                      signal, **kwargs)
+        parameters, signal = processor.process(parameters, signal, **kwargs)
 
     return parameters, signal
 
 
 def get_processor_extensions(processors, available_extensions=None):
-    """ A function, which checks available extensions from the processors
+    """
+    A function, which checks available extensions from the processors.
+
+    Parameters
+    ----------
+    processors : list
+        A list of signal processors.
+    available_extensions : list
+        A list of external extensions, which will be added to the list
+
+    Returns
+    -------
+    list
+        A list of found extensions
     """
 
     if available_extensions is None:
@@ -71,25 +107,25 @@ def get_processor_extensions(processors, available_extensions=None):
     return available_extensions
 
 
-
-# Extension specific code
+# Extension specific functions
 #########################
 
+def get_processor_variables(processors, required_variables=None):
+    """
+    A function which checks the required PyHEADTAIL slice set variables
+    from the signal processors.
 
-""" A namedtuple which contains beam parameters related to a physical location in the accelerator, i.e. a location in
-    the betatron phase advance from the reference point of the accelerator and a value of the beta function
+    Parameters
+    ----------
+    processors : list
+        A list of signal processors.
+    required_variables : list
+        A list of external extensions, which will be added to the list
 
-"""
-
-def get_processor_variables(processors, required_variables = None):
-    """Function which checks bunch variables required by signal processors. In PyHEADTAIL bunch variables are
-        the statistical variables of a slice_set object inlcuding n_macroparticles_per_slice. See more details from
-        the document processors/processor_specifications.md.
-
-    :param processors: a list of signal processors
-    :param required_variables: an additional list of bunch variables
-    :return: a list of bunch variables, which is a combination of those variables given as input parameter and
-        found from the processors
+    Returns
+    -------
+    list
+        A list of found statistical variables
     """
 
     if required_variables is None:
