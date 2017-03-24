@@ -23,7 +23,7 @@ from scipy.constants import c, e, m_p, pi
 from PyHEADTAIL.particles.slicing import UniformBinSlicer
 from PyHEADTAIL_feedback.feedback import OneboxFeedback
 from PyHEADTAIL_feedback.processors.multiplication import ChargeWeighter
-from PyHEADTAIL_feedback.processors.convolution import Sinc, Lowpass
+from PyHEADTAIL_feedback.processors.convolution import Sinc, Lowpass, GaussianLowpass
 from PyHEADTAIL_feedback.processors.misc import Bypass
 from PyHEADTAIL_feedback.processors.resampling import ADC, DAC, UpSampler
 
@@ -84,13 +84,14 @@ def kicker(bunch):
     A function which sets initial kicks for the bunches. The function is passed to the bunch generator
     in the machine object.
     """
-    bunch.x[:] += 1e-3
-    bunch.y[:] += 1e-3
-#    bunch.x *= 0
-#    bunch.xp *= 0
-#    bunch.y *= 0
-#    bunch.yp *= 0
-#    bunch.x[:] += 2e-2 * np.sin(2.*pi*np.mean(bunch.z)/1000.)
+#    bunch.x[:] += 1e-3
+#    bunch.y[:] += 1e-3
+    bunch.x *= 0
+    bunch.xp *= 0
+    bunch.y *= 0
+    bunch.yp *= 0
+    f = (1./20e6)*c
+    bunch.x[:] += 1e-3 * np.sin(2.*pi*(np.mean(bunch.z)-bunch.z[0])*f)
 
 
 # MPI objects, which are used for visualizing the data only on the first processor
@@ -143,7 +144,7 @@ slicer = UniformBinSlicer(50, n_sigma_z=3)
 # Flags 'store_signal' are set into 'True' in the signal processors in order to visualize signal processing after the
 # simulation, However, the flag does not affect the actual simulation.
 
-fc=15e6
+fc=10e6
 bunch_length = 2.49507468767912e-08/5.
 bunch_spacing = 2.49507468767912e-08
 f_ADC = 10./bunch_spacing
@@ -152,7 +153,7 @@ processors_x = [
     Bypass(store_signal = True),
     ChargeWeighter(normalization = 'segment_average',store_signal  = True),
     ADC(f_ADC, n_bits = 16, input_range = (-3e-3,3e-3), signal_length = bunch_spacing,store_signal  = True),
-    Sinc(fc,normalization=('bunch_by_bunch',bunch_length,bunch_spacing),store_signal  = True),
+    GaussianLowpass(fc,normalization=('bunch_by_bunch',bunch_length,bunch_spacing),store_signal  = True),
 #     Lowpass(fc,normalization=('bunch_by_bunch',bunch_length,bunch_spacing),store_signal  = True),
 #    Sinc(1*fc,store_signal  = True),
     DAC(store_signal  = True)
@@ -161,7 +162,7 @@ processors_y = [
     Bypass(store_signal = True),
     ChargeWeighter(normalization = 'segment_average',store_signal  = True),
     ADC(f_ADC, n_bits = 16, input_range = (-3e-3,3e-3), signal_length = bunch_spacing,store_signal  = True),
-    Sinc(fc,normalization=('bunch_by_bunch',bunch_length,bunch_spacing),store_signal  = True),
+    GaussianLowpass(fc,normalization=('bunch_by_bunch',bunch_length,bunch_spacing),store_signal  = True),
 #     Lowpass(fc,normalization=('bunch_by_bunch',bunch_length,bunch_spacing),store_signal  = True),
 #     Lowpass(1*fc,store_signal  = True),
 #    Sinc(1*fc,store_signal  = True),

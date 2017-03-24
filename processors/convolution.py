@@ -557,6 +557,22 @@ class PhaseLinearizedLowpass(ConvolutionFilter):
         else:
             return special.k0(abs(x))
 
+
+class GaussianLowpass(ConvolutionFilter):
+    def __init__(self, f_cutoff, impulse_length = 5., **kwargs):
+        scaling = 2. * pi * f_cutoff / c
+        impulse_range = (-1.*impulse_length/scaling, impulse_length/scaling)
+
+
+        tip_cut_width = None
+
+        super(self.__class__, self).__init__( scaling, impulse_range, tip_cut_width = tip_cut_width, **kwargs)
+        self.label = 'Phaselinearized lowpass filter'
+
+    def _raw_impulse_response(self, x):
+        return np.exp(-x ** 2. / 2.) / np.sqrt(2. * pi)
+
+
 class Sinc(ConvolutionFilter):
     """ A nearly ideal lowpass filter, i.e. a windowed Sinc filter. The impulse response of the ideal lowpass filter
         is Sinc function, but because it is infinite length in both positive and negative time directions, it can not be

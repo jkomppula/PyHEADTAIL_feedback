@@ -25,7 +25,7 @@ from PyHEADTAIL.impedances.wakes import CircularResonator, WakeField
 from PyHEADTAIL.impedances.wakes import ResistiveWall, CircularResistiveWall
 from PyHEADTAIL_feedback.feedback import OneboxFeedback
 from PyHEADTAIL_feedback.processors.multiplication import ChargeWeighter
-from PyHEADTAIL_feedback.processors.convolution import Sinc, Lowpass
+from PyHEADTAIL_feedback.processors.convolution import Sinc, Lowpass, GaussianLowpass
 from PyHEADTAIL_feedback.processors.misc import Bypass
 from PyHEADTAIL_feedback.processors.resampling import ADC, DAC, UpSampler
 
@@ -103,7 +103,7 @@ rank = comm.Get_rank()
 # ========================================
 n_turns = 100
 n_segments = 1
-n_macroparticles = 4000
+n_macroparticles = 10000
 
 from test_tools import MultibunchMachine
 machine = MultibunchMachine(n_segments=n_segments)
@@ -120,7 +120,7 @@ sigma_z = 0.081
 # In the other words, this means that the length of the list corresponds to the number of bunches are simulated and
 # the numbers in the list correspond to the locations of the bunches in the machine.
 
-n_bunches = 31
+n_bunches = 61
 filling_scheme = [401 + 10*i for i in range(n_bunches)]
 
 # multiple bunches are created by passing the filling scheme to the generator. It returns a super bunch, which contains
@@ -151,24 +151,21 @@ bunch_spacing = 2.49507468767912e-08
 f_ADC = 10./bunch_spacing
 
 processors_x = [
-    Bypass(store_signal = True),
+#    Bypass(store_signal = True),
     ChargeWeighter(normalization = 'segment_average',store_signal  = True),
-#    ADC(f_ADC, n_bits = 16, input_range = (-3e-1,3e-1), signal_length = 0.5*bunch_spacing,store_signal  = True),
     ADC(f_ADC, signal_length = 0.5*bunch_spacing,store_signal  = True),
-    Sinc(fc,normalization=('bunch_by_bunch',bunch_length,bunch_spacing),store_signal  = True),
-#     Lowpass(fc,normalization=('bunch_by_bunch',bunch_length,bunch_spacing),store_signal  = True),
-#    Sinc(1*fc,store_signal  = True),
+    GaussianLowpass(fc,normalization=('bunch_by_bunch',bunch_length,bunch_spacing),store_signal  = True),
+#    Lowpass(fc,normalization=('bunch_by_bunch',bunch_length,bunch_spacing),store_signal  = True),
+#    Sinc(fc,normalization=('bunch_by_bunch',bunch_length,bunch_spacing),store_signal  = True),
     DAC(store_signal  = True)
 ]
 processors_y = [
-    Bypass(store_signal = True),
+#    Bypass(store_signal = True),
     ChargeWeighter(normalization = 'segment_average',store_signal  = True),
-#    ADC(f_ADC, n_bits = 16, input_range = (-3e-3,3e-3), signal_length = 0.5*bunch_spacing,store_signal  = True),
     ADC(f_ADC, signal_length = 0.5*bunch_spacing,store_signal  = True),
-    Sinc(fc,normalization=('bunch_by_bunch',bunch_length,bunch_spacing),store_signal  = True),
-#     Lowpass(fc,normalization=('bunch_by_bunch',bunch_length,bunch_spacing),store_signal  = True),
-#     Lowpass(1*fc,store_signal  = True),
-#    Sinc(1*fc,store_signal  = True),
+    GaussianLowpass(fc,normalization=('bunch_by_bunch',bunch_length,bunch_spacing),store_signal  = True),
+#    Lowpass(fc,normalization=('bunch_by_bunch',bunch_length,bunch_spacing),store_signal  = True),
+#    Sinc(fc,normalization=('bunch_by_bunch',bunch_length,bunch_spacing),store_signal  = True),
     DAC(store_signal  = True)
 ]
 gain = 0.1
@@ -191,8 +188,8 @@ wake_field = WakeField(slicer_for_wakefields, wakes,
 w_function = wake_field.wake_kicks[0].wake_function
 w_factor = wake_field.wake_kicks[0]._wake_factor
 # The map is included directly into the total map in the machine.
-machine.one_turn_map.append(wake_field)
 
+machine.one_turn_map.append(wake_field)
 
 # TRACKING LOOP
 # =============
@@ -200,7 +197,11 @@ s_cnt = 0
 monitorswitch = False
 
 if rank == 0:
+
+    import cProfile
     print '\n--> Begin tracking...\n'
+    pr = cProfile.Profile()
+    pr.enable()
 
 for i in range(n_turns):
 
@@ -212,6 +213,10 @@ for i in range(n_turns):
         t1 = time.clock()
         print('Turn {:d}, {:g} ms, {:s}'.format(i, (t1-t0)*1e3, time.strftime(
             "%d/%m/%Y %H:%M:%S", time.localtime())))
+if rank == 0:
+    pr.disable()
+    pr.print_stats(sort='time')
+
 
 # VISUALIZATION
 # =============
