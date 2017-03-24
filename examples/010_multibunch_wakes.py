@@ -92,8 +92,8 @@ def kicker(bunch):
     bunch.xp *= 0
     bunch.y *= 0
     bunch.yp *= 0
-#    f = (1./20e6)*c
-#    bunch.x[:] += 1e-3 * np.sin(2.*pi*(np.mean(bunch.z)-bunch.z[0])*f)
+    f = (1./20e6)*c
+    bunch.x[:] += 0e-3 * np.sin(2.*pi*(np.mean(bunch.z)-bunch.z[0])*f)
 
 comm = MPI.COMM_WORLD
 size = comm.Get_size()
@@ -101,9 +101,9 @@ rank = comm.Get_rank()
 
 # SIMULATION, BEAM AND MACHNINE PARAMETERS
 # ========================================
-n_turns = 1
+n_turns = 20
 n_segments = 1
-n_macroparticles = 40000
+n_macroparticles = 1000
 
 from test_tools import MultibunchMachine
 machine = MultibunchMachine(n_segments=n_segments)
@@ -118,14 +118,14 @@ sigma_z = 0.081
 # ==============
 # Bunches are created by creating a list of numbers representing the RF buckets to be filled.
 
-n_bunches = 13
+n_bunches = 61
 filling_scheme = [401 + 10*i for i in range(n_bunches)]
 
 # Machine returns a super bunch, which contains particles from all of the bunches
 # and can be split into separate bunches
 bunches = machine.generate_6D_Gaussian_bunch_matched(
     n_macroparticles, intensity, epsn_x, epsn_y, sigma_z=sigma_z,
-    filling_scheme=filling_scheme, kicker=kicker)
+    filling_scheme=filling_scheme)
 
 
 # CREATE BEAM SLICERS
@@ -143,7 +143,7 @@ slicer_for_wakefields = UniformBinSlicer(20, z_cuts=(-0.4, 0.4))
 # Flags 'store_signal' are set into 'True' in the signal processors in order to visualize signal processing after the
 # simulation, However, the flag does not affect the actual simulation.
 
-fc=10e6
+fc=40e6
 bunch_length = 2.49507468767912e-08/5.
 bunch_spacing = 2.49507468767912e-08
 f_ADC = 10./bunch_spacing
@@ -185,14 +185,17 @@ processors_y = [
 #             store_signal=True),
         DAC(store_signal=True)
 ]
-gain = 0.1
+gain = 0.01
 feedback_map = OneboxFeedback(gain, slicer, processors_x, processors_y, axis='displacement', mpi = True)
 
 # The map is included directly into the total map in the machine.
+a = machine.one_turn_map.pop()
+a = machine.one_turn_map.pop()
+a = machine.one_turn_map.pop()
 machine.one_turn_map.append(feedback_map)
 # WAKES
 # =======
-wakes = CircularResonator(1e6, 20e6, 10, n_turns_wake=10)
+wakes = CircularResonator(1e7, 50e6, 50, n_turns_wake=10)
 wake_field = WakeField(slicer_for_wakefields, wakes,
                        circumference=machine.circumference, mpi=True)
 
@@ -205,7 +208,6 @@ wake_field = WakeField(slicer_for_wakefields, wakes,
 w_function = wake_field.wake_kicks[0].wake_function
 w_factor = wake_field.wake_kicks[0]._wake_factor
 # The map is included directly into the total map in the machine.
-
 machine.one_turn_map.append(wake_field)
 
 # TRACKING LOOP

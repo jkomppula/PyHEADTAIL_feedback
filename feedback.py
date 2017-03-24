@@ -99,9 +99,13 @@ def generate_parameters(signal_slice_sets, location=0., beta=1.):
     return parameters
 
 
-def read_signal(signal_x, signal_y, signal_slice_sets, axis):
+def read_signal(signal_x, signal_y, signal_slice_sets, axis, mpi):
     # TODO: change the mpi code to support n_slices
-    n_slices_per_bunch = signal_slice_sets[0]._n_slices
+    if mpi:
+        n_slices_per_bunch = signal_slice_sets[0]._n_slices
+    else:
+        n_slices_per_bunch = signal_slice_sets[0].n_slices
+
     total_length = len(signal_slice_sets) * n_slices_per_bunch
 
     if (signal_x is None) or (len(signal_x) != total_length):
@@ -132,13 +136,9 @@ def kick_bunches(local_slice_sets, bunch_list, local_bunch_indexes,
     for slice_set, bunch_idx, bunch in zip(local_slice_sets,
                                            local_bunch_indexes, bunch_list):
 
-        # the slice set data from all bunches in all processors pass the signal processors. Here, the correction
-        # signals for the bunches tracked in this processors are picked by using indexes found from
-        # mpi_gatherer.total_data.local_data_locations
         idx_from = bunch_idx * n_slices_per_bunch
         idx_to = (bunch_idx + 1) * n_slices_per_bunch
 
-        # mpi_gatherer has also slice set list, which can be used for applying the kicks
         p_idx = slice_set.particles_within_cuts
         s_idx = slice_set.slice_index_of_particle.take(p_idx)
 
@@ -230,7 +230,7 @@ class OneboxFeedback(object):
 
 
         read_signal(self._signal_x, self._signal_y, signal_slice_sets,
-                    self._axis)
+                    self._axis,self._mpi)
 
         kick_parameters_x, kick_signal_x = process(self._parameters_x,
                                                    self._signal_x,
@@ -319,7 +319,7 @@ class PickUp(object):
             self._signal_y = np.zeros(n_segments * n_bins_per_segment)
 
         read_signal(self._signal_x, self._signal_y, signal_slice_sets,
-                    'displacement')
+                    'displacement',self._mpi)
 
         if self._signal_x is not None:
             end_parameters_x, end_signal_x = process(self._parameters_x,
