@@ -496,6 +496,8 @@ class ConvolutionFilter(Convolution):
 
         return transfer_function
 
+
+
 class Lowpass(ConvolutionFilter):
     def __init__(self,f_cutoff, impulse_length = 5., f_cutoff_2nd = None, normalization='sum', **kwargs):
         scaling = 2. * pi * f_cutoff / c
