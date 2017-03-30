@@ -4,6 +4,7 @@ from scipy.constants import c
 from ..core import Parameters
 
 class Bunch(object):
+
     def __init__(self, length, charge=0, n_slices=100, location_x=0., location_y=0.,
                  beta_x=1., beta_y=1., offset=0., distribution='KV'):
         self._length = length
@@ -19,14 +20,14 @@ class Bunch(object):
         self._z_bins = np.linspace(-1.*c*length/2., c*length/2., self._n_slices+1) + self._offset
         self._bin_edges = np.transpose(np.array([self._z_bins[:-1], self._z_bins[1:]]))
 
-        self._z = (self._bin_edges[:, 0]+self._bin_edges[:, 1])/2.
-        self._x = np.zeros(self._n_slices)
-        self._xp = np.zeros(self._n_slices)
-        self._y = np.zeros(self._n_slices)
-        self._yp = np.zeros(self._n_slices)
-        self._dp = np.zeros(self._n_slices)
+        self.z = (self._bin_edges[:, 0]+self._bin_edges[:, 1])/2.
+        self.x = np.zeros(self._n_slices)
+        self.xp = np.zeros(self._n_slices)
+        self.y = np.zeros(self._n_slices)
+        self.yp = np.zeros(self._n_slices)
+        self.dp = np.zeros(self._n_slices)
 
-        self._t = self._z/c
+        self.t = self.z/c
 
         self._total_angle_x = 0.
         self._total_angle_y = 0.
@@ -42,6 +43,18 @@ class Bunch(object):
         else:
             raise ValueError('Unknown distribution!')
 
+
+    def __getattr__(self,attr):
+        if (attr in ['x_amp','y_amp','xp_amp','yp_amp']):
+            return self.normalized_amplitude(axis=attr.split('_', 1 )[0])
+#             return object.__getattr__(self,'_x')
+        elif (attr in ['x_fixed','y_fixed','xp_fixed','yp_fixed']):
+            return self.fixed_amplitude(axis=attr.split('_', 1 )[0])
+        elif (attr in ['mean_x','mean_y','mean_z','mean_xp','mean_yp','mean_dp']):
+            return object.__getattribute__(self,attr.split('_', 1 )[1])
+        else:
+            return object.__getattribute__(self,attr)
+
     @property
     def n_slices(self):
         return self._n_slices
@@ -54,109 +67,6 @@ class Bunch(object):
     def n_macroparticles_per_slice(self):
         return self._charge_distribution
 
-    @property
-    def mean_x(self):
-        return self._x
-
-    @property
-    def x(self):
-        return self._x
-
-    @x.setter
-    def x(self, value):
-        self._x = value
-
-    @property
-    def x_amp(self):
-        return self.normalized_amplitude('x')
-
-    @property
-    def x_fixed(self):
-        return self.fixed_amplitude('x')
-
-    @property
-    def mean_y(self):
-        return self._y
-
-    @property
-    def y(self):
-        return self._y
-
-    @y.setter
-    def y(self, value):
-        self._y = value
-
-    @property
-    def y_amp(self):
-        return self.normalized_amplitude('y')
-
-    @property
-    def y_fixed(self):
-        return self.fixed_amplitude('y')
-
-    @property
-    def mean_z(self):
-        return self._z
-
-    @property
-    def z(self):
-        return self._z
-
-    @z.setter
-    def z(self, value):
-        self._z = value
-
-    @property
-    def mean_xp(self):
-        return self._xp
-
-    @property
-    def xp(self):
-        return self._xp
-
-    @xp.setter
-    def xp(self, value):
-        self._xp = value
-
-    @property
-    def xp_amp(self):
-        return self.normalized_amplitude('xp')
-
-    @property
-    def xp_fixed(self):
-        return self.fixed_amplitude('xp')
-
-    @property
-    def mean_yp(self):
-        return self._yp
-
-    @property
-    def yp(self):
-        return self._yp
-
-    @yp.setter
-    def yp(self, value):
-        self._yp = value
-
-    @property
-    def yp_amp(self):
-        return self.normalized_amplitude('yp')
-
-    @property
-    def yp_fixed(self):
-        return self.fixed_amplitude('yp')
-
-    @property
-    def mean_dp(self):
-        return self._dp
-
-    @property
-    def dp(self):
-        return self._dp
-
-    @dp.setter
-    def dp(self, value):
-        self._dp = value
 
     def slice_sets(self):
         return [self]
@@ -169,25 +79,25 @@ class Bunch(object):
         if axis == 'x':
             parameters['location'] = self._location_x
             parameters['beta'] = self._beta_x
-            signal = np.copy(self._x)
+            signal = np.copy(self.x)
         elif axis == 'xp':
             parameters['location'] = self._location_x
             parameters['beta'] = self._beta_x
-            signal = np.copy(self._xp)
+            signal = np.copy(self.xp)
         elif axis == 'y':
             parameters['location'] = self._location_y
             parameters['beta'] = self._beta_y
-            signal = np.copy(self._y)
+            signal = np.copy(self.y)
         elif axis == 'yp':
             parameters['location'] = self._location_y
             parameters['beta'] = self._beta_y
-            signal = np.copy(self._yp)
+            signal = np.copy(self.yp)
         elif axis == 'z':
-            signal = np.copy(self._z)
+            signal = np.copy(self.z)
         elif axis == 'dp':
-            signal = np.copy(self._dp)
+            signal = np.copy(self.dp)
         elif axis == 't':
-            signal = np.copy(self._t)
+            signal = np.copy(self.t)
         else:
             raise ValueError('Unknown axis')
 
@@ -199,28 +109,28 @@ class Bunch(object):
 
         if (axis == 'x') or (axis == 'xp'):
             self._total_angle_x += angle
-            new_x = c * self._x + self._beta_x * s * self._xp
-            new_xp = (-1. / self._beta_x) * s * self._x + c * self._xp
-            self._x = new_x
-            self._xp = new_xp
+            new_x = c * self.x + self._beta_x * s * self.xp
+            new_xp = (-1. / self._beta_x) * s * self.x + c * self.xp
+            self.x = new_x
+            self.xp = new_xp
         elif (axis == 'y') or (axis == 'yp'):
             self._total_angle_y += angle
-            new_y = c * self._y + self._beta_y * s * self._yp
-            new_yp = (-1. / self._beta_y) * s * self._y + c * self._yp
-            self._y = new_y
-            self._yp = new_yp
+            new_y = c * self.y + self._beta_y * s * self.yp
+            new_yp = (-1. / self._beta_y) * s * self.y + c * self.yp
+            self.y = new_y
+            self.yp = new_yp
         else:
             raise ValueError('Unknown axis')
 
     def normalized_amplitude(self, axis='x'):
         if axis == 'x':
-            return np.sqrt(self._x**2 + (self._beta_x*self._xp)**2)
+            return np.sqrt(self.x**2 + (self._beta_x*self.xp)**2)
         elif axis == 'y':
-            return np.sqrt(self._y**2 + (self._beta_y*self._yp)**2)
+            return np.sqrt(self.y**2 + (self._beta_y*self.yp)**2)
         elif axis == 'xp':
-            return np.sqrt(self._xp**2 + (self._x/self._beta_x)**2)
+            return np.sqrt(self.xp**2 + (self.x/self._beta_x)**2)
         elif axis == 'yp':
-            return np.sqrt(self._yp**2 + (self._y/self._beta_y)**2)
+            return np.sqrt(self.yp**2 + (self.y/self._beta_y)**2)
         else:
             raise ValueError('Unknown axis')
 
@@ -228,22 +138,22 @@ class Bunch(object):
         if axis == 'x':
             s = np.sin(-1. * self._total_angle_x)
             c = np.cos(-1. * self._total_angle_x)
-            return c * self._x + self._beta_x * s * self._xp
+            return c * self.x + self._beta_x * s * self.xp
 
         elif axis == 'y':
             s = np.sin(-1. * self._total_angle_y)
             c = np.cos(-1. * self._total_angle_y)
-            return c * self._y + self._beta_y * s * self._yp
+            return c * self.y + self._beta_y * s * self.yp
 
         elif axis == 'xp':
             s = np.sin(-1. * self._total_angle_x)
             c = np.cos(-1. * self._total_angle_x)
-            return (-1. / self._beta_x) * s * self._x + c * self._xp
+            return (-1. / self._beta_x) * s * self.x + c * self.xp
 
         elif axis == 'yp':
             s = np.sin(-1. * self._total_angle_x)
             c = np.cos(-1. * self._total_angle_x)
-            return (-1. / self._beta_y) * s * self._y + c * self._yp
+            return (-1. / self._beta_y) * s * self.y + c * self.yp
 
         else:
             raise ValueError('Unknown axis')
@@ -266,6 +176,19 @@ class Beam(object):
 
         self._n_slices_per_bunch = self._bunch_list[0].n_slices
 
+    def __getattr__(self,attr):
+        if (attr in ['x','y','z','xp','yp','dp','x_amp','y_amp','z_amp','xp_amp','yp_amp','dp_amp', 'x_fixed','y_fixed','xp_fixed','yp_fixed']):
+            return self.combine_property(attr)
+        else:
+            return object.__getattribute__(self,attr)
+
+    def __setattr__(self, attr, value):
+        if (attr in ['x','y','z','xp','yp','dp']):
+            self.__set_values(value, attr)
+        else:
+            object.__setattr__(self,attr,value)
+
+
     @property
     def n_slices_per_bunch(self):
         return self._n_slices_per_bunch
@@ -273,95 +196,6 @@ class Beam(object):
     @property
     def n_macroparticles_per_slice(self):
         return self._charge_distribution
-
-    @property
-    def x(self):
-        return self.combine_property('x')
-
-    @x.setter
-    def x(self, values):
-        self.__set_values(values, 'x')
-
-    @property
-    def x_amp(self):
-        return self.combine_property('x_amp')
-
-    @property
-    def x_fixed(self):
-        return self.combine_property('x_fixed')
-
-    @property
-    def y(self):
-        return self.combine_property('y')
-
-    @y.setter
-    def y(self, values):
-        self.__set_values(values, 'y')
-
-    @property
-    def y_amp(self):
-        return self.combine_property('y_amp')
-
-    @property
-    def y_fixed(self):
-        return self.combine_property('y_fixed')
-
-    @property
-    def z(self):
-        return self.combine_property('z')
-
-    @z.setter
-    def z(self, values):
-        self.__set_values(values, 'z')
-
-    @property
-    def z_amp(self):
-        return self.combine_property('z_amp')
-
-    @property
-    def z_fixed(self):
-        return self.combine_property('z_fixed')
-
-    @property
-    def xp(self):
-        return self.combine_property('xp')
-
-    @xp.setter
-    def xp(self, values):
-        self.__set_values(values, 'xp')
-
-    @property
-    def xp_amp(self):
-        return self.combine_property('xp_amp')
-
-    @property
-    def xp_fixed(self):
-        return self.combine_property('xp_fixed')
-
-    @property
-    def yp(self):
-        return self.combine_property('yp')
-
-    @yp.setter
-    def yp(self, values):
-        self.__set_values(values, 'yp')
-
-    @property
-    def yp_amp(self):
-        return self.combine_property('yp_amp')
-
-    @property
-    def yp_fixed(self):
-        return self.combine_property('yp_fixed')
-
-    @property
-    def dp(self):
-        return self.combine_property('dp')
-
-    @dp.setter
-    def dp(self, values):
-        self.__set_values(values, 'dp')
-
 
     @property
     def slice_sets(self):
@@ -412,7 +246,6 @@ class Beam(object):
 
             i_from = i*self._n_slices_per_bunch
             i_to = (i + 1)*self._n_slices_per_bunch
-
             np.copyto(combined[i_from:i_to], temp_values)
 
         return combined

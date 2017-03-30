@@ -25,7 +25,13 @@ def damp_beam(beam, processors, gain, n_turns, Q, tracker=None, pickup_var='x', 
         if tracker is not None:
             tracker.track(beam)
 
-class BeamTracker():
+#class SignalTracker(object):
+##    def __init__(self):
+##        self._turns = []
+##        self._turn_counter = 0
+
+
+class BeamTracker(object):
     def __init__(self,properties):
         self._properties = properties
 
@@ -41,16 +47,20 @@ class BeamTracker():
                                       ]
 
         self._trackable_properties = [i for i in self._available_properties if i in self._properties]
+        self.z = None
 
         if len(self._trackable_properties) > 0:
             for var in self._trackable_properties:
-                exec 'self._' + var + ' = []'
+                setattr(self, var, [])
 
-    def track(self, beam):
+    def track(self, beam, **kwargs):
         self._turns.append(self._turn_counter)
         self._turn_counter += 1
+
+        if self.z is None:
+            self.z = [np.copy(beam.z)]
 
         if len(self._trackable_properties) > 0:
             for var in self._trackable_properties:
                 new_values = getattr(beam, var)
-                getattr(self, '_' + var).append(new_values)
+                getattr(self, var).append(new_values)
