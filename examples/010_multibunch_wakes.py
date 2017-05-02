@@ -118,7 +118,7 @@ sigma_z = 0.081
 # ==============
 # Bunches are created by creating a list of numbers representing the RF buckets to be filled.
 
-n_bunches = 61
+n_bunches = 80
 filling_scheme = [401 + 10*i for i in range(n_bunches)]
 
 # Machine returns a super bunch, which contains particles from all of the bunches
@@ -199,9 +199,10 @@ wakes = CircularResonator(1e7, 50e6, 50, n_turns_wake=10)
 wake_field = WakeField(slicer_for_wakefields, wakes,
                        circumference=machine.circumference, mpi=True)
 
-
+#print 'bunches.beta:' + str(bunches.beta)
+#
 #wakes = CircularResistiveWall(pipe_radius=5e-2, resistive_wall_length=machine.circumference,
-#                                    conductivity=1e6, dt_min=1e-3/c, mpi=True)
+#                                    conductivity=1e6, dt_min=1e-3/c, beta_beam=bunches.beta, mpi=True)
 #wake_field = WakeField(slicer_for_wakefields, wakes)
 
 
