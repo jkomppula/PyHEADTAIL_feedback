@@ -1,10 +1,10 @@
 import numpy as np
 from scipy.constants import c, pi
 import copy, collections
-# from cython_hacks import cython_matrix_product
+from cython_hacks import cython_matrix_product
 # from scipy.interpolate import interp1d
 from scipy import interpolate
-from PyHEADTAIL.feedback.core import Parameters
+from ..core import Parameters
 
 """
     This file contains signal processors which can be used for emulating digital signal processing in the feedback
@@ -201,7 +201,156 @@ class HarmonicUpSampler(object):
         pass    
         
     
-    
-    
+class Quantizer(object):
+    def __init__(self,n_bits,input_range, store_signal = False):
+
+        """ Quantizates signal to discrete levels determined by the number of bits and input range.
+        :param n_bits: the signal is quantized (rounded) to 2^n_bits levels
+        :param input_range: the maximum and minimum values for the levels in the units of input signal
+        """
+
+        self._n_bits = n_bits
+        self._n_steps = np.power(2,self._n_bits)-1.
+        self._input_range = input_range
+        self._store_signal = store_signal
+        self._step_size = (self._input_range[1]-self._input_range[0])/float(self._n_steps)
+
+        self.signal_classes = (0, 0)
+        self.extensions = ['store']
+        self._store_signal = store_signal
+        self.input_signal = None
+        self.input_parameters = None
+        self.output_signal = None
+        self.output_parameters = None
+
+        self.label = 'Quantizer'
+
+    def process(self, parameters, signal, *args, **kwargs):
+        output_signal = self._step_size*np.floor(signal/self._step_size+0.5)
+
+        output_signal[output_signal < self._input_range[0]] = self._input_range[0]
+        output_signal[output_signal > self._input_range[1]] = self._input_range[1]
+
+        if self._store_signal:
+            self.input_signal = np.copy(signal)
+            self.input_parameters = copy.copy(parameters)
+            self.output_signal = np.copy(output_signal)
+            self.output_parameters = copy.copy(parameters)
+
+        return parameters, output_signal
         
         
+class ADC(object):
+    def __init__(self,multiplier, f_RF, n_bits = None, input_range = None, store_signal = False, **kwargs):
+        """ A model for an analog to digital converter, which changes a length of the input signal to correspond to
+            the number of slices in the PyHEADTAIL. If parameters for the quantizer are given, it quantizes also
+            the input signal to discrete levels.
+        :param sampling_rate: sampling rate of the ADC [Hz]
+        :param n_bits: the number of bits where to input signal is quantized. If the value is None, the input signal
+                is not quantizated. The default value is None.
+        :param input_range: the range for for the quantizer. If the value is None, the input signal is not quantizated.
+                The default value is None.
+        :param sync_method: The time range of the input signal might not correspond to an integer number of
+            samples determined by sampling rate.
+                'rounded': The time range of the input signal is divided to number of samples, which correspons to
+                    the closest integer of samples determined by the sampling rate (defaul)
+                'rising_edge': the exact value of the sampling rate is used, but there are empty space in the end
+                    of the signal
+                'falling_edge': the exact value of the sampling rate is used, but there are empty space in the beginning
+                    of the signal
+                'middle': the exact value of the sampling rate is used, but there are an equal amount of empty space
+                    in the beginning and end of the signal
+        """
+        self.label = 'ADC'
+        self.signal_classes = (0, 1)
+        self.extensions = ['store']
+        
+        h_RF=100000.
+        circumference=h_RF/f_RF*c
+        print circumference
+        self._resampler = HarmonicResampler(multiplier, h_RF, circumference, **kwargs)
+
+        self._digitizer = None
+        if (n_bits is not None) and (input_range is not None):
+            self._digitizer = Quantizer(n_bits,input_range, *kwargs)
+        elif (n_bits is not None) or (input_range is not None):
+            raise ValueError('Either both n_bits and input_range must have values or they must be None')
+
+        # for storing the signal
+        self._store_signal = store_signal
+        self.input_signal = None
+        self.input_parameters = None
+        self.output_signal = None
+        self.output_parameters = None
+
+    def process(self, parameters, signal, *args, **kwargs):
+        output_parameters, output_signal = self._resampler.process(parameters, signal, *args, **kwargs)
+
+        if self._digitizer is not None:
+            output_parameters, output_signal = self._digitizer.process(output_parameters, output_signal
+                                                                              , *args, **kwargs)
+
+        if self._store_signal:
+            self.input_signal = np.copy(signal)
+            self.input_signal_parameters = copy.copy(parameters)
+            self.output_signal = np.copy(output_signal)
+            self.output_parameters = copy.copy(output_parameters)
+
+        return output_parameters, output_signal
+        
+class DAC(object):
+    def __init__(self,n_bits = None, output_range = None, store_signal = False, **kwargs):
+        """ A model for an digital to analog converter, which changes a length of the input signal to correspond to
+            the number of slices in the PyHEADTAIL. If parameters for the quantizer are given, it quantizes also
+            the input signal to discrete levels.
+        :param sampling_rate: sampling rate of the ADC [Hz]
+        :param n_bits: the number of bits where to input signal is quantized. If the value is None, the input signal
+                is not quantizated. The default value is None.
+        :param input_range: the range for for the quantizer. If the value is None, the input signal is not quantizated.
+                The default value is None.
+        :param sync_method: The time range of the input signal might not correspond to an integer number of
+            samples determined by sampling rate.
+                'rounded': The time range of the input signal is divided to number of samples, which correspons to
+                    the closest integer of samples determined by the sampling rate (defaul)
+                'rising_edge': the exact value of the sampling rate is used, but there are empty space in the end
+                    of the signal
+                'falling_edge': the exact value of the sampling rate is used, but there are empty space in the beginning
+                    of the signal
+                'middle': the exact value of the sampling rate is used, but there are an equal amount of empty space
+                    in the beginning and end of the signal
+        """
+        self.label = 'DAC'
+        self.extensions = ['store']
+
+        self.signal_classes = (1, 0)
+        self._resampler = HarmonicResampler(sampler_type = 'original')
+#        self.extensions.append('bunch')
+#        self.required_variables = copy.copy(self._resampler.required_variables)
+
+        self._digitizer = None
+        if (n_bits is not None) and (output_range is not None):
+            self._digitizer = Quantizer(n_bits,output_range, **kwargs)
+        elif (n_bits is not None) or (output_range is not None):
+            raise ValueError('Either both n_bits and input_range must have values or they must be None')
+
+        # for storing the signal
+        self._store_signal = store_signal
+        self.input_signal = None
+        self.input_parameters = None
+        self.output_signal = None
+        self.output_parameters = None
+
+    def process(self, parameters, signal, *args, **kwargs):
+        output_parameters, output_signal = self._resampler.process(parameters, signal, *args, **kwargs)
+
+        if self._digitizer is not None:
+            output_parameters, output_signal = self._digitizer.process(output_parameters, output_signal,
+                                                                              *args, **kwargs)
+
+        if self._store_signal:
+            self.input_signal = np.copy(signal)
+            self.input_parameters = copy.copy(parameters)
+            self.output_signal = np.copy(output_signal)
+            self.output_parameters = copy.copy(output_parameters)
+
+        return output_parameters, output_signal
