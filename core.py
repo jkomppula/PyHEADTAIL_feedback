@@ -5,6 +5,7 @@ import numpy as np
 
 # TODO: automated Debug extension
 # TODO: change the base unit from distance to time
+# TODO: change segment_midpoints to a list of previous parameters
 
 
 def Parameters(signal_class=0, bin_edges=np.array([]), n_segments=0,
