@@ -6,25 +6,26 @@ from scipy.constants import c, e, m_p
 
 class Beam(object):
 
-    def __init__(self, n_bunches, bunch_spacing, charge, n_buckets_per_bunch=1, location_x=0., location_y=0.,
+    def __init__(self, n_bunches, bunch_spacing, intensity,p0, n_buckets_per_bunch=1, location_x=0., location_y=0.,
                  beta_x=1., beta_y=1.):
-
+	self.charge=e
+	self.p0 = p0
         self.mass = m_p
-        self.gamma = 100.
-        self.beta = 1.
+	self.gamma = np.sqrt(1 + (self.p0 / (self.mass * c))**2)
+	self.beta = np.sqrt(1 - self.gamma**-2)
         self._n_bunches = n_bunches
         self._bunch_spacing = bunch_spacing
 
         self._n_slices = n_bunches*n_buckets_per_bunch
 
-        if isinstance(charge, float):
-            self._charge = np.zeros(n_bunches*n_buckets_per_bunch)
-            self._charge[::n_buckets_per_bunch] = charge
-        elif len(charge) == n_bunches:
-            self._charge = np.zeros(n_bunches*n_buckets_per_bunch)
-            self._charge[::n_buckets_per_bunch] = charge
+        if isinstance(intensity, float):
+            self._intensity = np.zeros(n_bunches*n_buckets_per_bunch)
+            self._intensity[::n_buckets_per_bunch] = intensity
+        elif len(intensity) == n_bunches:
+            self._intensity = np.zeros(n_bunches*n_buckets_per_bunch)
+            self._intensity[::n_buckets_per_bunch] = intensity
         else:
-            raise ValueError('Unknown value for charge')
+            raise ValueError('Unknown value for intensity')
 
 
 
@@ -45,7 +46,8 @@ class Beam(object):
         self.y = np.zeros(self._n_slices)
         self.yp = np.zeros(self._n_slices)
         self.dp = np.zeros(self._n_slices)
-
+	self.temp_xp = np.zeros(self._n_slices)
+	self.temp_x = np.zeros(self._n_slices)
         self.t = self.z/c
 
         self._total_angle_x = 0.
@@ -72,12 +74,12 @@ class Beam(object):
         return self._z_bins
 
     @property
-    def charge(self):
-        return self._charge
+    def intensity(self):
+        return self._intensity
 
     @property
     def n_macroparticles_per_slice(self):
-        return self._charge_distribution
+        return self._intensity_distribution
 
 
     def slice_sets(self):
@@ -121,10 +123,12 @@ class Beam(object):
 
         if (axis == 'x') or (axis == 'xp'):
             self._total_angle_x += angle
-            new_x = c * self.x + self._beta_x * s * self.xp
-            new_xp = (-1. / self._beta_x) * s * self.x + c * self.xp
-            self.x = new_x
-            self.xp = new_xp
+            np.copyto(self.temp_x, c * self.x + self._beta_x * s * self.xp)
+            np.copyto(self.temp_xp,(-1. / self._beta_x) * s * self.x + c * self.xp)
+            np.copyto(self.x, self.temp_x)
+            np.copyto(self.xp, self.temp_xp)
+#             self.x = new_x
+#             self.xp = new_xp
         elif (axis == 'y') or (axis == 'yp'):
             self._total_angle_y += angle
             new_y = c * self.y + self._beta_y * s * self.yp
@@ -192,16 +196,15 @@ class Wake(object):
         self._previous_kicks = deque(maxlen=n_turns)
 
         self._kick_coeff  = 1.
+	self._beam_map = None
+#	self._temp_raw_kick
 
     def _wake_factor(self,beam):
         """Universal scaling factor for the strength of a wake field
         kick.
         """
-        wake_factor = (-(beam.charge*e)**2 / (beam.mass * beam.gamma *
-                       (beam.beta * c)**2) )
-#        print 'wake_factor: ' + str(wake_factor)
-#        return wake_factor
-        return 1e-10
+        wake_factor = (-(beam.charge)**2 / (beam.mass * beam.gamma * (beam.beta * c)**2))
+	return wake_factor
 
     def operate(self, beam, **kwargs):
 
@@ -210,7 +213,7 @@ class Wake(object):
             turn_length = (beam.z[-1] - beam.z[0])/c
             normalized_z = (beam.z - beam.z[0])/c
 
-            print 'turn_length: ' + str(turn_length)
+            self._beam_map = beam.intensity>0.
 
             for i in xrange(self._n_turns):
                 z_values = normalized_z + float(i)*turn_length
@@ -223,19 +226,18 @@ class Wake(object):
                 self._previous_kicks.append(np.zeros(len(normalized_z)))
 
 
+	raw_source = beam.x*beam.intensity
+        convolve_source = np.concatenate((raw_source,raw_source))
+
         for i, impulse in enumerate(self._kick_impulses):
-            source = beam.x*beam.charge/max(beam.charge)
-            raw_kick=np.convolve(np.concatenate((source,source)),impulse, mode='full')
+            raw_kick=np.convolve(convolve_source,impulse, mode='full')
             i_from = len(impulse)
-            i_to = len(impulse)+len(source)
-            true_kick = raw_kick[i_from:i_to]
+            i_to = len(impulse)+len(raw_source)
 
             if i < (self._n_turns-1):
-                self._previous_kicks[i+1] = self._previous_kicks[i+1] + true_kick
+                self._previous_kicks[i+1] += raw_kick[i_from:i_to]
             else:
-                self._previous_kicks.append(true_kick)
+                self._previous_kicks.append(raw_kick[i_from:i_to])
 
-        print 'self._previous_kicks[0]' + str(len(self._previous_kicks[0]))
-        print 'beam.xp' + str(len(beam.xp))
-        bunch_map = beam.charge>0.
-        beam.xp[bunch_map] = beam.xp[bunch_map] + self._wake_factor(beam)*self._previous_kicks[0][bunch_map]
+ 
+        beam.xp[self._beam_map] = beam.xp[self._beam_map] + self._wake_factor(beam)*self._previous_kicks[0][self._beam_map]
