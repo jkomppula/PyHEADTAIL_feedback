@@ -454,7 +454,8 @@ class FIRCombiner(Combiner):
         super(self.__class__, self).__init__(*args, **kwargs)
         self.label = 'FIR combiner'
 
-    def combine(self, registers, target_location, additional_phase_advance):
+    def combine(self, registers, target_location, target_beta,
+                additional_phase_advance, beta_conversion):
         combined_signal = None
 
         for register in registers:
@@ -468,12 +469,12 @@ class FIRCombiner(Combiner):
 
 
 class TurnFIRFilter(object):
-    def __init__(self, coefficients, tune, store_signal=False):
+    def __init__(self, coefficients, tune, delay = 0, additional_phase_advance = 0., store_signal=False):
         self._coefficients = coefficients
         self._tune = tune
-
-        self._register = Register(len(self._coefficients), self._tune)
-        self._combiner = FIRCombiner(self._coefficients)
+        self._additional_phase_advance = additional_phase_advance
+        self._register = Register(len(self._coefficients), self._tune, delay)
+        self._combiner = None
 
         self.extensions = ['store', 'bunch']
 
@@ -486,11 +487,17 @@ class TurnFIRFilter(object):
 
     def process(self, parameters, signal, *args, **kwargs):
         self._register.process(parameters, signal, *args, **kwargs)
-
+        if self._combiner is None:
+            self.__init_combiner(parameters)
+        
         output_parameters, output_signal = self._combiner.process(parameters,
                                                                   signal,
                                                                   *args,
                                                                   **kwargs)
+
+        if output_signal is None:
+            output_parameters = parameters
+            output_signal = np.zeros(len(signal))
 
         if self._store_signal:
             self.input_signal = np.copy(signal)
@@ -500,6 +507,13 @@ class TurnFIRFilter(object):
 
         return output_parameters, output_signal
 
+    def __init_combiner(self, parameters):        
+        registers = [self._register]
+        target_location = parameters['location']
+        target_beta = parameters['beta']
+        extra_phase = self._additional_phase_advance
+        self._combiner = FIRCombiner(self._coefficients,registers, target_location,
+                                                   target_beta, extra_phase)
 
 class TurnDelay(object):
     def __init__(self, delay, tune, n_taps=2, combiner='vector_sum',
