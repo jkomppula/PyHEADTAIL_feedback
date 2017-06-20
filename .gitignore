@@ -9,6 +9,7 @@ __pycache__/
 # C extensions
 *.so
 *.c
+.spyderworkspace
 
 # Distribution / packaging
 .Python
@@ -123,3 +124,5 @@ settings.py
 ;;directories to ignore
 .idea/
 .spyproject/
+.spyderproject
+.spyderworkspace
