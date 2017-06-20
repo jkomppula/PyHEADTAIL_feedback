@@ -1,22 +1,27 @@
 import numpy as np
 from scipy.constants import c, pi
 from collections import deque
-from ..core import Parameters
+from core import Parameters, process
 from scipy.constants import c, e, m_p
+from cython_hacks import cython_circular_convolution
 
 class Beam(object):
 
     def __init__(self, n_bunches, bunch_spacing, intensity,p0, n_buckets_per_bunch=1, location_x=0., location_y=0.,
-                 beta_x=1., beta_y=1.):
-	self.charge=e
-	self.p0 = p0
+                 beta_x=1., beta_y=1., damper_extra_bins=10):
+        self.charge = e
+        self.p0 = p0
         self.mass = m_p
-	self.gamma = np.sqrt(1 + (self.p0 / (self.mass * c))**2)
-	self.beta = np.sqrt(1 - self.gamma**-2)
+        self.gamma = np.sqrt(1 + (self.p0 / (self.mass * c))**2)
+        self.beta = np.sqrt(1 - self.gamma**-2)
         self._n_bunches = n_bunches
         self._bunch_spacing = bunch_spacing
 
         self._n_slices = n_bunches*n_buckets_per_bunch
+
+        self._damper_extra_bins = damper_extra_bins
+        self._damper_signal_parameters = None
+        self._damper_signal = None
 
         if isinstance(intensity, float):
             self._intensity = np.zeros(n_bunches*n_buckets_per_bunch)
@@ -27,8 +32,7 @@ class Beam(object):
         else:
             raise ValueError('Unknown value for intensity')
 
-
-
+	self._beam_map = None
 
         self._length = n_bunches * bunch_spacing * c
         print 'self._length:' + str(self._length)
@@ -46,8 +50,8 @@ class Beam(object):
         self.y = np.zeros(self._n_slices)
         self.yp = np.zeros(self._n_slices)
         self.dp = np.zeros(self._n_slices)
-	self.temp_xp = np.zeros(self._n_slices)
-	self.temp_x = np.zeros(self._n_slices)
+        self.temp_xp = np.zeros(self._n_slices)
+        self.temp_x = np.zeros(self._n_slices)
         self.t = self.z/c
 
         self._total_angle_x = 0.
@@ -178,9 +182,60 @@ class Beam(object):
     def init_noise(self,noise_level, axis='x'):
         if axis == 'x':
             self.x = np.random.normal(0., noise_level, len(self.x))
+            self.xp = (1. / self._beta_x)*np.random.normal(0., noise_level, len(self.x))
         else:
             raise ValueError('Unknown axis')
 
+    def damper_signal(self):
+        if self._damper_signal is None:
+            self._damper_signal = np.zeros(len(self.x) + 2*self._damper_extra_bins)
+
+        if self._damper_signal_parameters is None:
+
+            offset = self._bin_edges[self._damper_extra_bins,0]
+            bin_edges = np.concatenate((self._bin_edges[0:self._damper_extra_bins],self._bin_edges+offset),axis=0)
+            offset = bin_edges[-1,0]-self._bin_edges[0,0]
+            bin_edges = np.concatenate((bin_edges,self._bin_edges[0:self._damper_extra_bins]+offset),axis=0)
+
+            self._signal_parameters = Parameters(2, bin_edges, 1, len(bin_edges),
+                        [np.mean(self._z_bins)],location=0, beta=self._beta_x)
+
+#            print 'Jee'
+#            print self._signal_parameters
+#            print self._bin_edges
+#            print bin_edges
+#            print len(bin_edges)
+#            print len(self._bin_edges)
+#
+#            for edges in self._bin_edges:
+#                print edges
+#
+#            for edges in bin_edges:
+#                print edges
+
+
+        np.copyto(self._damper_signal[self._damper_extra_bins:(self._damper_extra_bins+len(self.x))], self.x)
+
+        return self._signal_parameters, self._damper_signal
+
+    def damper_correction(self,signal):
+	if self._beam_map is None:
+		self._beam_map = self._intensity>0.
+	proper_signal = signal[self._damper_extra_bins:(self._damper_extra_bins+len(self.x))]
+
+        self.x[self._beam_map] = self.x[self._beam_map] - proper_signal[self._beam_map]
+
+class Damper(object):
+    def __init__(self, gain, processors):
+        self._gain = gain
+        self._processors = processors
+
+    def operate(self, beam, **kwargs):
+        parameters, signal = beam.damper_signal()
+
+        parameters, signal = process(parameters, signal, self._processors)
+        if signal is not None:
+            beam.damper_correction(self._gain * signal)
 
 class Wake(object):
     def __init__(self,t,x, n_turns):
@@ -226,7 +281,7 @@ class Wake(object):
                 self._previous_kicks.append(np.zeros(len(normalized_z)))
 
 
-	raw_source = beam.x*beam.intensity
+        raw_source = beam.x*beam.intensity
         convolve_source = np.concatenate((raw_source,raw_source))
 
         for i, impulse in enumerate(self._kick_impulses):
@@ -239,5 +294,63 @@ class Wake(object):
             else:
                 self._previous_kicks.append(raw_kick[i_from:i_to])
 
- 
+
+        beam.xp[self._beam_map] = beam.xp[self._beam_map] + self._wake_factor(beam)*self._previous_kicks[0][self._beam_map]
+
+
+class CythonWake(object):
+    def __init__(self,t,x, n_turns):
+
+        convert_to_V_per_Cm = -1e15
+        self._t = t*1e-9
+        self._x = x*convert_to_V_per_Cm
+        self._n_turns = n_turns
+
+        self._z_values = None
+        self._kick_impulses = None
+
+        self._previous_kicks = deque(maxlen=n_turns)
+
+        self._kick_coeff  = 1.
+	self._beam_map = None
+#	self._temp_raw_kick
+
+    def _wake_factor(self,beam):
+        """Universal scaling factor for the strength of a wake field
+        kick.
+        """
+        wake_factor = (-(beam.charge)**2 / (beam.mass * beam.gamma * (beam.beta * c)**2))
+	return wake_factor
+
+    def operate(self, beam, **kwargs):
+
+        if self._kick_impulses is None:
+            self._kick_impulses = []
+            turn_length = (beam.z[-1] - beam.z[0])/c
+            normalized_z = (beam.z - beam.z[0])/c
+
+            self._beam_map = beam.intensity>0.
+
+            for i in xrange(self._n_turns):
+                z_values = normalized_z + float(i)*turn_length
+
+                temp_impulse = np.interp(z_values, self._t, self._x)
+                if i == 0:
+                    temp_impulse[0] = 0.
+                self._kick_impulses.append(temp_impulse)
+                self._previous_kicks.append(np.zeros(len(normalized_z)))
+
+
+        raw_source = beam.x*beam.intensity
+        convolve_source = raw_source
+
+        for i, impulse in enumerate(self._kick_impulses):
+            raw_kick=np.array(cython_circular_convolution(convolve_source,impulse,0))
+
+            if i < (self._n_turns-1):
+                self._previous_kicks[i+1] += raw_kick
+            else:
+                self._previous_kicks.append(raw_kick)
+
+
         beam.xp[self._beam_map] = beam.xp[self._beam_map] + self._wake_factor(beam)*self._previous_kicks[0][self._beam_map]

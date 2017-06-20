@@ -9,6 +9,11 @@ cy_ext = [
         Extension("processors.cython_hacks",
                  ["processors/cython_hacks.pyx"],
                  include_dirs=[np.get_include()], library_dirs=[], libraries=["m"]
+                 ),
+
+        Extension("tools.cython_hacks",
+                 ["tools/cython_hacks.pyx"],
+                 include_dirs=[np.get_include()], library_dirs=[], libraries=["m"]
                  )
         ]
 

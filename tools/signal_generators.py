@@ -263,6 +263,8 @@ class Beam(object):
         for bunch in self._bunch_list:
             bunch.rotate(angle, var)
 
+#class PointLikeBunchBeam(object):
+
 
 class SimpleBeam(Beam):
     def __init__(self, n_bunches, bunch_spacing, bunch_length, **kwargs):
