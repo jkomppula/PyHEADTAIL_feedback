@@ -16,279 +16,279 @@ import time
 """
 
 
-class Signal(object):
-    """ A class which emulates the SliceSet object of PyHEADTAIL without using macroparticles.
-    """
-
-    def __init__(self, z_bins, z, x, xp = None, y = None, yp=None, dp=None, Qx=None, Qy=None, Qs=None):
-        """
-
-        :param z_bins: z values of the edges of the bins/slices
-        :param z: mean z (middle point) values of the bins/slices
-        :param x: (mean) x values for the bins/slices
-        :param xp: (mean) xp values for the bins/slices
-        :param y: (mean) y values for the bins/slices
-        :param yp: (mean) yp values for the bins/slices
-        :param dp: (mean) dp values for the bins/slices
-        :param Qx: tune in x-xp plane
-        :param Qy: tune in y-yp plane
-        :param Qs: tune in z/s-dp plane
-        """
-
-        self.z_bins = z_bins
-
-        self.z = z
-        self.x = x
-        self.y = np.zeros(len(x))
-        self.xp = np.zeros(len(x))
-        self.yp = np.zeros(len(x))
-        self.dp = np.zeros(len(x))
-
-        if y is not None:
-            self.y = y
-
-        if xp is not None:
-            self.xp = xp
-
-        if yp is not None:
-            self.yp = yp
-
-        if dp is not None:
-            self.dp = dp
-
-        self.total_angle_x = 0.
-        self.total_angle_y = 0.
-        self.total_angle_s = 0.
-
-        self.n_macroparticles_per_slice = np.zeros(len(x))
-        self.n_macroparticles_per_slice += 1.
-
-        self.Qx = Qx
-        self.Qy = Qy
-        self.Qs = Qs
-
-        self.__signal = None
-
-    def __call__(self, *args, **kwargs):
-        return self.signal
-
-    @property
-    def signal(self):
-        if self.__signal is None:
-            self.pick_signal()
-        return np.array(self.__signal)
-
-    @property
-    def distance(self):
-        return np.array(self.z)
-
-    @property
-    def time(self):
-        return self.distance/c
-
-    @property
-    def mean_x(self):
-        return self.x
-
-    @property
-    def mean_xp(self):
-        return self.xp
-
-    @property
-    def mean_y(self):
-        return self.y
-
-    @property
-    def mean_yp(self):
-        return self.yp
-
-    @property
-    def mean_z(self):
-        return self.z
-
-    @property
-    def mean_dp(self):
-        return self.dp
-
-    @property
-    def epsn_x(self):
-        return self.x * self.x + self.xp * self.xp
-
-    @property
-    def epsn_y(self):
-        return self.y * self.y + self.yp * self.yp
-
-    @property
-    def epsn_z(self):
-        return self.z * self.z + self.dp * self.dp
-
-    def set_charge_distribution(self,type, midpoint, width, max_value, parameters, threshold = 1e-3):
-
-        """ Sets charge distribution for the Signal
-
-        :param type: type of the distribution function. Possible options are:
-            *   'fermi-dirac': Fermi-Diract distribution function. Requires one extra parameter, which discribes
-                the slope on the edge of the distribution
-            *   'normal': Normal (Gaussian) distribution. The parameter width is determined as 2 sigma value of
-                the distribution
-
-             Requires one parameter for the parameters
-        :param midpoint: midpoint of the distribution
-        :param width: width of the distribution (for the distribution function)
-        :param max_value: a maximum value for the chrage
-        :param parameters: extra parameters required by some distributions
-        :param threshold: a threshold value (from max_value) below which the charge is set to be zero
-        :return:
-        """
-        if type == 'fermi-dirac':
-            self.n_macroparticles_per_slice= max_value / (np.exp((np.abs(self.mean_z-midpoint) - width/2.) / parameters) + 1.)
-
-        elif type == 'normal':
-            self.n_macroparticles_per_slice = max_value * np.exp(-1. * ((self.mean_z-midpoint) * (self.mean_z-midpoint)) / (0.5*0.5*width*width))
-
-        self.n_macroparticles_per_slice[self.n_macroparticles_per_slice < threshold * max_value] = 0
-
-    def rotate(self, planes = 'x'):
-        """ Rotates signal in """
-
-        if 'x' in planes:
-            self.x, self.xp = self.__calculate_rotation(self.x, self.xp, self.Qx, self.total_angle_x)
-
-        if 'y' in planes:
-            self.y, self.yp = self.__calculate_rotation(self.y, self.yp, self.Qy, self.total_angle_y)
-
-        if 'z' in planes:
-            self.z, self.dp = self.__calculate_rotation(self.z, self.dp, self.Qs, self.total_angle_s)
-
-    def make_correction(self, correction, plane = 'x'):
-        if plane == 'x':
-            self.x -= correction
-
-        elif plane == 'y':
-            self.y -= correction
-
-        elif plane == 'z':
-            self.z -= correction
-
-    def __calculate_rotation(self,x,xp,Q,total_angle):
-        """Caculate rotations required by rotate"""
-
-        angle = Q * 2. * pi
-        total_angle += angle
-
-        c = np.cos(angle)
-        s = np.sin(angle)
-
-        prev_x = np.copy(x)
-        prev_xp = np.copy(xp)
-
-        x = c * prev_x - s * prev_xp
-        xp = s * prev_x + c * prev_xp
-
-        return (x,xp)
-
-    def pick_signal(self,plane = 'x'):
-        self.__signal =  np.array(getattr(self,plane))
-
-    def pass_signal(self,processors):
-        if isinstance(processors,list):
-            for processor in processors:
-                self.__signal = processor.process(self.__signal, self)
-        else:
-            self.__signal = processors.process(self.__signal, self)
-
-    def bunch(self):
-        return BunchEmulator(self)
-
-class BunchEmulator(object):
-    """A class which emulate a bunch object in PyHEADTAIL. Is produced from Signal object."""
-
-    def __init__(self,signal):
-        self.signal = signal
-
-    @property
-    def x(self):
-        return self.signal.x
-
-    @property
-    def y(self):
-        return self.signal.x
-
-    @property
-    def z(self):
-        return self.signal.x
-
-    @property
-    def xp(self):
-        return self.signal.x
-
-    @property
-    def yp(self):
-        return self.signal.x
-
-    @property
-    def dp(self):
-        return self.signal.x
-
-    @property
-    def sigma_x(self):
-        return np.sqrt(np.var(self.signal.mean_x()))
-
-    @property
-    def sigma_y(self):
-        return np.sqrt(np.var(self.signal.mean_y()))
-
-    @property
-    def sigma_z(self):
-        return np.sqrt(np.var(self.signal.mean_z()))
-
-    @property
-    def sigma_xp(self):
-        return np.sqrt(np.var(self.signal.mean_xp()))
-
-    @property
-    def sigma_yp(self):
-        return np.sqrt(np.var(self.signal.mean_yp()))
-
-    @property
-    def sigma_dp(self):
-        return np.sqrt(np.var(self.signal.mean_dp()))
-
-    @property
-    def mean_x(self):
-        return np.mean(self.signal.mean_x())
-
-    @property
-    def mean_xp(self):
-        return np.mean(self.signal.mean_xp())
-
-    @property
-    def mean_y(self):
-        return np.mean(self.signal.mean_y())
-
-    @property
-    def mean_yp(self):
-        return np.mean(self.signal.mean_yp())
-
-    @property
-    def mean_z(self):
-        return np.mean(self.signal.mean_z())
-
-    @property
-    def mean_dp(self):
-        return np.mean(self.signal.mean_dp())
-
-    @property
-    def epsn_x(self):
-        return np.mean(self.signal.epsn_x())
-
-    @property
-    def epsn_y(self):
-        return np.mean(self.signal.epsn_y())
-
-    @property
-    def epsn_z(self):
-        return np.mean(self.signal.epsn_z())
+#class Signal(object):
+#    """ A class which emulates the SliceSet object of PyHEADTAIL without using macroparticles.
+#    """
+#
+#    def __init__(self, z_bins, z, x, xp = None, y = None, yp=None, dp=None, Qx=None, Qy=None, Qs=None):
+#        """
+#
+#        :param z_bins: z values of the edges of the bins/slices
+#        :param z: mean z (middle point) values of the bins/slices
+#        :param x: (mean) x values for the bins/slices
+#        :param xp: (mean) xp values for the bins/slices
+#        :param y: (mean) y values for the bins/slices
+#        :param yp: (mean) yp values for the bins/slices
+#        :param dp: (mean) dp values for the bins/slices
+#        :param Qx: tune in x-xp plane
+#        :param Qy: tune in y-yp plane
+#        :param Qs: tune in z/s-dp plane
+#        """
+#
+#        self.z_bins = z_bins
+#
+#        self.z = z
+#        self.x = x
+#        self.y = np.zeros(len(x))
+#        self.xp = np.zeros(len(x))
+#        self.yp = np.zeros(len(x))
+#        self.dp = np.zeros(len(x))
+#
+#        if y is not None:
+#            self.y = y
+#
+#        if xp is not None:
+#            self.xp = xp
+#
+#        if yp is not None:
+#            self.yp = yp
+#
+#        if dp is not None:
+#            self.dp = dp
+#
+#        self.total_angle_x = 0.
+#        self.total_angle_y = 0.
+#        self.total_angle_s = 0.
+#
+#        self.n_macroparticles_per_slice = np.zeros(len(x))
+#        self.n_macroparticles_per_slice += 1.
+#
+#        self.Qx = Qx
+#        self.Qy = Qy
+#        self.Qs = Qs
+#
+#        self.__signal = None
+#
+#    def __call__(self, *args, **kwargs):
+#        return self.signal
+#
+#    @property
+#    def signal(self):
+#        if self.__signal is None:
+#            self.pick_signal()
+#        return np.array(self.__signal)
+#
+#    @property
+#    def distance(self):
+#        return np.array(self.z)
+#
+#    @property
+#    def time(self):
+#        return self.distance/c
+#
+#    @property
+#    def mean_x(self):
+#        return self.x
+#
+#    @property
+#    def mean_xp(self):
+#        return self.xp
+#
+#    @property
+#    def mean_y(self):
+#        return self.y
+#
+#    @property
+#    def mean_yp(self):
+#        return self.yp
+#
+#    @property
+#    def mean_z(self):
+#        return self.z
+#
+#    @property
+#    def mean_dp(self):
+#        return self.dp
+#
+#    @property
+#    def epsn_x(self):
+#        return self.x * self.x + self.xp * self.xp
+#
+#    @property
+#    def epsn_y(self):
+#        return self.y * self.y + self.yp * self.yp
+#
+#    @property
+#    def epsn_z(self):
+#        return self.z * self.z + self.dp * self.dp
+#
+#    def set_charge_distribution(self,type, midpoint, width, max_value, parameters, threshold = 1e-3):
+#
+#        """ Sets charge distribution for the Signal
+#
+#        :param type: type of the distribution function. Possible options are:
+#            *   'fermi-dirac': Fermi-Diract distribution function. Requires one extra parameter, which discribes
+#                the slope on the edge of the distribution
+#            *   'normal': Normal (Gaussian) distribution. The parameter width is determined as 2 sigma value of
+#                the distribution
+#
+#             Requires one parameter for the parameters
+#        :param midpoint: midpoint of the distribution
+#        :param width: width of the distribution (for the distribution function)
+#        :param max_value: a maximum value for the chrage
+#        :param parameters: extra parameters required by some distributions
+#        :param threshold: a threshold value (from max_value) below which the charge is set to be zero
+#        :return:
+#        """
+#        if type == 'fermi-dirac':
+#            self.n_macroparticles_per_slice= max_value / (np.exp((np.abs(self.mean_z-midpoint) - width/2.) / parameters) + 1.)
+#
+#        elif type == 'normal':
+#            self.n_macroparticles_per_slice = max_value * np.exp(-1. * ((self.mean_z-midpoint) * (self.mean_z-midpoint)) / (0.5*0.5*width*width))
+#
+#        self.n_macroparticles_per_slice[self.n_macroparticles_per_slice < threshold * max_value] = 0
+#
+#    def rotate(self, planes = 'x'):
+#        """ Rotates signal in """
+#
+#        if 'x' in planes:
+#            self.x, self.xp = self.__calculate_rotation(self.x, self.xp, self.Qx, self.total_angle_x)
+#
+#        if 'y' in planes:
+#            self.y, self.yp = self.__calculate_rotation(self.y, self.yp, self.Qy, self.total_angle_y)
+#
+#        if 'z' in planes:
+#            self.z, self.dp = self.__calculate_rotation(self.z, self.dp, self.Qs, self.total_angle_s)
+#
+#    def make_correction(self, correction, plane = 'x'):
+#        if plane == 'x':
+#            self.x -= correction
+#
+#        elif plane == 'y':
+#            self.y -= correction
+#
+#        elif plane == 'z':
+#            self.z -= correction
+#
+#    def __calculate_rotation(self,x,xp,Q,total_angle):
+#        """Caculate rotations required by rotate"""
+#
+#        angle = Q * 2. * pi
+#        total_angle += angle
+#
+#        c = np.cos(angle)
+#        s = np.sin(angle)
+#
+#        prev_x = np.copy(x)
+#        prev_xp = np.copy(xp)
+#
+#        x = c * prev_x - s * prev_xp
+#        xp = s * prev_x + c * prev_xp
+#
+#        return (x,xp)
+#
+#    def pick_signal(self,plane = 'x'):
+#        self.__signal =  np.array(getattr(self,plane))
+#
+#    def pass_signal(self,processors):
+#        if isinstance(processors,list):
+#            for processor in processors:
+#                self.__signal = processor.process(self.__signal, self)
+#        else:
+#            self.__signal = processors.process(self.__signal, self)
+#
+#    def bunch(self):
+#        return BunchEmulator(self)
+#
+#class BunchEmulator(object):
+#    """A class which emulate a bunch object in PyHEADTAIL. Is produced from Signal object."""
+#
+#    def __init__(self,signal):
+#        self.signal = signal
+#
+#    @property
+#    def x(self):
+#        return self.signal.x
+#
+#    @property
+#    def y(self):
+#        return self.signal.x
+#
+#    @property
+#    def z(self):
+#        return self.signal.x
+#
+#    @property
+#    def xp(self):
+#        return self.signal.x
+#
+#    @property
+#    def yp(self):
+#        return self.signal.x
+#
+#    @property
+#    def dp(self):
+#        return self.signal.x
+#
+#    @property
+#    def sigma_x(self):
+#        return np.sqrt(np.var(self.signal.mean_x()))
+#
+#    @property
+#    def sigma_y(self):
+#        return np.sqrt(np.var(self.signal.mean_y()))
+#
+#    @property
+#    def sigma_z(self):
+#        return np.sqrt(np.var(self.signal.mean_z()))
+#
+#    @property
+#    def sigma_xp(self):
+#        return np.sqrt(np.var(self.signal.mean_xp()))
+#
+#    @property
+#    def sigma_yp(self):
+#        return np.sqrt(np.var(self.signal.mean_yp()))
+#
+#    @property
+#    def sigma_dp(self):
+#        return np.sqrt(np.var(self.signal.mean_dp()))
+#
+#    @property
+#    def mean_x(self):
+#        return np.mean(self.signal.mean_x())
+#
+#    @property
+#    def mean_xp(self):
+#        return np.mean(self.signal.mean_xp())
+#
+#    @property
+#    def mean_y(self):
+#        return np.mean(self.signal.mean_y())
+#
+#    @property
+#    def mean_yp(self):
+#        return np.mean(self.signal.mean_yp())
+#
+#    @property
+#    def mean_z(self):
+#        return np.mean(self.signal.mean_z())
+#
+#    @property
+#    def mean_dp(self):
+#        return np.mean(self.signal.mean_dp())
+#
+#    @property
+#    def epsn_x(self):
+#        return np.mean(self.signal.epsn_x())
+#
+#    @property
+#    def epsn_y(self):
+#        return np.mean(self.signal.epsn_y())
+#
+#    @property
+#    def epsn_z(self):
+#        return np.mean(self.signal.epsn_z())
 
 
 def binary_impulse(time_range, n_points = 100, amplitude = 1.):
