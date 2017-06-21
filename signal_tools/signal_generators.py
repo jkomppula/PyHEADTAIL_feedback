@@ -63,8 +63,8 @@ class SliceObject(object):
         self._output_parameters = None
 
     @property
-    def bunc_id(self):
-        return self._bunc_id
+    def bunch_id(self):
+        return self._bunch_id
 
     @property
     def circumference(self):
@@ -94,12 +94,16 @@ class SliceObject(object):
         return self._z
 
     @property
+    def real_z(self):
+        return self._z + self._bunch_id * self._circumference/self._h_RF
+
+    @property
     def bin_edges(self):
         return self._bin_edges
 
     @property
     def n_macroparticles_per_slice(self):
-        return self._intensity_distribution
+        return self.intensity_distribution
 
 
 #    def __getattr__(self,attr):
@@ -122,7 +126,7 @@ class SliceObject(object):
             if self._circular_overlapping > 0:
 
                 if self._bunch_id is not None:
-                    bunch_mid = self.bunc_id * self._circumference/self._h_RF
+                    bunch_mid = self.bunch_id * self._circumference/self._h_RF
                 else:
                     bunch_mid = np.mean(self._z_bins)
 
@@ -244,7 +248,7 @@ class Bunch(SliceObject):
     def __init__(self, length, n_slices, intensity, distribution='KV', **kwargs):
         self.length = length
         distribution = distribution
-        z_bins = np.linspace(-1.*c*length/2., c*length/2., n_slices)
+        z_bins = np.linspace(-1.*c*length/2., c*length/2., n_slices+1)
         bin_edges = np.transpose(np.array([z_bins[:-1], z_bins[1:]]))
         z = (bin_edges[:, 0] + bin_edges[:, 1]) / 2.
 
@@ -266,16 +270,21 @@ class Beam(object):
     def __init__(self, filling_scheme, circumference, h_RF, bunch_length, intensity, n_slices, **kwargs):
         self._filling_scheme = sorted(filling_scheme)
 
+        self._n_slices_per_bunch = n_slices
+
+        self._output_signal = None
+        self._output_parameters = None
+
         self._bunch_list = []
         for bunch_id in self._filling_scheme:
             self._bunch_list.append(Bunch(bunch_length, n_slices, intensity,bunch_id=bunch_id,
                                           circumference=circumference, h_RF=h_RF,  **kwargs))
 
-        self._n_slices_per_bunch = n_slices
-
     def __getattr__(self,attr):
-        if (attr in ['x','y','z','xp','yp','dp','x_amp','y_amp','z_amp','xp_amp','yp_amp','dp_amp', 'x_fixed','y_fixed','xp_fixed','yp_fixed']):
+        if (attr in ['x','y','xp','yp','dp','x_amp','y_amp','z_amp','xp_amp','yp_amp','dp_amp', 'x_fixed','y_fixed','xp_fixed','yp_fixed']):
             return self.combine_property(attr)
+        elif attr == 'z':
+            return self.combine_property('real_z')
         else:
             return object.__getattribute__(self,attr)
 
@@ -284,9 +293,6 @@ class Beam(object):
             self.__set_values(value, attr)
         else:
             object.__setattr__(self,attr,value)
-
-        self._output_signal = None
-        self._output_parameters = None
 
 
     @property
@@ -392,7 +398,7 @@ class CircularPointBeam(SliceObject):
     def __init__(self, filling_scheme, circumference, h_RF, intensity, circular_overlapping,
                  **kwargs):
 
-        z_bins = np.linspace(0,circumference,h_RF)
+        z_bins = np.linspace(0,circumference,h_RF+1)
         bin_edges =np.transpose(np.array([z_bins[:-1],
                                            z_bins[1:]]))
         if isinstance(intensity, float):
@@ -407,7 +413,7 @@ class CircularPointBeam(SliceObject):
 
         self._beam_map = (intensities != 0.)
 
-        super(self.__class__, self).__init__(bin_edges, intensities, bunch_id=0,
+        super(CircularPointBeam, self).__init__(bin_edges, intensities, bunch_id=0,
              circumference=circumference, h_RF=h_RF, circular_overlapping=circular_overlapping,
              **kwargs)
 
@@ -420,6 +426,6 @@ class SimpleCircularPointBeam(CircularPointBeam):
         filling_scheme = np.arange(0, n_bunches)
         h_RF = n_bunches
         circumference = h_RF * bunch_spacing*c
-
+        print kwargs
         super(SimpleCircularPointBeam, self).__init__(filling_scheme, circumference, h_RF,
              intensity, circular_overlapping, **kwargs)
