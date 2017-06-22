@@ -4,7 +4,7 @@ from scipy.constants import c
 from ..core import Parameters
 
 
-class SliceObject(object):
+class SignalObject(object):
     def __init__(self, bin_edges, intensity, location_x=0, location_y=0, beta_x=1, beta_y=1,
                  x=None, xp=None, y=None, yp=None, dp=None,
                  bunch_id=None, circumference=None, h_RF=None, circular_overlapping = 0):
@@ -94,8 +94,16 @@ class SliceObject(object):
         return self._z
 
     @property
+    def t(self):
+        return self._z/c
+
+    @property
     def real_z(self):
         return self._z + self._bunch_id * self._circumference/self._h_RF
+
+    @property
+    def real_t(self):
+        return self._z/c + self._bunch_id * self._circumference/self._h_RF/c
 
     @property
     def bin_edges(self):
@@ -244,7 +252,7 @@ class SliceObject(object):
             raise ValueError('Unknown variable')
 
 
-class Bunch(SliceObject):
+class Bunch(SignalObject):
     def __init__(self, length, n_slices, intensity, distribution='KV', **kwargs):
         self.length = length
         distribution = distribution
@@ -281,10 +289,12 @@ class Beam(object):
                                           circumference=circumference, h_RF=h_RF,  **kwargs))
 
     def __getattr__(self,attr):
-        if (attr in ['x','y','xp','yp','dp','x_amp','y_amp','z_amp','xp_amp','yp_amp','dp_amp', 'x_fixed','y_fixed','xp_fixed','yp_fixed']):
+        if (attr in ['x','y','xp','yp','dp','x_amp','y_amp','z_amp','xp_amp','yp_amp','dp_amp', 'x_fixed','y_fixed','xp_fixed','yp_fixed','n_macroparticles_per_slice']):
             return self.combine_property(attr)
         elif attr == 'z':
             return self.combine_property('real_z')
+        elif attr == 't':
+            return self.combine_property('real_t')
         else:
             return object.__getattribute__(self,attr)
 
@@ -299,9 +309,9 @@ class Beam(object):
     def n_slices_per_bunch(self):
         return self._n_slices_per_bunch
 
-    @property
-    def n_macroparticles_per_slice(self):
-        return self._charge_distribution
+#    @property
+#    def n_macroparticles_per_slice(self):
+#        return self._charge_distribution
 
     @property
     def slice_sets(self):
@@ -394,7 +404,7 @@ class SimpleBeam(Beam):
                                              h_RF, bunch_length, intensity, n_slices, **kwargs)
 
 
-class CircularPointBeam(SliceObject):
+class CircularPointBeam(SignalObject):
     def __init__(self, filling_scheme, circumference, h_RF, intensity, circular_overlapping,
                  **kwargs):
 
@@ -426,6 +436,168 @@ class SimpleCircularPointBeam(CircularPointBeam):
         filling_scheme = np.arange(0, n_bunches)
         h_RF = n_bunches
         circumference = h_RF * bunch_spacing*c
+        print circumference
         print kwargs
         super(SimpleCircularPointBeam, self).__init__(filling_scheme, circumference, h_RF,
              intensity, circular_overlapping, **kwargs)
+
+
+def binary_impulse(time_range, n_points = 100, amplitude = 1.):
+    """ Creates a signal where only one point has non-zero value. Can be used for calculating pure impulse responses of
+        signal processors
+
+    :param time_range: signal length in time [s]. If only one value is given, signal is from -1*value to 1* value,
+            otherwise between the values given in the list or tuple
+    :param n_points: number of data points in the signal
+    :param amplitude: value of the non-zero point
+    :return: Signal object
+    """
+    if isinstance(time_range, list) or isinstance(time_range, tuple):
+        t_bins = np.linspace(time_range[0], time_range[1], n_points+1)
+    else:
+        t_bins = np.linspace(-1.*time_range, time_range, n_points + 1)
+
+    t = np.array([(i + j) / 2. for i, j in zip(t_bins, t_bins[1:])])
+
+    z_bins = c * t_bins
+    bin_edges = np.transpose(np.array([z_bins[:-1], z_bins[1:]]))
+
+    x = np.zeros(len(t))
+    for i, val in enumerate(t):
+        if val >= 0.:
+            x[i] = amplitude
+            break
+
+    return SignalObject(bin_edges, 1., x=x)
+
+
+def generate_signal(signal_generator, f, amplitude, n_periods, n_per_period, n_zero_periods):
+
+    """ Abstract function which genrates signal
+
+    :param signal_generator: a function which generates the signal. The input time unit of the function is period [t*f]
+    :param f: frequency of the signal
+    :param amplitude: amplitude of the signal
+    :param n_periods: number of periodes included to signal
+    :param n_per_period: data points per period
+    :param n_zero_periods: number of periods consisting of zero values before and after the actual signal.
+    :return: Signal object
+    """
+
+    t_min = -1.*n_zero_periods[0]
+    t_max = n_periods+n_zero_periods[1]
+    t_bins = np.linspace(t_min,t_max,int((t_max-t_min)*n_per_period)+1)
+    t = np.array([(i + j) / 2. for i, j in zip(t_bins, t_bins[1:])])
+
+    x = np.zeros(len(t))
+    signal_points = (t > 0.) * (t < n_periods)
+    x[signal_points] = amplitude * signal_generator(t[signal_points])
+
+    z_bins = c * t_bins / f
+    bin_edges = np.transpose(np.array([z_bins[:-1], z_bins[1:]]))
+
+    return SignalObject(bin_edges, 1., x=x)
+
+
+def square_signal(f, amplitude, type, duty_cycle, n_periods, n_per_period, n_zero_periods):
+
+    """ Generates square signals, which oscillates between positive and negative value. Duty cycle describes
+        a fraction of time in which the signal has non-zero value (signal can be zero finite time between positive and
+        negative values, if duty cycle is below 1).
+    """
+    def signal_generator(x):
+        signal = np.zeros(len(x))
+        for i, val in enumerate(x):
+
+            if 0.< val % 1. < duty_cycle / 2.:
+                signal[i] = 1.
+
+            elif 0.5 < val % 1. < 0.5 + duty_cycle / 2.:
+                if type == 'unipolar':
+                    signal[i] = 1.
+
+                elif type == 'bipolar':
+                    signal[i] = -1.
+
+                else:
+                    signal[i] = 0.
+        return signal
+
+    return generate_signal(signal_generator, f, amplitude, n_periods, n_per_period, n_zero_periods)
+
+
+def square_impulse(f, amplitude = 1., duty_cycle=1., n_periods=1., n_per_period = 100, n_zero_periods = 1., type = 'bipolar'):
+    """ Generates an impulse, which length is only one period by default and there are one empty period
+        before and after the signal by defaul. """
+    n_zero_periods = (n_zero_periods, n_zero_periods)
+    return square_signal(f, amplitude, type, duty_cycle, n_periods, n_per_period, n_zero_periods)
+
+
+def square_step(f, amplitude = 1., duty_cycle=1., n_periods=5., n_per_period = 100, n_zero_periods = 1., type = 'bipolar'):
+    """ Generates a step impulse, which length is five periods by default and there are
+         one empty period empty before the signal by defaul. """
+    n_zero_periods = (n_zero_periods, 0)
+    return square_signal(f, amplitude, type, duty_cycle, n_periods, n_per_period, n_zero_periods)
+
+
+def square_wave(f, amplitude = 1., duty_cycle=1., n_periods=10., n_per_period = 100, type = 'bipolar'):
+    """ Generates a signal, which consists of 10 pediods by defaul without empty periods before nor after the signal."""
+    n_zero_periods = (0, 0)
+    return square_signal(f, amplitude, type, duty_cycle, n_periods, n_per_period, n_zero_periods)
+
+
+def triangle_signal(f, amplitude, n_periods, n_per_period, n_zero_periods):
+    """ Generates triangular signal, which oscillates between positive and negative values.
+    """
+    def signal_generator(x):
+        signal = np.zeros(len(x))
+        for i, val in enumerate(x):
+            if 0.<= val % 1. < 0.25:
+                signal[i] = 4. * (val % 1.)
+            elif 0.25 <= val % 1. < 0.75:
+                signal[i] = 2. - 4. * (val % 1.)
+            elif 0.75 <= val % 1. < 1.0:
+                signal[i] = -4. + 4. * (val % 1.)
+
+        return signal
+
+    return generate_signal(signal_generator, f, amplitude, n_periods, n_per_period, n_zero_periods)
+
+
+def triangle_impulse(f, amplitude = 1., n_periods=1., n_per_period = 100, n_zero_periods = 1.):
+    n_zero_periods = (n_zero_periods, n_zero_periods)
+    return triangle_signal(f, amplitude, n_periods, n_per_period, n_zero_periods)
+
+
+def triangle_step(f, amplitude = 1., n_periods=5., n_per_period = 100, n_zero_periods = 1.):
+    n_zero_periods = (n_zero_periods, 0)
+    return triangle_signal(f, amplitude, n_periods, n_per_period, n_zero_periods)
+
+
+def triangle_wave(f, amplitude = 1., n_periods=10., n_per_period = 100):
+    n_zero_periods = (0, 0)
+    return triangle_signal(f, amplitude, n_periods, n_per_period, n_zero_periods)
+
+
+def sine_signal(f, amplitude, n_periods, n_per_period, n_zero_periods):
+    """ Generates sine signal, which oscillates between positive and negative values.
+    """
+    def signal_generator(x):
+        return np.sin(2*np.pi*x)
+
+    return generate_signal(signal_generator, f, amplitude, n_periods, n_per_period, n_zero_periods)
+
+
+def sine_impulse(f, amplitude = 1., n_periods=1., n_per_period = 100, n_zero_periods = 1.):
+    n_zero_periods = (n_zero_periods, n_zero_periods)
+    return sine_signal(f, amplitude, n_periods, n_per_period, n_zero_periods)
+
+
+def sine_step(f, amplitude = 1., n_periods=5., n_per_period = 100, n_zero_periods = 1.):
+    n_zero_periods = (n_zero_periods, 0)
+    return sine_signal(f, amplitude, n_periods, n_per_period, n_zero_periods)
+
+
+def sine_wave(f, amplitude = 1., n_periods=10., n_per_period = 100):
+    n_zero_periods = (0, 0)
+    return sine_signal(f, amplitude, n_periods, n_per_period, n_zero_periods)
