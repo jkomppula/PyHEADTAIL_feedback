@@ -7,6 +7,8 @@ from signal_generators import binary_impulse, sine_impulse, triangle_impulse, sq
 import copy
 import time
 
+from ..core import process
+
 # TODO:
 #   * add analytical formula for excitation
 #   * multi plane for Signal handling
@@ -107,7 +109,7 @@ def frequency_response(processors, time_scale, resp_symmetry='symmetric', f_rang
         ref_data = ref_signal[ref_data_points]
         amplitude_data = signal[ref_data_points]
         for phase in phase_steps:
-            tck = interpolate.splrep(t + phase * t_period / 360., response, s=0)
+            tck = interpolate.splrep(t + phase * t_period / 360., signal, s=0)
             cor_data = interpolate.splev(ref_data_time, tck, der=0)
             values.append(np.sum(ref_data*cor_data))
 
@@ -134,13 +136,14 @@ def frequency_response(processors, time_scale, resp_symmetry='symmetric', f_rang
         processors_for_use = copy.deepcopy(processors)
         signal = sine_wave(f,1.,n_periods,n_per_period)
 
-        timed = signal.time
-        impulse = signal.signal
-        print len(timed)
-        signal.pass_signal(processors_for_use)
-        response = signal.signal
+        timed = signal.t
+        ref_parameters, ref_signal = signal.signal()
+#        print len(timed)
+        input_parameters, input_signal = signal.signal()
+#        print input_parameters
+        response_parameters, response_signal = process(input_parameters, input_signal, processors_for_use)
 
-        amplitude, phase_shift = calculate_parameters(1./f,timed,response,impulse)
+        amplitude, phase_shift = calculate_parameters(1./f,timed,response_signal,ref_signal)
 
         amplitudes.append(amplitude)
         phase_shifts.append(phase_shift)

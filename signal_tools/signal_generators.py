@@ -131,23 +131,21 @@ class SignalObject(object):
             self._output_signal = np.zeros(self._n_slices + 2 * self._circular_overlapping)
 
         if self._output_parameters is None:
-            if self._circular_overlapping > 0:
+            if self._bunch_id is not None:
+                bunch_mid = self.bunch_id * self._circumference/self._h_RF
+            else:
+                bunch_mid = np.mean(self._z_bins)
 
-                if self._bunch_id is not None:
-                    bunch_mid = self.bunch_id * self._circumference/self._h_RF
-                else:
-                    bunch_mid = np.mean(self._z_bins)
+            prefix_offset = self._bin_edges[self._circular_overlapping,0] - self._bin_edges[0,0]
+            postfix_offset = self._bin_edges[-1,1] - self._bin_edges[-self._circular_overlapping,1]
+            bin_edges = np.concatenate((self._bin_edges[0:self._circular_overlapping]+prefix_offset,self._bin_edges),axis=0)
+            bin_edges = np.concatenate((bin_edges,self._bin_edges[-self._circular_overlapping:]+postfix_offset),axis=0)
 
-                prefix_offset = self._bin_edges[self._circular_overlapping,0] - self._bin_edges[0,0]
-                postfix_offset = self._bin_edges[-1,1] - self._bin_edges[-self._circular_overlapping,1]
-                bin_edges = np.concatenate((self._bin_edges[0:self._circular_overlapping]+prefix_offset,self._bin_edges),axis=0)
-                bin_edges = np.concatenate((bin_edges,self._bin_edges[-self._circular_overlapping:]+postfix_offset),axis=0)
-
-                bin_edges = bin_edges + bunch_mid
+            bin_edges = bin_edges + bunch_mid
 
 
-                self._output_parameters = Parameters(2, bin_edges, 1, len(bin_edges),
-                        [bunch_mid],location=self._location_x, beta=self._beta_x)
+            self._output_parameters = Parameters(2, bin_edges, 1, len(bin_edges),
+                    [bunch_mid],location=self._location_x, beta=self._beta_x)
 
         if var == 'x':
             np.copyto(self._output_signal[self._circular_overlapping:
@@ -169,6 +167,9 @@ class SignalObject(object):
                       self._output_signal[self._n_slices:(self._circular_overlapping+self._n_slices)])
             np.copyto(self._output_signal[-self._circular_overlapping:],
                       self._output_signal[self._circular_overlapping:(2*self._circular_overlapping)])
+
+#        print 'I am returning:'
+#        print self._output_parameters
 
         return self._output_parameters, self._output_signal
 
