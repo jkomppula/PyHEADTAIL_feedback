@@ -330,8 +330,12 @@ class ConvolutionFilter(Convolution):
         return target_segments, cleaned_impulse
 
     def _normalize(self, impulse_ref_edges, impulse):
+
         if self._normalization is None:
             pass
+        elif isinstance(self._normalization, tuple):
+            if self._normalization[0] == 'integral':
+                norm_coeff, _ = integrate.quad(self._impulse_response, self._normalization[1][0], self._normalization[1][1])
         elif self._normalization == 'sum':
             impulse = impulse/np.sum(impulse)
 
@@ -426,7 +430,7 @@ class ConvolutionFilter(Convolution):
 
 
 class Lowpass(ConvolutionFilter):
-    def __init__(self,f_cutoff, impulse_length = 5., f_cutoff_2nd = None, normalization='sum', **kwargs):
+    def __init__(self,f_cutoff, impulse_length = 5., f_cutoff_2nd = None, normalization=('integral',(-5.,5.)), **kwargs):
         scaling = 2. * pi * f_cutoff / c
         impulse_range = (0, impulse_length/scaling)
 
@@ -445,7 +449,7 @@ class Lowpass(ConvolutionFilter):
             return math.exp(-1. * x)
 
 class Highpass(ConvolutionFilter):
-    def __init__(self,f_cutoff, impulse_length = 5., f_cutoff_2nd = None, normalization='sum', **kwargs):
+    def __init__(self,f_cutoff, impulse_length = 5., f_cutoff_2nd = None, normalization=('integral',(-5.,5.)), **kwargs):
         scaling = 2. * pi * f_cutoff / c
         impulse_range = (0, impulse_length/scaling)
 
@@ -464,7 +468,7 @@ class Highpass(ConvolutionFilter):
             return -1.* math.exp(-1. * x)
 
 class PhaseLinearizedLowpass(ConvolutionFilter):
-    def __init__(self, f_cutoff, impulse_length = 5., f_cutoff_2nd = None, normalization='sum', **kwargs):
+    def __init__(self, f_cutoff, impulse_length = 5., f_cutoff_2nd = None, normalization=('integral',(-5.,5.)), **kwargs):
         scaling = 2. * pi * f_cutoff / c
         impulse_range = (-1.*impulse_length/scaling, impulse_length/scaling)
 
@@ -484,7 +488,7 @@ class PhaseLinearizedLowpass(ConvolutionFilter):
 
 
 class GaussianLowpass(ConvolutionFilter):
-    def __init__(self, f_cutoff, impulse_length = 5., normalization='sum', **kwargs):
+    def __init__(self, f_cutoff, impulse_length = 5., normalization=('integral',(-5.,5.)), **kwargs):
         scaling = 2. * pi * f_cutoff / c
         impulse_range = (-1.*impulse_length/scaling, impulse_length/scaling)
 
@@ -509,7 +513,7 @@ class Sinc(ConvolutionFilter):
         code in example/test 004_analog_signal_processors.ipynb
     """
 
-    def __init__(self, f_cutoff, window_width = 3, window_type = 'blackman', normalization='sum', **kwargs):
+    def __init__(self, f_cutoff, window_width = 3, window_type = 'blackman', normalization=('integral',(-5.,5.)), **kwargs):
         """
         :param f_cutoff: a cutoff frequency of the filter
         :param delay: a delay of the filter [s]
