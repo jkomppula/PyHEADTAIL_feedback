@@ -9,6 +9,8 @@ import scipy.integrate as integrate
 import scipy.special as special
 from scipy.interpolate import UnivariateSpline
 
+# TODO: - 2nd order cutoff by using gaussian filter
+# TODO: - FIR filter
 
 class Convolution(object):
     __metaclass__ = ABCMeta
@@ -64,13 +66,13 @@ class Convolution(object):
             prefix_offset = org_edges[(extra_bins-1), 1]-org_edges[0, 0]
             postfix_offset = org_edges[-extra_bins, 0]-org_edges[-1, 1]
 
-            edges = np.append((org_edges[:extra_bins]-prefix_offset), org_edges, axis=0)
-            edges = np.append(edges, org_edges[extra_bins:]-postfix_offset, axis=0)
-            ref_points.append(np.mean(bin_edges_to_z_bins(edges)))
+            edges = np.concatenate(((org_edges[:extra_bins]-prefix_offset), org_edges), axis=0)
+            edges = np.concatenate((edges, org_edges[extra_bins:]-postfix_offset), axis=0)
+            ref_points.append(np.mean(bin_edges_to_z_bins(org_edges)))
             if impulse_ref_edges is None:
                 impulse_ref_edges = edges
             else:
-                impulse_ref_edges = np.append(impulse_ref_edges, edges)
+                impulse_ref_edges = np.concatenate((impulse_ref_edges, edges), axis=0)
 
         for i, ref_point in enumerate(ref_points):
 
@@ -82,7 +84,6 @@ class Convolution(object):
             self._dashed_impulse_responses.append(dashed_impulse_response)
 
             self._impulses_from_segments.append(np.zeros(len(dashed_impulse_response)))
-
             for idx, target_idx in enumerate(target_segments):
                 i_from = idx*(n_bins + 2 * extra_bins) + extra_bins
                 i_to = idx*(n_bins + 2 * extra_bins) + extra_bins + n_bins
@@ -110,6 +111,7 @@ class Convolution(object):
 
         output_signal = np.zeros(len(signal))
         for i in xrange(self._n_seg):
+
             i_from = i*self._n_bins
             i_to = (i+1)*self._n_bins
             np.copyto(output_signal[i_from:i_to], np.sum(self._impulses_to_segments[i], axis=0))
@@ -130,6 +132,151 @@ class Convolution(object):
 
         return parameters, output_signal
 
+#class Delay(Convolution):
+#    def __init__(self,delay, **kwargs):
+#
+#        self._z_delay = delay*c
+#
+#        if self._z_delay < 0.:
+#            impulse_range = (self._z_delay, 0.)
+#        else:
+#            impulse_range = (0., self._z_delay)
+#
+#        super(self.__class__, self).__init__(impulse_range, **kwargs)
+#        self.label = 'Delay'
+#
+#    def calculate_response(self, impulse_bin_mids, impulse_bin_edges):
+#        impulse_values = np.zeros(len(impulse_bin_mids))
+#        bin_spacing =  np.mean(impulse_bin_edges[:,1]-impulse_bin_edges[:,0])
+#
+#        ref_bin_from = -0.5*bin_spacing+self._z_delay
+#        ref_bin_to = 0.5*bin_spacing+self._z_delay
+#
+#        for i, edges in enumerate(impulse_bin_edges):
+#            impulse_values[i] = self._CDF(edges[1],ref_bin_from,ref_bin_to) - self._CDF(edges[0],ref_bin_from,ref_bin_to)
+#
+#        return impulse_values
+#
+#    def _CDF(self,x,ref_bin_from, ref_bin_to):
+#        # FIXME: this is not gonna work for nagative delays?
+#
+#        if x <= ref_bin_from:
+#            return 0.
+#        elif x < ref_bin_to:
+#            return (x-ref_bin_from)/float(ref_bin_to-ref_bin_from)
+#        else:
+#            return 1.
+#
+#
+#class MovingAverage(Convolution):
+#    """ Returns a signal, which consists an average value of the input signal. A sums of the rows in the matrix
+#        are normalized to be one (i.e. a sum of the input signal doesn't change).
+#    """
+#
+#    def __init__(self,window_length, quantity = 'time', **kwargs):
+#
+#        if quantity == 'time':
+#            self._window = (-0.5 * window_length * c, 0.5 * window_length * c)
+#        elif quantity == 'distance':
+#            self._window = (-0.5 * window_length, 0.5 * window_length)
+#        else:
+#            raise ValueError('Unknown value in Average.quantity')
+#
+#        super(self.__class__, self).__init__(self._window, **kwargs)
+#        self.label = 'Average'
+#
+#    def calculate_response(self, impulse_bin_mids, impulse_bin_edges):
+#        impulse_values = np.zeros(len(impulse_bin_mids))
+#
+#        for i, edges in enumerate(impulse_bin_edges):
+#            impulse_values[i] = self._CDF(edges[1], self._window[0], self._window[1]) \
+#                                   - self._CDF(edges[0], self._window[0], self._window[1])
+#
+#        return impulse_values
+#
+#    def _CDF(self, x, ref_bin_from, ref_bin_to):
+#        if x <= ref_bin_from:
+#            return 0.
+#        elif x < ref_bin_to:
+#            return (x - ref_bin_from) / float(ref_bin_to - ref_bin_from)
+#        else:
+#            return 1.
+#
+#
+#class WaveletGenerator(Convolution):
+#
+#    def __init__(self,spacing,n_copies, **kwargs):
+#        self._spacing = spacing
+#        self._n_copies = n_copies
+#
+#        if isinstance(self._n_copies,tuple):
+#            self._i_from = self._n_copies[0]
+#            self._i_to = self._n_copies[1]
+#
+#        else:
+#            self._i_from = min(self._n_copies,0)
+#            self._i_to = max(self._n_copies,0)
+#
+#        self._window = (self._i_from*self._spacing*c,self._i_to*self._spacing*c)
+#
+#        super(self.__class__, self).__init__(self._window, **kwargs)
+#        self.label = 'Wavelet generator'
+#
+#
+#    def calculate_response(self, impulse_bin_mids, impulse_bin_edges):
+#
+#        bin_spacing = np.mean(impulse_bin_edges[:,1]-impulse_bin_edges[:,0])
+#        impulse_values = np.zeros(len(impulse_bin_mids))
+#
+#        for i in xrange(self._i_from,(self._i_to+1)):
+#            copy_mid = i*self._spacing*c
+#            copy_from = copy_mid - 0.5 * bin_spacing
+#            copy_to = copy_mid + 0.5 * bin_spacing
+#
+#            for j, edges in enumerate(impulse_bin_edges):
+#                impulse_values[j] += (self._CDF(edges[1],copy_from,copy_to)-self._CDF(edges[0],copy_from,copy_to))
+#
+#        return impulse_values
+#
+#    def _CDF(self, x, ref_bin_from, ref_bin_to):
+#        if x <= ref_bin_from:
+#            return 0.
+#        elif x < ref_bin_to:
+#            return (x - ref_bin_from) / float(ref_bin_to - ref_bin_from)
+#        else:
+#            return 1.
+#
+#class ConvolutionFromFile(Convolution):
+#    """ Interpolates matrix columns by using inpulse response data from a file. """
+#
+#    def __init__(self,filename, x_axis = 'time', calc_type = 'mean',  **kwargs):
+#        self._filename = filename
+#        self._x_axis = x_axis
+#        self._calc_type = calc_type
+#
+#        self._data = np.loadtxt(self._filename)
+#        if self._x_axis == 'time':
+#            self._data[:, 0]=self._data[:, 0]*c
+#
+#        impulse_range = (self._data[0,0],self._data[-1,0])
+#
+#        super(self.__class__, self).__init__(impulse_range, **kwargs)
+#        self.label = 'Convolution from external data'
+#
+#    def calculate_response(self, impulse_response_bin_mid, impulse_response_bin_edges):
+#
+#        if self._calc_type == 'mean':
+#            return np.interp(impulse_response_bin_mid, self._data[:, 0], self._data[:, 1])
+#        elif self._calc_type == 'integral':
+#            s = UnivariateSpline(self._data[:, 0], self._data[:, 1])
+#            response_values = np.zeros(len(impulse_response_bin_mid))
+#
+#            for i, edges in enumerate(impulse_response_bin_edges):
+#                response_values[i], _ = s.integral(edges[0],edges[1])
+#            return response_values
+#
+#        else:
+#            raise ValueError('Unknown value in ConvolutionFromFile._calc_type')
 
 class ConvolutionFilter(Convolution):
     __metaclass__ = ABCMeta
@@ -148,10 +295,13 @@ class ConvolutionFilter(Convolution):
         self._impulse_response = self._impulse_response_generator(tip_cut_width)
 
     def response_function(self, impulse_ref_edges, n_segments, n_bins_per_segment):
-
+#        print 'impulse_ref_edges'
+#        print impulse_ref_edges
         impulse = np.zeros(len(impulse_ref_edges))
 
         for i, edges in enumerate(impulse_ref_edges):
+#            print 'edges'
+#            print edges
             integral_from = edges[0] * self._scaling
             integral_to = edges[1] * self._scaling
 
@@ -176,8 +326,8 @@ class ConvolutionFilter(Convolution):
                 cleaned_impulse = np.append(cleaned_impulse, impulse[i_from:i_to])
 
 
-        return [0], impulse
-#        return target_segments, cleaned_impulse
+#        return [0], impulse
+        return target_segments, cleaned_impulse
 
     def _normalize(self, impulse_ref_edges, impulse):
         if self._normalization is None:

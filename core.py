@@ -27,7 +27,7 @@ def Parameters(signal_class=0, bin_edges=np.array([]), n_segments=0,
         the signal can be divided
     n_bins_per_segment : int
         A number of bins per segment. `len(bin_edges)/n_segments`
-    segment_refpoints : NumPy array
+    segment_ref_points : NumPy array
         A numpy array of original midpoints of the segments
     location : float
         A location of the signal in betatron phase.

@@ -51,79 +51,15 @@ def signal_response(signal,processors,plane = 'x'):
             response:   output signal
     """
 
-    processors_to_use = copy.deepcopy(processors)
-    signal.pick_signal(plane)
+    processors_for_use = copy.deepcopy(processors)
 
-    t = signal.time
-    z = signal.distance
-    impulse = signal.signal
+    t = signal.t
+    z = signal.z
+    input_parameters, input_signal = signal.signal()
 
-    signal.pass_signal(processors_to_use)
+    output_parameters, output_signal = process(input_parameters, input_signal, processors_for_use)
 
-    response = signal.signal
-
-    return t, z, impulse, response
-
-#def frequency_response(processors, time_scale, resp_symmetry='symmetric', f_range = None,
-#                       n_f_points = 31, n_min_periods = 15, n_min_per_period = 48):
-#
-#    def calculate_parameters(t_period,t,signal,ref_signal):
-#        phase_steps = np.linspace(-100,100,2001)
-#        values = []
-#
-#        ref_data_points = None
-#
-#        if resp_symmetry == 'symmetric':
-#            start_period = np.floor((np.amax(t) - np.amin(t))/(2.*t_period))
-#            ref_data_points = (t >= ((start_period - 1.)* t_period))*(t < ((start_period + 1.)* t_period))
-#        elif resp_symmetry == 'delayed':
-#            ref_data_points = (t >= (np.amax(t) - 3.* t_period))*(t < (np.amax(t) - 1.* t_period))
-#        elif resp_symmetry == 'advanced':
-#            ref_data_points = (t >= (np.amin(t) + 1.* t_period))*(t < (np.amin(t) + 3.* t_period))
-#
-#        ref_data_time = t[ref_data_points]
-#        ref_data = ref_signal[ref_data_points]
-#        amplitude_data = signal[ref_data_points]
-#        for phase in phase_steps:
-#            tck = interpolate.splrep(t + phase * t_period / 360., response, s=0)
-#            cor_data = interpolate.splev(ref_data_time, tck, der=0)
-#            values.append(np.sum(ref_data*cor_data))
-#
-#        values = np.array(values)
-#        phase_shift_point = values == np.max(values)
-#        phase_shift = phase_steps[phase_shift_point]
-#        phase_shift = phase_shift[0]
-#        amplitude = np.amax(np.abs(amplitude_data))
-#
-#        return amplitude, phase_shift
-#
-#    if f_range is None:
-#        frequencies = np.logspace(np.log10(0.01 / time_scale), np.log10(100. / time_scale), n_f_points)
-#    else:
-#        frequencies = np.logspace(np.log10(f_range[0]),np.log10(f_range[1]),n_f_points)
-#
-#    amplitudes = []
-#    phase_shifts = []
-#
-#    for f in frequencies:
-#        n_periods = max(n_min_periods, int(math.ceil(1.*time_scale*f)))
-#        n_per_period = max(n_min_per_period,4./(time_scale*f))
-#
-#        processors_for_use = copy.deepcopy(processors)
-#        signal = sine_wave(f,1.,n_periods,n_per_period)
-#
-#        timed = signal.t
-#        impulse_parameters, impulse = signal.signal()
-#        input_parameters, input_signal = signal.signal()
-#        response_parameters, response = process(input_parameters, input_signal,processors_for_use)
-##        response = signal.signal
-#
-#        amplitude, phase_shift = calculate_parameters(1./f,timed,response,impulse)
-#
-#        amplitudes.append(amplitude)
-#        phase_shifts.append(phase_shift)
-#
-#    return frequencies, np.array(amplitudes), np.array(phase_shifts)
+    return t, z, input_signal, output_signal
 
 def frequency_response(processors, time_scale, resp_symmetry='symmetric', f_range = None, n_f_points = 32, n_min_periods = 32, n_min_per_period = 64):
 

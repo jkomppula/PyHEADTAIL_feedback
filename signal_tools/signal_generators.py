@@ -136,9 +136,9 @@ class SignalObject(object):
 
         if self._output_parameters is None:
             if self._ref_point is not None:
-                bunch_mid = self._ref_point
+                bunch_ref_point = self._ref_point
             else:
-                bunch_mid = np.mean(self._z_bins)
+                bunch_ref_point = np.mean(self._z_bins)
 
 
             prefix_offset = self._bin_edges[self._circular_overlapping,0] - self._bin_edges[0,0]
@@ -149,10 +149,10 @@ class SignalObject(object):
 #            else:
 #                bin_edges = self._bin_edges
 
-            bin_edges = bin_edges + bunch_mid
+            bin_edges = bin_edges + bunch_ref_point
 
             self._output_parameters = Parameters(2, bin_edges, 1, len(bin_edges),
-                    [bunch_mid],location=self._location_x, beta=self._beta_x)
+                    [bunch_ref_point],location=self._location_x, beta=self._beta_x)
 
         if var == 'x':
             np.copyto(self._output_signal[self._circular_overlapping:
@@ -315,6 +315,7 @@ class Beam(object):
 
     @property
     def n_slices_per_bunch(self):
+
         return self._n_slices_per_bunch
 
 #    @property
@@ -330,7 +331,7 @@ class Beam(object):
             bin_edges = None
             beta = None
             location = None
-            segment_midpoins = []
+            segment_ref_points = []
             n_bins_per_segment = self._n_slices_per_bunch
             n_segments = len(self._bunch_list)
 
@@ -355,16 +356,22 @@ class Beam(object):
                 if bin_edges is None:
                     bin_edges = np.copy(parameters['bin_edges'])
                 else:
+#                    print 'parameters["bin_edges"]:'
+#                    print parameters['bin_edges']
+
+
                     bin_edges = np.concatenate((bin_edges,parameters['bin_edges']),axis=0)
 
-                segment_midpoins.append(parameters['segment_midpoints'][0])
+                segment_ref_points.append(parameters['segment_ref_points'][0])
 
 
         if self._output_parameters is None:
+#            print 'Final edges:'
+#            print bin_edges
             self._output_parameters = Parameters(signal_class=1, bin_edges=bin_edges,
                                                  n_segments=n_segments,
                                                  n_bins_per_segment=n_bins_per_segment,
-                                                 segment_midpoints=segment_midpoins,
+                                                 segment_ref_points=segment_ref_points,
                                                  location=location,
                                                  beta=beta)
 
@@ -481,7 +488,6 @@ def binary_impulse(time_range, n_points = 100, amplitude = 1.):
 
 
 def generate_signal(signal_generator, f, amplitude, n_periods, n_per_period, n_zero_periods):
-
     """ Abstract function which genrates signal
 
     :param signal_generator: a function which generates the signal. The input time unit of the function is period [t*f]
@@ -510,7 +516,6 @@ def generate_signal(signal_generator, f, amplitude, n_periods, n_per_period, n_z
 
 
 def square_signal(f, amplitude, type, duty_cycle, n_periods, n_per_period, n_zero_periods):
-
     """ Generates square signals, which oscillates between positive and negative value. Duty cycle describes
         a fraction of time in which the signal has non-zero value (signal can be zero finite time between positive and
         negative values, if duty cycle is below 1).
