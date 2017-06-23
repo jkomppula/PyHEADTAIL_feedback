@@ -9,7 +9,7 @@ import numpy as np
 
 
 def Parameters(signal_class=0, bin_edges=np.array([]), n_segments=0,
-               n_bins_per_segment=0, segment_midpoints=np.array([]),
+               n_bins_per_segment=0, segment_ref_points=np.array([]),
                location=0, beta=1.):
     """
     Returns a prototype for signal parameters.
@@ -27,7 +27,7 @@ def Parameters(signal_class=0, bin_edges=np.array([]), n_segments=0,
         the signal can be divided
     n_bins_per_segment : int
         A number of bins per segment. `len(bin_edges)/n_segments`
-    segment_midpoints : NumPy array
+    segment_refpoints : NumPy array
         A numpy array of original midpoints of the segments
     location : float
         A location of the signal in betatron phase.
@@ -39,7 +39,7 @@ def Parameters(signal_class=0, bin_edges=np.array([]), n_segments=0,
             'bin_edges': bin_edges,
             'n_segments': n_segments,
             'n_bins_per_segment': n_bins_per_segment,
-            'segment_midpoints': segment_midpoints,
+            'segment_ref_points': segment_ref_points,
             'location': location,
             'beta': beta
             }
@@ -77,6 +77,22 @@ def process(parameters, signal, processors, **kwargs):
         parameters, signal = processor.process(parameters, signal, **kwargs)
 
     return parameters, signal
+
+
+def bin_widths(bin_edges):
+    return (bin_edges[:, 1]-bin_edges[:, 0])
+
+
+def bin_mids(bin_edges):
+    return (bin_edges[:, 0]+bin_edges[:, 1])/2.
+
+
+def bin_edges_to_z_bins(bin_edges):
+    return np.append(bin_edges[:, 0], bin_edges[-1, 1])
+
+
+def z_bins_to_bin_edges(z_bins):
+    return np.transpose(np.array([z_bins[:-1], z_bins[1:]]))
 
 
 def get_processor_extensions(processors, available_extensions=None):

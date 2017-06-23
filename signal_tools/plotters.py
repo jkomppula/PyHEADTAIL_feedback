@@ -72,4 +72,4 @@ def plot_frequency_responses(data, labels, f_c):
 
     fig.subplots_adjust(hspace = .05)
     plt.show()
-    return fig, ax
+    return fig, ax1, ax2

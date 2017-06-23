@@ -5,7 +5,7 @@ from ..core import Parameters
 
 
 class SignalObject(object):
-    def __init__(self, bin_edges, intensity, location_x=0, location_y=0, beta_x=1, beta_y=1,
+    def __init__(self, bin_edges, intensity, ref_point = None, location_x=0, location_y=0, beta_x=1, beta_y=1,
                  x=None, xp=None, y=None, yp=None, dp=None,
                  bunch_id=None, circumference=None, h_RF=None, circular_overlapping = 0):
 
@@ -13,6 +13,10 @@ class SignalObject(object):
         self._circumference = circumference
         self._h_RF = h_RF
         self._circular_overlapping = circular_overlapping
+        if (ref_point is None) and (bunch_id is not None):
+            self._ref_point = self.bunch_id * self._circumference/self._h_RF
+        else:
+            self._ref_point = ref_point
 
         self._location_x = location_x
         self._location_y = location_y
@@ -131,18 +135,21 @@ class SignalObject(object):
             self._output_signal = np.zeros(self._n_slices + 2 * self._circular_overlapping)
 
         if self._output_parameters is None:
-            if self._bunch_id is not None:
-                bunch_mid = self.bunch_id * self._circumference/self._h_RF
+            if self._ref_point is not None:
+                bunch_mid = self._ref_point
             else:
                 bunch_mid = np.mean(self._z_bins)
+
 
             prefix_offset = self._bin_edges[self._circular_overlapping,0] - self._bin_edges[0,0]
             postfix_offset = self._bin_edges[-1,1] - self._bin_edges[-self._circular_overlapping,1]
             bin_edges = np.concatenate((self._bin_edges[0:self._circular_overlapping]+prefix_offset,self._bin_edges),axis=0)
-            bin_edges = np.concatenate((bin_edges,self._bin_edges[-self._circular_overlapping:]+postfix_offset),axis=0)
+            if self._circular_overlapping > 0:
+                bin_edges = np.concatenate((bin_edges,self._bin_edges[-self._circular_overlapping:]+postfix_offset),axis=0)
+#            else:
+#                bin_edges = self._bin_edges
 
             bin_edges = bin_edges + bunch_mid
-
 
             self._output_parameters = Parameters(2, bin_edges, 1, len(bin_edges),
                     [bunch_mid],location=self._location_x, beta=self._beta_x)
@@ -469,6 +476,7 @@ def binary_impulse(time_range, n_points = 100, amplitude = 1.):
             x[i] = amplitude
             break
 
+#    return SignalObject(bin_edges, 1., x=x, ref_point = 0.)
     return SignalObject(bin_edges, 1., x=x)
 
 
@@ -497,6 +505,7 @@ def generate_signal(signal_generator, f, amplitude, n_periods, n_per_period, n_z
     z_bins = c * t_bins / f
     bin_edges = np.transpose(np.array([z_bins[:-1], z_bins[1:]]))
 
+#    return SignalObject(bin_edges, 1., x=x, ref_point = 0.)
     return SignalObject(bin_edges, 1., x=x)
 
 
