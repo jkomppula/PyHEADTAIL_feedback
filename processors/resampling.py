@@ -50,16 +50,21 @@ class Resampler(object):
             max_ref_point = np.max(mids)
             start_mid = mids[0]
 
+        if self._n_samples is not None:
+            n_bins_per_segment = self._n_samples
+        else:
+            n_bins_per_segment = 1
+
         segment_length = circumference/float(h_RF)
-        bin_width = segment_length/float(self._n_samples)
+        bin_width = segment_length/float(n_bins_per_segment)
 
         n_sampled_sequencies = (max_ref_point-min_ref_point) / segment_length + 1
         n_sampled_sequencies = int(np.round(n_sampled_sequencies))
 
-        total_n_samples = int(n_sampled_sequencies * self._n_samples)
+        total_n_samples = int(n_sampled_sequencies * n_bins_per_segment)
 
-        segment_z_bins = np.linspace(0, segment_length, self._n_samples+1)
-        segment_z_bins = segment_z_bins + (self._offset - np.floor(self._n_samples/2.)-0.5)*bin_width
+        segment_z_bins = np.linspace(0, segment_length, n_bins_per_segment+1)
+        segment_z_bins = segment_z_bins + (self._offset - np.floor(n_bins_per_segment/2.)-0.5)*bin_width
         segment_bin_edges = z_bins_to_bin_edges(segment_z_bins)
 
         bin_edges = None
@@ -75,19 +80,30 @@ class Resampler(object):
         n_segments = 1
         n_bins_per_segment = total_n_samples
         segment_ref_points = [np.mean(bin_edges_to_z_bins(bin_edges))]
-        previous_parameters = parameters['previous_parameters']
-        previous_parameters.append(parameters)
+        previous_parameters = []
         location = parameters['location']
         beta = parameters['beta']
 
         self._output_parameters = Parameters(signal_class, bin_edges, n_segments,
                                              n_bins_per_segment, segment_ref_points,
                                              previous_parameters, location, beta)
+        temp_parameters = copy.deepcopy(parameters)
+        temp_parameters['previous_parameters'] = []
+        self._output_parameters['previous_parameters'] = copy.deepcopy(parameters['previous_parameters'])
+        self._output_parameters['previous_parameters'].append(temp_parameters)
         self._output_signal = np.zeros(total_n_samples)
 
 
     def _init_sequenced_bins(self, parameters, signal):
         bin_width = 1./self._method[1]*c
+        if self._n_samples is not None:
+            n_bins_per_segment = self._n_samples
+        else:
+            segment_from = parameters['bin_edges'][0,0]
+            segment_to = parameters['bin_edges'][parameters['n_bins_per_segment']-1,1]
+            raw_segment_length = segment_to - segment_from
+            n_bins_per_segment = int(np.ceil(raw_segment_length/bin_width))
+
         segment_z_bins = np.linspace(0, self._n_samples/self._method[1]*c, self._n_samples+1)
         segment_z_bins = segment_z_bins - np.mean(segment_z_bins) + self._offset*bin_width
         segment_bin_edges = z_bins_to_bin_edges(segment_z_bins)
@@ -101,20 +117,30 @@ class Resampler(object):
                 bin_edges = append_bin_edges(bin_edges, segment_bin_edges+offset)
         signal_class = 1
         n_segments = parameters['n_segments']
-        n_bins_per_segment = self._n_samples
         segment_ref_points = parameters['segment_ref_points']
-        previous_parameters = parameters['previous_parameters']
-        previous_parameters.append(parameters)
+        previous_parameters =  []
         location = parameters['location']
         beta = parameters['beta']
 
         self._output_parameters = Parameters(signal_class, bin_edges, n_segments,
                                              n_bins_per_segment, segment_ref_points,
                                              previous_parameters, location, beta)
+        temp_parameters = copy.deepcopy(parameters)
+        temp_parameters['previous_parameters'] = []
+        self._output_parameters['previous_parameters'] = copy.deepcopy(parameters['previous_parameters'])
+        self._output_parameters['previous_parameters'].append(temp_parameters)
         self._output_signal = np.zeros(self._output_parameters['n_segments'] * self._output_parameters['n_bins_per_segment'])
 
-    def _init_previous_bins(self, idx, parameters, signal):
-        self._output_parameters = parameters['previous_parameters'][idx]
+    def _init_previous_bins(self, parameters, signal):
+        print "parameters['previous_parameters'][self._method[1]]:"
+        print parameters['previous_parameters'][0]
+        self._output_parameters = copy.deepcopy(parameters['previous_parameters'][self._method[1]])
+        self._output_parameters['previous_parameters'] = copy.deepcopy(parameters['previous_parameters'][0:self._method[1]])
+        print 'My output paramters are: '
+        print self._output_parameters
+        print 'My bin_edges are: '
+        print self._output_parameters['bin_edges']
+
         self._output_signal = np.zeros(self._output_parameters['n_segments'] * self._output_parameters['n_bins_per_segment'])
 
 
@@ -269,8 +295,6 @@ class Quantizer(object):
         self.extensions = ['debug']
         self._extension_objects = [debug_extension(self, label, **kwargs)]
 
-        self.label = 'Quantizer'
-
     def process(self, parameters, signal, *args, **kwargs):
         output_signal = self._step_size*np.floor(signal/self._step_size+0.5)
 
@@ -285,7 +309,7 @@ class Quantizer(object):
 
 
 class ADC(object):
-    def __init__(self,sampling_rate, n_bits = None, input_range = None, store_signal = False, **kwargs):
+    def __init__(self,sampling_rate, n_samples=None,  n_bits=None, input_range=None, **kwargs):
         """ A model for an analog to digital converter, which changes a length of the input signal to correspond to
             the number of slices in the PyHEADTAIL. If parameters for the quantizer are given, it quantizes also
             the input signal to discrete levels.
@@ -307,8 +331,7 @@ class ADC(object):
         """
         self.label = 'ADC'
         self.signal_classes = (0, 1)
-        self.extensions = ['store']
-        self._resampler = Resampler('reconstructed' , sampling_rate, **kwargs)
+        self._resampler = Resampler(('sequenced', sampling_rate) , n_samples, **kwargs)
 
         self._digitizer = None
         if (n_bits is not None) and (input_range is not None):
@@ -316,12 +339,10 @@ class ADC(object):
         elif (n_bits is not None) or (input_range is not None):
             raise ValueError('Either both n_bits and input_range must have values or they must be None')
 
-        # for storing the signal
-        self.store_signal = store_signal
-        self.input_signal = None
-        self.input_parameters = None
-        self.output_signal = None
-        self.output_parameters = None
+
+
+        self.extensions = ['debug']
+        self._extension_objects = [debug_extension(self, 'ADC', **kwargs)]
 
     def process(self, parameters, signal, *args, **kwargs):
         output_parameters, output_signal = self._resampler.process(parameters, signal, *args, **kwargs)
@@ -330,17 +351,62 @@ class ADC(object):
             output_parameters, output_signal = self._digitizer.process(output_parameters, output_signal
                                                                               , *args, **kwargs)
 
-        if self._store_signal:
-            self.input_signal = np.copy(signal)
-            self.input_signal_parameters = copy.copy(parameters)
-            self.output_signal = np.copy(output_signal)
-            self.output_parameters = copy.copy(output_parameters)
+        for extension in self._extension_objects:
+            extension(self, parameters, signal, output_parameters, output_signal,
+                      *args, **kwargs)
+
+        return output_parameters, output_signal
+
+class HarmonicADC(object):
+    def __init__(self,circumference, h_RF, multiplier, n_bits=None, input_range=None, **kwargs):
+        """ A model for an analog to digital converter, which changes a length of the input signal to correspond to
+            the number of slices in the PyHEADTAIL. If parameters for the quantizer are given, it quantizes also
+            the input signal to discrete levels.
+        :param sampling_rate: sampling rate of the ADC [Hz]
+        :param n_bits: the number of bits where to input signal is quantized. If the value is None, the input signal
+                is not quantizated. The default value is None.
+        :param input_range: the range for for the quantizer. If the value is None, the input signal is not quantizated.
+                The default value is None.
+        :param sync_method: The time range of the input signal might not correspond to an integer number of
+            samples determined by sampling rate.
+                'rounded': The time range of the input signal is divided to number of samples, which correspons to
+                    the closest integer of samples determined by the sampling rate (defaul)
+                'rising_edge': the exact value of the sampling rate is used, but there are empty space in the end
+                    of the signal
+                'falling_edge': the exact value of the sampling rate is used, but there are empty space in the beginning
+                    of the signal
+                'middle': the exact value of the sampling rate is used, but there are an equal amount of empty space
+                    in the beginning and end of the signal
+        """
+        self.label = 'ADC'
+        self.signal_classes = (0, 1)
+        self._resampler = Resampler('harmonic', (circumference, h_RF) , multiplier, **kwargs)
+
+        self._digitizer = None
+        if (n_bits is not None) and (input_range is not None):
+            self._digitizer = Quantizer(n_bits,input_range, *kwargs)
+        elif (n_bits is not None) or (input_range is not None):
+            raise ValueError('Either both n_bits and input_range must have values or they must be None')
+
+        self.extensions = ['debug']
+        self._extension_objects = [debug_extension(self, 'HarmonicADC', **kwargs)]
+
+    def process(self, parameters, signal, *args, **kwargs):
+        output_parameters, output_signal = self._resampler.process(parameters, signal, *args, **kwargs)
+
+        if self._digitizer is not None:
+            output_parameters, output_signal = self._digitizer.process(output_parameters, output_signal
+                                                                              , *args, **kwargs)
+
+        for extension in self._extension_objects:
+            extension(self, parameters, signal, output_parameters, output_signal,
+                      *args, **kwargs)
 
         return output_parameters, output_signal
 
 
 class DAC(object):
-    def __init__(self,sampling_rate = None, n_bits = None, output_range = None, store_signal = False, **kwargs):
+    def __init__(self,  n_bits = None, output_range = None, target_binset = 0, store_signal = False, **kwargs):
         """ A model for an digital to analog converter, which changes a length of the input signal to correspond to
             the number of slices in the PyHEADTAIL. If parameters for the quantizer are given, it quantizes also
             the input signal to discrete levels.
@@ -360,17 +426,13 @@ class DAC(object):
                 'middle': the exact value of the sampling rate is used, but there are an equal amount of empty space
                     in the beginning and end of the signal
         """
-        self.label = 'DAC'
-        self.extensions = ['store']
 
-        if sampling_rate is None:
+        if isinstance(target_binset, (int, long)):
             self.signal_classes = (1, 0)
-            self._resampler = Resampler('original',data_conversion = 'interpolation', **kwargs)
-            self.extensions.append('bunch')
-            self.required_variables = copy.copy(self._resampler.required_variables)
+            self._resampler = Resampler(('previous',target_binset), **kwargs)
         else:
             self.signal_classes = (1, 1)
-            self._resampler = Resampler('reconstructed', sampling_rate,data_conversion = 'interpolation')
+            self._resampler = Resampler(store_signal, **kwargs)
 
         self._digitizer = None
         if (n_bits is not None) and (output_range is not None):
@@ -378,12 +440,8 @@ class DAC(object):
         elif (n_bits is not None) or (output_range is not None):
             raise ValueError('Either both n_bits and input_range must have values or they must be None')
 
-        # for storing the signal
-        self.store_signal = store_signal
-        self.input_signal = None
-        self.input_parameters = None
-        self.output_signal = None
-        self.output_parameters = None
+        self.extensions = ['debug']
+        self._extension_objects = [debug_extension(self, 'DAC', **kwargs)]
 
     def process(self, parameters, signal, *args, **kwargs):
         output_parameters, output_signal = self._resampler.process(parameters, signal, *args, **kwargs)
@@ -392,11 +450,9 @@ class DAC(object):
             output_parameters, output_signal = self._digitizer.process(output_parameters, output_signal,
                                                                               *args, **kwargs)
 
-        if self._store_signal:
-            self.input_signal = np.copy(signal)
-            self.input_parameters = copy.copy(parameters)
-            self.output_signal = np.copy(output_signal)
-            self.output_parameters = copy.copy(output_parameters)
+        for extension in self._extension_objects:
+            extension(self, parameters, signal, output_parameters, output_signal,
+                      *args, **kwargs)
 
         return output_parameters, output_signal
 
@@ -404,38 +460,40 @@ class DAC(object):
 class BackToOriginalBins(Resampler):
     def __init__(self, **kwargs):
         if 'data_conversion' in kwargs:
-            super(self.__class__, self).__init__('original', **kwargs)
+            super(self.__class__, self).__init__(('previous',0), label='BackToOriginalBins',
+                  **kwargs)
         else:
-            super(self.__class__, self).__init__('original',data_conversion = 'interpolation', **kwargs)
+            super(self.__class__, self).__init__(('previous',0), label='BackToOriginalBins',
+                  data_conversion='interpolation', **kwargs)
 
 
-class UpSampler(Resampler):
-    def __init__(self, multiplier, kernel = None, **kwargs):
-
-        if kernel is None:
-            kernel = [0.]*multiplier
-            kernel[0] = 1.
-
-        data_conversion = ('kernel',kernel)
-
-        sampling_rate = ('multiplied', multiplier)
-
-        if 'data_conversion' in kwargs:
-            super(self.__class__, self).__init__('reconstructed',sampling_rate, sync_method='rising_edge', **kwargs)
-        else:
-            super(self.__class__, self).__init__('reconstructed',sampling_rate, sync_method='rising_edge',
-                                                 data_conversion = data_conversion, **kwargs)
-        self.label = 'UpSampler'
-
-
-class DownSampler(Resampler):
-    def __init__(self,multiplier,**kwargs):
-
-        sampling_rate = ('multiplied', multiplier)
-
-        if 'data_conversion' in kwargs:
-            super(self.__class__, self).__init__('reconstructed',sampling_rate, **kwargs)
-        else:
-            super(self.__class__, self).__init__('reconstructed',sampling_rate,data_conversion = 'bin_average',
-                                                 sync_method='rising_edge', **kwargs)
-        self.label = 'DownSampler'
+#class UpSampler(Resampler):
+#    def __init__(self, multiplier, kernel = None, **kwargs):
+#
+#        if kernel is None:
+#            kernel = [0.]*multiplier
+#            kernel[0] = 1.
+#
+#        data_conversion = ('kernel',kernel)
+#
+#        sampling_rate = ('multiplied', multiplier)
+#
+#        if 'data_conversion' in kwargs:
+#            super(self.__class__, self).__init__('reconstructed',sampling_rate, sync_method='rising_edge', **kwargs)
+#        else:
+#            super(self.__class__, self).__init__('reconstructed',sampling_rate, sync_method='rising_edge',
+#                                                 data_conversion = data_conversion, **kwargs)
+#        self.label = 'UpSampler'
+#
+#
+#class DownSampler(Resampler):
+#    def __init__(self,multiplier,**kwargs):
+#
+#        sampling_rate = ('multiplied', multiplier)
+#
+#        if 'data_conversion' in kwargs:
+#            super(self.__class__, self).__init__('reconstructed',sampling_rate, **kwargs)
+#        else:
+#            super(self.__class__, self).__init__('reconstructed',sampling_rate,data_conversion = 'bin_average',
+#                                                 sync_method='rising_edge', **kwargs)
+#        self.label = 'DownSampler'
