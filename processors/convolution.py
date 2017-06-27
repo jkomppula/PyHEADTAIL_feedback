@@ -546,3 +546,31 @@ class Sinc(ConvolutionFilter):
 
     def hamming_window(self, x):
         return 0.54-0.46*np.cos(2.*pi*(x/pi+self.window_width)/(2.*self.window_width))
+
+
+
+#class FIRFilter(TurnConvolution):
+#
+#    def __init__(self,coefficients, zero_tap = None, **kwargs):
+#
+#        if zero_tap is not None:
+#            extra_zeros = 2* (zero_tap - len(coefficients)/2)
+#
+#            if extra_zeros >= 0:
+#                self._input_coefficients = np.append(coefficients, np.array([0.]*extra_zeros))
+#            else:
+#                self._input_coefficients = np.append(np.array([0.]*(-1*extra_zeros)),coefficients)
+#
+#            print 'zero_tap: ' + str(self._input_coefficients[len(self._input_coefficients)/2])
+#        else:
+#            self._input_coefficients = coefficients
+#
+#
+#
+#
+#        super(FIRFilter, self).__init__(None, **kwargs)
+#        self.label = 'FIR filter'
+#
+#    def calculate_response(self, impulse_bin_mids, impulse_bin_edges, parameters):
+#
+#        return self._input_coefficients

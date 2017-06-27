@@ -5,6 +5,7 @@ import copy, collections
 # from scipy.interpolate import interp1d
 from scipy import interpolate
 from ..core import Parameters, bin_edges_to_z_bins, z_bins_to_bin_edges, append_bin_edges, bin_mids
+from ..core import debug_extension
 from scipy.sparse import csr_matrix
 
 """
@@ -21,7 +22,7 @@ from scipy.sparse import csr_matrix
 class Resampler(object):
 
     def __init__(self, method, n_samples=None, offset=0., data_conversion='sum',
-                 store_signal=False):
+                 label='Resampler', **kwargs):
         self._method = method
         self._n_samples = n_samples
         self._offset = offset
@@ -33,7 +34,8 @@ class Resampler(object):
 
         self._convert_signal = None
 
-        self.store_signal = store_signal
+        self.extensions = ['debug']
+        self._extension_objects = [debug_extension(self, label, **kwargs)]
 
     def _init_harmonic_bins(self, parameters, signal):
         circumference = self._method[1][0]
@@ -243,16 +245,14 @@ class Resampler(object):
 
         output_signal = self._convert_signal(signal)
 
-        if self.store_signal:
-            self.input_signal = np.copy(signal)
-            self.input_parameters = copy.copy(parameters)
-            self.output_signal = np.copy(output_signal)
-            self.output_parameters = copy.copy(self._output_parameters)
+        for extension in self._extension_objects:
+            extension(self, parameters, signal, self._output_parameters, output_signal,
+                      *args, **kwargs)
 
         return self._output_parameters, output_signal
 
 class Quantizer(object):
-    def __init__(self,n_bits,input_range, store_signal = False):
+    def __init__(self,n_bits,input_range, label = 'Quantizer', **kwargs):
 
         """ Quantizates signal to discrete levels determined by the number of bits and input range.
         :param n_bits: the signal is quantized (rounded) to 2^n_bits levels
@@ -262,16 +262,12 @@ class Quantizer(object):
         self._n_bits = n_bits
         self._n_steps = np.power(2,self._n_bits)-1.
         self._input_range = input_range
-        self._store_signal = store_signal
         self._step_size = (self._input_range[1]-self._input_range[0])/float(self._n_steps)
 
         self.signal_classes = (0, 0)
-        self.extensions = ['store']
-        self._store_signal = store_signal
-        self.input_signal = None
-        self.input_parameters = None
-        self.output_signal = None
-        self.output_parameters = None
+
+        self.extensions = ['debug']
+        self._extension_objects = [debug_extension(self, label, **kwargs)]
 
         self.label = 'Quantizer'
 
@@ -281,11 +277,9 @@ class Quantizer(object):
         output_signal[output_signal < self._input_range[0]] = self._input_range[0]
         output_signal[output_signal > self._input_range[1]] = self._input_range[1]
 
-        if self._store_signal:
-            self.input_signal = np.copy(signal)
-            self.input_parameters = copy.copy(parameters)
-            self.output_signal = np.copy(output_signal)
-            self.output_parameters = copy.copy(parameters)
+        for extension in self._extension_objects:
+            extension(self, parameters, signal, parameters, output_signal,
+                      *args, **kwargs)
 
         return parameters, output_signal
 
@@ -323,7 +317,7 @@ class ADC(object):
             raise ValueError('Either both n_bits and input_range must have values or they must be None')
 
         # for storing the signal
-        self._store_signal = store_signal
+        self.store_signal = store_signal
         self.input_signal = None
         self.input_parameters = None
         self.output_signal = None
@@ -385,7 +379,7 @@ class DAC(object):
             raise ValueError('Either both n_bits and input_range must have values or they must be None')
 
         # for storing the signal
-        self._store_signal = store_signal
+        self.store_signal = store_signal
         self.input_signal = None
         self.input_parameters = None
         self.output_signal = None

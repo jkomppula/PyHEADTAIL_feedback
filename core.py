@@ -1,4 +1,5 @@
 import numpy as np
+import copy
 
 """ This file contains the core functions and variables for signal processing.
 """
@@ -163,3 +164,25 @@ def get_processor_variables(processors, required_variables=None):
         required_variables.remove('z_bins')
 
     return required_variables
+
+
+def debug_extension(target_object, label=None, **kwargs):
+    if 'store_signal' in kwargs:
+        setattr(target_object, 'store_signal', kwargs['store_signal'])
+    else:
+        setattr(target_object, 'store_signal', False)
+    setattr(target_object, 'label', label)
+    setattr(target_object, 'input_parameters', None)
+    setattr(target_object, 'input_signal', None)
+    setattr(target_object, 'output_parameters', None)
+    setattr(target_object, 'output_signal', None)
+
+    def store_data(target_object, input_parameters, input_signal,
+                   output_parameters, output_signal):
+        if target_object.store_signal:
+            target_object.input_parameters = copy.copy(input_parameters)
+            target_object.input_signal = np.copy(input_signal)
+            target_object.output_parameters = copy.copy(output_parameters)
+            target_object.output_signal = np.copy(output_signal)
+
+    return store_data
