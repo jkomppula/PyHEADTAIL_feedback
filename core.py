@@ -10,7 +10,7 @@ import numpy as np
 
 def Parameters(signal_class=0, bin_edges=np.array([]), n_segments=0,
                n_bins_per_segment=0, segment_ref_points=np.array([]),
-               location=0, beta=1.):
+               previous_parameters = [], location=0, beta=1.):
     """
     Returns a prototype for signal parameters.
 
@@ -40,6 +40,7 @@ def Parameters(signal_class=0, bin_edges=np.array([]), n_segments=0,
             'n_segments': n_segments,
             'n_bins_per_segment': n_bins_per_segment,
             'segment_ref_points': segment_ref_points,
+            'previous_parameters': previous_parameters,
             'location': location,
             'beta': beta
             }
@@ -93,6 +94,10 @@ def bin_edges_to_z_bins(bin_edges):
 
 def z_bins_to_bin_edges(z_bins):
     return np.transpose(np.array([z_bins[:-1], z_bins[1:]]))
+
+
+def append_bin_edges(bin_edges_1, bin_edges_2):
+    return np.concatenate((bin_edges_1, bin_edges_2), axis=0)
 
 
 def get_processor_extensions(processors, available_extensions=None):

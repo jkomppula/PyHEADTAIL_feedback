@@ -487,7 +487,7 @@ class PhaseLinearizedLowpass(ConvolutionFilter):
             return special.k0(abs(x))
 
 
-class GaussianLowpass(ConvolutionFilter):
+class Gaussian(ConvolutionFilter):
     def __init__(self, f_cutoff, impulse_length = 5., normalization=('integral',(-5.,5.)), **kwargs):
         scaling = 2. * pi * f_cutoff / c
         impulse_range = (-1.*impulse_length/scaling, impulse_length/scaling)
@@ -513,7 +513,7 @@ class Sinc(ConvolutionFilter):
         code in example/test 004_analog_signal_processors.ipynb
     """
 
-    def __init__(self, f_cutoff, window_width = 3, window_type = 'blackman', normalization=('integral',(-5.,5.)), **kwargs):
+    def __init__(self, f_cutoff, window_width = 3, window_type = 'blackman', normalization=('integral',(-10.,10.)), **kwargs):
         """
         :param f_cutoff: a cutoff frequency of the filter
         :param delay: a delay of the filter [s]

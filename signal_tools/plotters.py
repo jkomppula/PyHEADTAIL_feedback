@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from scipy.constants import c, pi
 
 from mpl_toolkits.mplot3d import Axes3D
 from matplotlib.collections import PolyCollection
@@ -71,5 +72,84 @@ def plot_frequency_responses(data, labels, f_c):
     ax2.title.set_visible(False)
 
     fig.subplots_adjust(hspace = .05)
+    plt.show()
+    return fig, ax1, ax2
+
+def plot_debug_data(processors, source = 'input'):
+
+
+    def pick_signals(processor, source = 'input'):
+        """
+        A function which helps to visualize the signals passing the signal processors.
+        :param processor: a reference to the signal processor
+        :param source: source of the signal, i.e, 'input' or 'output' signal of the processor
+        :return: (t, z, bins, signal), where 't' and 'z' are time or position values for the signal values (which can be used
+            as x values for plotting), 'bins' are data for visualizing sampling and 'signal' is the actual signal.
+        """
+
+        if source == 'input':
+            bin_edges = processor.input_parameters['bin_edges']
+            raw_signal = processor.input_signal
+        elif source == 'output':
+            bin_edges = processor.output_parameters['bin_edges']
+            raw_signal = processor.output_signal
+        else:
+            raise ValueError('Unknown value for the data source')
+        z = np.zeros(len(raw_signal)*4)
+        bins = np.zeros(len(raw_signal)*4)
+        signal = np.zeros(len(raw_signal)*4)
+        value = 1.
+
+        for i, edges in enumerate(bin_edges):
+            z[4*i] = edges[0]
+            z[4*i+1] = edges[0]
+            z[4*i+2] = edges[1]
+            z[4*i+3] = edges[1]
+            bins[4*i] = 0.
+            bins[4*i+1] = value
+            bins[4*i+2] = value
+            bins[4*i+3] = 0.
+            signal[4*i] = 0.
+            signal[4*i+1] = raw_signal[i]
+            signal[4*i+2] = raw_signal[i]
+            signal[4*i+3] = 0.
+            value *= -1
+
+        t = z/c
+        return (t, z, bins, signal)
+
+    fig = plt.figure(figsize=(10, 6))
+
+    ax1 = fig.add_subplot(211)
+    ax11 = ax1.twiny()
+    ax2 = fig.add_subplot(212)
+    ax22 = ax2.twiny()
+
+    coeff = 1.
+
+
+    for processor in processors:
+
+        if source == 'input':
+            if hasattr(processor, 'input_signal'):
+                t, z, bins, signal = pick_signals(processor,'input')
+                ax1.plot(t,bins*coeff)
+                ax11.plot(z, np.zeros(len(z)))
+                ax11.cla()
+                coeff *= 0.9
+                ax2.plot(t,signal)
+                ax22.plot(z, np.zeros(len(z)))
+                ax22.cla()
+        elif source == 'output':
+            if hasattr(processor, 'output_signal'):
+                t, z, bins, signal = pick_signals(processor,'output')
+                ax1.plot(t,bins*coeff)
+                ax11.plot(z, np.zeros(len(z)))
+                ax11.cla()
+                coeff *= 0.9
+                ax2.plot(t,signal)
+                ax22.plot(z, np.zeros(len(z)))
+                ax22.cla()
+
     plt.show()
     return fig, ax1, ax2

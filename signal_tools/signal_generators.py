@@ -135,11 +135,6 @@ class SignalObject(object):
             self._output_signal = np.zeros(self._n_slices + 2 * self._circular_overlapping)
 
         if self._output_parameters is None:
-            if self._ref_point is not None:
-                bunch_ref_point = self._ref_point
-            else:
-                bunch_ref_point = np.mean(self._z_bins)
-
 
             prefix_offset = self._bin_edges[self._circular_overlapping,0] - self._bin_edges[0,0]
             postfix_offset = self._bin_edges[-1,1] - self._bin_edges[-self._circular_overlapping,1]
@@ -149,7 +144,11 @@ class SignalObject(object):
 #            else:
 #                bin_edges = self._bin_edges
 
-            bin_edges = bin_edges + bunch_ref_point
+            if self._ref_point is not None:
+                bunch_ref_point = self._ref_point
+                bin_edges = bin_edges + self._ref_point
+            else:
+                bunch_ref_point = np.mean(self._z_bins)
 
             self._output_parameters = Parameters(2, bin_edges, 1, len(bin_edges),
                     [bunch_ref_point],location=self._location_x, beta=self._beta_x)
@@ -438,7 +437,7 @@ class CircularPointBeam(SignalObject):
 
         self._beam_map = (intensities != 0.)
 
-        super(CircularPointBeam, self).__init__(bin_edges, intensities, bunch_id=0,
+        super(CircularPointBeam, self).__init__(bin_edges, intensities, bunch_id=None,
              circumference=circumference, h_RF=h_RF, circular_overlapping=circular_overlapping,
              **kwargs)
 
