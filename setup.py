@@ -11,8 +11,8 @@ cy_ext = [
                  include_dirs=[np.get_include()], library_dirs=[], libraries=["m"]
                  ),
 
-        Extension("tools.cython_hacks",
-                 ["tools/cython_hacks.pyx"],
+        Extension("signal_tools.cython_hacks",
+                 ["signal_tools/cython_hacks.pyx"],
                  include_dirs=[np.get_include()], library_dirs=[], libraries=["m"]
                  )
         ]

@@ -104,7 +104,7 @@ class Resampler(object):
             raw_segment_length = segment_to - segment_from
             n_bins_per_segment = int(np.ceil(raw_segment_length/bin_width))
 
-        segment_z_bins = np.linspace(0, self._n_samples/self._method[1]*c, self._n_samples+1)
+        segment_z_bins = np.linspace(0, n_bins_per_segment/self._method[1]*c, n_bins_per_segment+1)
         segment_z_bins = segment_z_bins - np.mean(segment_z_bins) + self._offset*bin_width
         segment_bin_edges = z_bins_to_bin_edges(segment_z_bins)
 
