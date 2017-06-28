@@ -42,7 +42,7 @@ class Addition(object):
             self.extensions.append('bunch')
             self.required_variables = [self._seed]
 
-  
+
         self.extensions = ['debug']
         self._extension_objects = [debug_extension(self, label, **kwargs)]
 
@@ -63,26 +63,26 @@ class Addition(object):
 
 
         # process the signal
-        return signal_parameters, output_signal
+        return parameters, output_signal
 
-    def __calculate_addend(self,signal_parameters, signal, slice_sets):
+    def __calculate_addend(self,parameters, signal, slice_sets):
         self._addend = np.zeros(len(signal))
 
         if self._seed == 'ones':
             self._addend = self._addend + 1.
         elif self._seed == 'bin_length':
-            np.copyto(self._addend, (signal_parameters.bin_edges[:,1]-signal_parameters.bin_edges[:,0]))
+            np.copyto(self._addend, (parameters.bin_edges[:,1]-parameters.bin_edges[:,0]))
         elif self._seed == 'bin_midpoint':
-            np.copyto(self._addend, ((signal_parameters.bin_edges[:,1]+signal_parameters.bin_edges[:,0])/2.))
+            np.copyto(self._addend, ((parameters.bin_edges[:,1]+parameters.bin_edges[:,0])/2.))
         elif self._seed == 'normalized_bin_midpoint':
 
-            for i in xrange(signal_parameters.n_segments):
-                i_from = i * signal_parameters.n_bins_per_segment
-                i_to = (i + 1) * signal_parameters.n_bins_per_segment
+            for i in xrange(parameters.n_segments):
+                i_from = i * parameters.n_bins_per_segment
+                i_to = (i + 1) * parameters.n_bins_per_segment
 
-                np.copyto(self._addend[i_from:i_to], ((signal_parameters.bin_edges[i_from:i_to,1]+
-                                                           signal_parameters.bin_edges[i_from:i_to,0])/2.
-                                                          -signal_parameters.original_z_mids[i]))
+                np.copyto(self._addend[i_from:i_to], ((parameters.bin_edges[i_from:i_to,1]+
+                                                           parameters.bin_edges[i_from:i_to,0])/2.
+                                                          -parameters.original_z_mids[i]))
 
         elif self._seed == 'signal':
             np.copyto(self._addend,signal)
@@ -108,9 +108,9 @@ class Addition(object):
 
         elif self._normalization == 'segment_sum':
             norm_coeff = np.ones(len(self._addend))
-            for i in xrange(signal_parameters.n_segments):
-                i_from = i*signal_parameters.n_bins_per_segment
-                i_to = (i+1)*signal_parameters.n_bins_per_segment
+            for i in xrange(parameters.n_segments):
+                i_from = i*parameters.n_bins_per_segment
+                i_to = (i+1)*parameters.n_bins_per_segment
                 norm_coeff[i_from:i_to] = norm_coeff[i_from:i_to]*float(np.sum(self._addend[i_from:i_to]))
 
         elif self._normalization == 'total_average':
@@ -118,21 +118,21 @@ class Addition(object):
 
         elif self._normalization == 'segment_average':
             norm_coeff = np.ones(len(self._addend))
-            for i in xrange(signal_parameters.n_segments):
-                i_from = i*signal_parameters.n_bins_per_segment
-                i_to = (i+1)*signal_parameters.n_bins_per_segment
-                norm_coeff[i_from:i_to] = norm_coeff[i_from:i_to]*float(np.sum(self._addend[i_from:i_to]))/float(signal_parameters.n_bins_per_segment)
+            for i in xrange(parameters.n_segments):
+                i_from = i*parameters.n_bins_per_segment
+                i_to = (i+1)*parameters.n_bins_per_segment
+                norm_coeff[i_from:i_to] = norm_coeff[i_from:i_to]*float(np.sum(self._addend[i_from:i_to]))/float(parameters.n_bins_per_segment)
 
         elif self._normalization == 'total_integral':
-            bin_widths = signal_parameters.bin_edges[:,1] - signal_parameters.bin_edges[:,0]
+            bin_widths = parameters.bin_edges[:,1] - parameters.bin_edges[:,0]
             norm_coeff = np.sum(self._addend*bin_widths)
 
         elif self._normalization == 'segment_integral':
-            bin_widths = signal_parameters.bin_edges[:,1] - signal_parameters.bin_edges[:,0]
+            bin_widths = parameters.bin_edges[:,1] - parameters.bin_edges[:,0]
             norm_coeff = np.ones(len(self._addend))
-            for i in xrange(signal_parameters.n_segments):
-                i_from = i*signal_parameters.n_bins_per_segment
-                i_to = (i+1)*signal_parameters.n_bins_per_segment
+            for i in xrange(parameters.n_segments):
+                i_from = i*parameters.n_bins_per_segment
+                i_to = (i+1)*parameters.n_bins_per_segment
                 norm_coeff[i_from:i_to] = norm_coeff[i_from:i_to]*float(np.sum(self._addend[i_from:i_to]*bin_widths[i_from:i_to]))
 
         elif self._normalization == 'total_min':
@@ -140,9 +140,9 @@ class Addition(object):
 
         elif self._normalization == 'segment_min':
             norm_coeff = np.ones(len(self._addend))
-            for i in xrange(signal_parameters.n_segments):
-                i_from = i*signal_parameters.n_bins_per_segment
-                i_to = (i+1)*signal_parameters.n_bins_per_segment
+            for i in xrange(parameters.n_segments):
+                i_from = i*parameters.n_bins_per_segment
+                i_to = (i+1)*parameters.n_bins_per_segment
                 norm_coeff[i_from:i_to] = norm_coeff[i_from:i_to]*float(np.min(self._addend[i_from:i_to]))
 
         elif self._normalization == 'total_max':
@@ -150,9 +150,9 @@ class Addition(object):
 
         elif self._normalization == 'segment_max':
             norm_coeff = np.ones(len(self._addend))
-            for i in xrange(signal_parameters.n_segments):
-                i_from = i*signal_parameters.n_bins_per_segment
-                i_to = (i+1)*signal_parameters.n_bins_per_segment
+            for i in xrange(parameters.n_segments):
+                i_from = i*parameters.n_bins_per_segment
+                i_to = (i+1)*parameters.n_bins_per_segment
                 norm_coeff[i_from:i_to] = norm_coeff[i_from:i_to]*float(np.max(self._addend[i_from:i_to]))
         else:
             raise  ValueError('Unknown value in Addition._normalization')

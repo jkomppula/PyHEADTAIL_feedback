@@ -99,8 +99,7 @@ class Combiner(object):
     __metaclass__ = ABCMeta
 
     def __init__(self, registers, target_location, target_beta=None,
-                 additional_phase_advance=0., beta_conversion = '0_deg',
-                 store_signal=False):
+                 additional_phase_advance=0., beta_conversion = '0_deg', **kwargs):
         """
         Parameters
         ----------
@@ -129,7 +128,7 @@ class Combiner(object):
 
         self._combined_parameters = None
 
-        
+
         self.extensions = ['debug', 'combiner']
         self._extension_objects = [debug_extension(self, 'Combiner', **kwargs)]
 
@@ -137,7 +136,7 @@ class Combiner(object):
     def combine(self, registers, target_location, target_beta, additional_phase_advance, beta_conversion):
         pass
 
-    def process(self, parameters, signal, *args, **kwargs):
+    def process(self, parameters=None, signal=None, *args, **kwargs):
 
         output_signal = self.combine(self._registers,
                               self._target_location,
@@ -457,13 +456,13 @@ class FIRCombiner(Combiner):
 
 
 class TurnFIRFilter(object):
-    def __init__(self, coefficients, tune, delay = 0, additional_phase_advance = 0., store_signal=False):
+    def __init__(self, coefficients, tune, delay = 0, additional_phase_advance = 0., **kwargs):
         self._coefficients = coefficients
         self._tune = tune
         self._additional_phase_advance = additional_phase_advance
         self._register = Register(len(self._coefficients), self._tune, delay)
         self._combiner = None
-        
+
         self.extensions = ['debug']
         self._extension_objects = [debug_extension(self, 'TurnFIRFilter', **kwargs)]
 
@@ -471,7 +470,7 @@ class TurnFIRFilter(object):
         self._register.process(parameters, signal, *args, **kwargs)
         if self._combiner is None:
             self.__init_combiner(parameters)
-        
+
         output_parameters, output_signal = self._combiner.process(parameters,
                                                                   signal,
                                                                   *args,
@@ -487,7 +486,7 @@ class TurnFIRFilter(object):
 
         return output_parameters, output_signal
 
-    def __init_combiner(self, parameters):        
+    def __init_combiner(self, parameters):
         registers = [self._register]
         target_location = parameters['location']
         target_beta = parameters['beta']
@@ -497,7 +496,7 @@ class TurnFIRFilter(object):
 
 class TurnDelay(object):
     def __init__(self, delay, tune, n_taps=2, combiner='vector_sum',
-                 additional_phase_advance=0, store_signal=False):
+                 additional_phase_advance=0, **kwargs):
 
         self._delay = delay
         self._tune = tune
@@ -521,6 +520,10 @@ class TurnDelay(object):
                                                                   signal,
                                                                   *args,
                                                                   **kwargs)
+
+        if output_signal is None:
+            output_parameters = parameters
+            output_signal = np.zeros(len(signal))
 
         for extension in self._extension_objects:
             extension(self, parameters, signal, output_parameters, output_signal,

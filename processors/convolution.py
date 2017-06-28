@@ -120,75 +120,75 @@ class Convolution(object):
 
         return parameters, output_signal
 
-#class Delay(Convolution):
-#    def __init__(self,delay, **kwargs):
-#
-#        self._z_delay = delay*c
-#
-#        if self._z_delay < 0.:
-#            impulse_range = (self._z_delay, 0.)
-#        else:
-#            impulse_range = (0., self._z_delay)
-#
-#        super(self.__class__, self).__init__(impulse_range, **kwargs)
-#        self.label = 'Delay'
-#
-#    def calculate_response(self, impulse_bin_mids, impulse_bin_edges):
-#        impulse_values = np.zeros(len(impulse_bin_mids))
-#        bin_spacing =  np.mean(impulse_bin_edges[:,1]-impulse_bin_edges[:,0])
-#
-#        ref_bin_from = -0.5*bin_spacing+self._z_delay
-#        ref_bin_to = 0.5*bin_spacing+self._z_delay
-#
-#        for i, edges in enumerate(impulse_bin_edges):
-#            impulse_values[i] = self._CDF(edges[1],ref_bin_from,ref_bin_to) - self._CDF(edges[0],ref_bin_from,ref_bin_to)
-#
-#        return impulse_values
-#
-#    def _CDF(self,x,ref_bin_from, ref_bin_to):
-#        # FIXME: this is not gonna work for nagative delays?
-#
-#        if x <= ref_bin_from:
-#            return 0.
-#        elif x < ref_bin_to:
-#            return (x-ref_bin_from)/float(ref_bin_to-ref_bin_from)
-#        else:
-#            return 1.
-#
-#
-#class MovingAverage(Convolution):
-#    """ Returns a signal, which consists an average value of the input signal. A sums of the rows in the matrix
-#        are normalized to be one (i.e. a sum of the input signal doesn't change).
-#    """
-#
-#    def __init__(self,window_length, quantity = 'time', **kwargs):
-#
-#        if quantity == 'time':
-#            self._window = (-0.5 * window_length * c, 0.5 * window_length * c)
-#        elif quantity == 'distance':
-#            self._window = (-0.5 * window_length, 0.5 * window_length)
-#        else:
-#            raise ValueError('Unknown value in Average.quantity')
-#
-#        super(self.__class__, self).__init__(self._window, **kwargs)
-#        self.label = 'Average'
-#
-#    def calculate_response(self, impulse_bin_mids, impulse_bin_edges):
-#        impulse_values = np.zeros(len(impulse_bin_mids))
-#
-#        for i, edges in enumerate(impulse_bin_edges):
-#            impulse_values[i] = self._CDF(edges[1], self._window[0], self._window[1]) \
-#                                   - self._CDF(edges[0], self._window[0], self._window[1])
-#
-#        return impulse_values
-#
-#    def _CDF(self, x, ref_bin_from, ref_bin_to):
-#        if x <= ref_bin_from:
-#            return 0.
-#        elif x < ref_bin_to:
-#            return (x - ref_bin_from) / float(ref_bin_to - ref_bin_from)
-#        else:
-#            return 1.
+class Delay(Convolution):
+    def __init__(self,delay, **kwargs):
+
+        self._z_delay = delay*c
+
+        if self._z_delay < 0.:
+            impulse_range = (self._z_delay, 0.)
+        else:
+            impulse_range = (0., self._z_delay)
+
+        super(self.__class__, self).__init__(impulse_range, **kwargs)
+        self.label = 'Delay'
+
+    def response_function(self, impulse_ref_edges, n_segments, n_bins_per_segment):
+        impulse_values = np.zeros(len(n_segments*n_bins_per_segment))
+        bin_spacing =  np.mean(impulse_ref_edges[:,1]-impulse_ref_edges[:,0])
+
+        ref_bin_from = -0.5*bin_spacing+self._z_delay
+        ref_bin_to = 0.5*bin_spacing+self._z_delay
+
+        for i, edges in enumerate(impulse_ref_edges):
+            impulse_values[i] = self._CDF(edges[1],ref_bin_from,ref_bin_to) - self._CDF(edges[0],ref_bin_from,ref_bin_to)
+
+        return impulse_values
+
+    def _CDF(self,x,ref_bin_from, ref_bin_to):
+        # FIXME: this is not gonna work for nagative delays?
+
+        if x <= ref_bin_from:
+            return 0.
+        elif x < ref_bin_to:
+            return (x-ref_bin_from)/float(ref_bin_to-ref_bin_from)
+        else:
+            return 1.
+
+
+class MovingAverage(Convolution):
+    """ Returns a signal, which consists an average value of the input signal. A sums of the rows in the matrix
+        are normalized to be one (i.e. a sum of the input signal doesn't change).
+    """
+
+    def __init__(self,window_length, quantity = 'time', **kwargs):
+
+        if quantity == 'time':
+            self._window = (-0.5 * window_length * c, 0.5 * window_length * c)
+        elif quantity == 'distance':
+            self._window = (-0.5 * window_length, 0.5 * window_length)
+        else:
+            raise ValueError('Unknown value in Average.quantity')
+
+        super(self.__class__, self).__init__(self._window, **kwargs)
+        self.label = 'Average'
+
+    def response_function(self, impulse_ref_edges, n_segments, n_bins_per_segment):
+        impulse_values = np.zeros(len(n_segments*n_bins_per_segment))
+
+        for i, edges in enumerate(impulse_ref_edges):
+            impulse_values[i] = self._CDF(edges[1], self._window[0], self._window[1]) \
+                                   - self._CDF(edges[0], self._window[0], self._window[1])
+
+        return impulse_values
+
+    def _CDF(self, x, ref_bin_from, ref_bin_to):
+        if x <= ref_bin_from:
+            return 0.
+        elif x < ref_bin_to:
+            return (x - ref_bin_from) / float(ref_bin_to - ref_bin_from)
+        else:
+            return 1.
 #
 #
 #class WaveletGenerator(Convolution):
@@ -538,28 +538,54 @@ class Sinc(ConvolutionFilter):
 
 
 
-#class FIRFilter(TurnConvolution):
-#
-#    def __init__(self,coefficients, zero_tap = None, **kwargs):
-#
-#        if zero_tap is not None:
-#            extra_zeros = 2* (zero_tap - len(coefficients)/2)
-#
-#            if extra_zeros >= 0:
-#                self._input_coefficients = np.append(coefficients, np.array([0.]*extra_zeros))
-#            else:
-#                self._input_coefficients = np.append(np.array([0.]*(-1*extra_zeros)),coefficients)
-#
-#            print 'zero_tap: ' + str(self._input_coefficients[len(self._input_coefficients)/2])
-#        else:
-#            self._input_coefficients = coefficients
-#
-#
-#
-#
-#        super(FIRFilter, self).__init__(None, **kwargs)
-#        self.label = 'FIR filter'
-#
-#    def calculate_response(self, impulse_bin_mids, impulse_bin_edges, parameters):
-#
-#        return self._input_coefficients
+class FIRFilter(Convolution):
+
+    def __init__(self, coefficients, zero_tap = 0, **kwargs):
+
+        self._zero_tap = zero_tap
+
+        self._input_coefficients = coefficients
+
+
+
+
+        super(FIRFilter, self).__init__(None, **kwargs)
+        self.label = 'FIR filter'
+
+
+    def response_function(self, impulse_ref_edges, n_segments, n_bins_per_segment):
+#        print 'impulse_ref_edges'
+#        print impulse_ref_edges
+        impulse = np.zeros(len(impulse_ref_edges))
+        impulse_bin_widths = bin_widths(impulse_ref_edges)
+        impulse_bin_width = np.mean(impulse_bin_widths)
+        impulse_bin_mids = bin_mids(impulse_ref_edges)
+
+        n_coefficients = len(self._input_coefficients)
+        min_filter_idx = -1*self._zero_tap
+        max_filter_idx = min_filter_idx + n_coefficients -1
+#        print 'min_filter_idx: ' + str(min_filter_idx)
+#        print 'max_filter_idx: ' + str(max_filter_idx)
+
+        for i, mid in enumerate(impulse_bin_mids):
+            filter_idx = mid/impulse_bin_width
+#            print 'filter_idx: ' + str(filter_idx)
+            filter_idx = int(np.round(filter_idx))
+#            print 'filter_idx: ' + str(filter_idx)
+
+            if (filter_idx >= min_filter_idx) and (filter_idx <= max_filter_idx):
+                impulse[i] = self._input_coefficients[filter_idx+self._zero_tap]
+
+
+        cleaned_impulse = np.array([])
+        target_segments = []
+
+        for i in xrange(n_segments):
+            i_from = i * n_bins_per_segment
+            i_to = (i+1) * n_bins_per_segment
+
+            if np.sum(np.abs(impulse[i_from:i_to])) > 0.:
+                target_segments.append(i)
+                cleaned_impulse = np.append(cleaned_impulse, impulse[i_from:i_to])
+
+        return target_segments, cleaned_impulse

@@ -78,6 +78,9 @@ def process(parameters, signal, processors, **kwargs):
 
     for processor in processors:
         parameters, signal = processor.process(parameters, signal, **kwargs)
+#        if signal is None:
+#            print 'None signal!'
+#            break
 
     return parameters, signal
 
@@ -170,11 +173,11 @@ def get_processor_variables(processors, required_variables=None):
 
 
 def debug_extension(target_object, label=None, **kwargs):
-        """
-    A debug extension, which can be added to the etension object list of the 
-    signal processors. If debug = True is given to the signal
-    processor as an input parameter, the input and output parameters and singal
-    have been stored to the singal processors
+    """
+    A debug extension, which can be added to the extension object list in the
+    signal processors. If input parameter debug = True is given to the signal
+    processor, the input and output parameters and signals are stored to
+    the signal processor.
 
     Parameters
     ----------
@@ -188,9 +191,8 @@ def debug_extension(target_object, label=None, **kwargs):
     list
         A list of found statistical variables
     """
-    
-    if 'store_signal' in kwargs:
-        setattr(target_object, 'store_signal', kwargs['store_signal'])
+    if 'debug' in kwargs:
+        setattr(target_object, 'debug', kwargs['debug'])
     else:
         setattr(target_object, 'debug', False)
     setattr(target_object, 'label', label)
@@ -200,7 +202,7 @@ def debug_extension(target_object, label=None, **kwargs):
     setattr(target_object, 'output_signal', None)
 
     def store_data(target_object, input_parameters, input_signal,
-                   output_parameters, output_signal):
+                   output_parameters, output_signal, *args, **kwargs):
         if target_object.debug:
             target_object.input_parameters = copy.copy(input_parameters)
             target_object.input_signal = np.copy(input_signal)
