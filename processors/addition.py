@@ -2,6 +2,7 @@ from abc import ABCMeta, abstractmethod, abstractproperty
 import numpy as np
 import copy
 from scipy.constants import c, pi
+from ..core import debug_extension
 
 class Addition(object):
     __metaclass__ = ABCMeta
@@ -10,7 +11,7 @@ class Addition(object):
         addend_function(seed).
     """
 
-    def __init__(self, seed, normalization = None, recalculate_addend = False, store_signal = False):
+    def __init__(self, seed, normalization = None, recalculate_addend = False, label='Addition', **kwargs):
         """
         :param seed: a seed for the addend, which can be 'bin_length', 'bin_midpoint', 'signal' or any slice
             property found from slice_set
@@ -37,35 +38,29 @@ class Addition(object):
 
         self.signal_classes = (0,0)
 
-        self.extensions = ['store']
-        self._store_signal = store_signal
-
         if self._seed not in ['bin_length','bin_midpoint','signal']:
             self.extensions.append('bunch')
             self.required_variables = [self._seed]
 
-        self.input_signal = None
-        self.input_signal_parameters = None
-
-        self.output_signal = None
-        self.output_signal_parameters = None
+  
+        self.extensions = ['debug']
+        self._extension_objects = [debug_extension(self, label, **kwargs)]
 
     @abstractmethod
     def addend_function(self, seed):
         pass
 
-    def process(self,signal_parameters, signal, slice_sets = None, *args, **kwargs):
+    def process(self,parameters, signal, slice_sets = None, *args, **kwargs):
 
         if (self._addend is None) or self._recalculate_addend:
-            self.__calculate_addend(signal_parameters, signal, slice_sets)
+            self.__calculate_addend(parameters, signal, slice_sets)
 
         output_signal = signal + self._addend
 
-        if self._store_signal:
-            self.input_signal = np.copy(signal)
-            self.input_signal_parameters = copy.copy(signal_parameters)
-            self.output_signal = np.copy(output_signal)
-            self.output_signal_parameters = copy.copy(signal_parameters)
+        for extension in self._extension_objects:
+            extension(self, parameters, signal, parameters, output_signal,
+                      *args, **kwargs)
+
 
         # process the signal
         return signal_parameters, output_signal
@@ -176,8 +171,7 @@ class AdditionFromFile(Addition):
     """
 
     def __init__(self,filename, x_axis='time', seed='bin_midpoint', **kwargs):
-        super(self.__class__, self).__init__(seed, **kwargs)
-        self.label = 'Addition from file'
+        super(self.__class__, self).__init__(seed, label = 'Addition from file', **kwargs)
 
         self._filename = filename
         self._x_axis = x_axis
@@ -202,8 +196,8 @@ class NoiseGenerator(Addition):
     """
 
     def __init__(self,RMS_noise_level,reference_level = 'absolute', distribution = 'normal', **kwargs):
-        super(self.__class__, self).__init__('signal', recalculate_addend=True, **kwargs)
-        self.label = 'Noise generator'
+        super(self.__class__, self).__init__('signal', recalculate_addend=True,
+             label = 'Noise generator', **kwargs)
 
         self._RMS_noise_level = RMS_noise_level
         self._reference_level = reference_level

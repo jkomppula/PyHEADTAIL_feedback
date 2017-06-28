@@ -4,9 +4,7 @@ import copy
 """ This file contains the core functions and variables for signal processing.
 """
 
-# TODO: automated Debug extension
 # TODO: change the base unit from distance to time
-# TODO: change segment_midpoints to a list of previous parameters
 
 
 def Parameters(signal_class=0, bin_edges=np.array([]), n_segments=0,
@@ -29,7 +27,10 @@ def Parameters(signal_class=0, bin_edges=np.array([]), n_segments=0,
     n_bins_per_segment : int
         A number of bins per segment. `len(bin_edges)/n_segments`
     segment_ref_points : NumPy array
-        A numpy array of original midpoints of the segments
+        A numpy array of the reference point for the segments
+    previous_parameters : array
+        A list of Parameters, which tracks how the samping has been changed
+        during the signal processing
     location : float
         A location of the signal in betatron phase.
     beta : float
@@ -54,7 +55,7 @@ def Signal(signal=[]):
 
 def process(parameters, signal, processors, **kwargs):
     """
-    Returns a prototype for signal parameters.
+    Processes a signal through the given signal processors
 
     Parameters
     ----------
@@ -101,7 +102,7 @@ def append_bin_edges(bin_edges_1, bin_edges_2):
     return np.concatenate((bin_edges_1, bin_edges_2), axis=0)
 
 
-def get_processor_extensions(processors, available_extensions=None):
+def get_processor_extensions(processors, external_extensions=None):
     """
     A function, which checks available extensions from the processors.
 
@@ -109,7 +110,7 @@ def get_processor_extensions(processors, available_extensions=None):
     ----------
     processors : list
         A list of signal processors.
-    available_extensions : list
+    external_extensions : list
         A list of external extensions, which will be added to the list
 
     Returns
@@ -118,8 +119,10 @@ def get_processor_extensions(processors, available_extensions=None):
         A list of found extensions
     """
 
-    if available_extensions is None:
+    if external_extensions is None:
         available_extensions = []
+    else:
+        available_extensions = external_extensions
 
     for processor in processors:
         if processor.extensions is not None:
@@ -130,8 +133,8 @@ def get_processor_extensions(processors, available_extensions=None):
     return available_extensions
 
 
-# Extension specific functions
-#########################
+#--- Extension specific functions ------
+#---------------------------------------
 
 def get_processor_variables(processors, required_variables=None):
     """
@@ -142,8 +145,8 @@ def get_processor_variables(processors, required_variables=None):
     ----------
     processors : list
         A list of signal processors.
-    required_variables : list
-        A list of external extensions, which will be added to the list
+    external_variables : list
+        A list of external variables, which will be added to the list
 
     Returns
     -------
@@ -167,10 +170,29 @@ def get_processor_variables(processors, required_variables=None):
 
 
 def debug_extension(target_object, label=None, **kwargs):
+        """
+    A debug extension, which can be added to the etension object list of the 
+    signal processors. If debug = True is given to the signal
+    processor as an input parameter, the input and output parameters and singal
+    have been stored to the singal processors
+
+    Parameters
+    ----------
+    processors : list
+        A list of signal processors.
+    external_variables : list
+        A list of external variables, which will be added to the list
+
+    Returns
+    -------
+    list
+        A list of found statistical variables
+    """
+    
     if 'store_signal' in kwargs:
         setattr(target_object, 'store_signal', kwargs['store_signal'])
     else:
-        setattr(target_object, 'store_signal', False)
+        setattr(target_object, 'debug', False)
     setattr(target_object, 'label', label)
     setattr(target_object, 'input_parameters', None)
     setattr(target_object, 'input_signal', None)
@@ -179,7 +201,7 @@ def debug_extension(target_object, label=None, **kwargs):
 
     def store_data(target_object, input_parameters, input_signal,
                    output_parameters, output_signal):
-        if target_object.store_signal:
+        if target_object.debug:
             target_object.input_parameters = copy.copy(input_parameters)
             target_object.input_signal = np.copy(input_signal)
             target_object.output_parameters = copy.copy(output_parameters)

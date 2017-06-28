@@ -8,15 +8,14 @@ from scipy.constants import c, pi
 import scipy.integrate as integrate
 import scipy.special as special
 from scipy.interpolate import UnivariateSpline
-
+from ..core import debug_extension
 # TODO: - 2nd order cutoff by using gaussian filter
 # TODO: - FIR filter
 
 class Convolution(object):
     __metaclass__ = ABCMeta
 
-    def __init__(self, store_signal=False):
-        self.store_signal = store_signal
+    def __init__(self, label='Convolution',**kwargs):
 
         self._dashed_impulse_responses = None
         self._impulses_from_segments = None
@@ -25,15 +24,8 @@ class Convolution(object):
         self._n_seg = None
         self._n_bins = None
 
-        self.extensions = ['store']
-        self._store_signal = store_signal
-
-        self.input_signal = None
-        self.input_parameters = None
-
-        self.output_signal = None
-        self.output_parameters = None
-        self.label = 'Convolution'
+        self.extensions = ['debug']
+        self._extension_objects = [debug_extension(self, label, **kwargs)]
 
     def _init_convolution(self, parameters):
 
@@ -122,13 +114,9 @@ class Convolution(object):
 
         output_signal = self._apply_convolution(parameters, signal)
 
-
-        if self._store_signal:
-            self.input_signal = np.copy(signal)
-            self.output_signal = np.copy(output_signal)
-
-            self.input_parameters = copy.deepcopy(parameters)
-            self.output_parameters = copy.deepcopy(parameters)
+        for extension in self._extension_objects:
+            extension(self, parameters, signal, parameters, output_signal,
+                      *args, **kwargs)
 
         return parameters, output_signal
 
@@ -281,13 +269,14 @@ class Convolution(object):
 class ConvolutionFilter(Convolution):
     __metaclass__ = ABCMeta
 
-    def __init__(self,scaling,impulse_range,zero_bin_value = None, tip_cut_width=None, normalization=None, **kwargs):
+    def __init__(self,scaling,impulse_range,zero_bin_value = None, tip_cut_width=None,
+                 normalization=None, label='ConvolutionFilter', **kwargs):
 
         self._scaling = scaling
         self._normalization = normalization
 #        self._norm_range = norm_range
         self._zero_bin_value = zero_bin_value
-        super(ConvolutionFilter, self).__init__(**kwargs)
+        super(ConvolutionFilter, self).__init__(label=label,**kwargs)
 
         # NOTE: is the tip cut needed? How to work with the sharp tips of the ideal filters?
         if (self._normalization is None) and (tip_cut_width is not None):
@@ -439,7 +428,7 @@ class Lowpass(ConvolutionFilter):
         else:
             tip_cut_width = None
 
-        super(self.__class__, self).__init__( scaling, impulse_range, tip_cut_width = tip_cut_width, normalization=normalization, **kwargs)
+        super(self.__class__, self).__init__(scaling, impulse_range, tip_cut_width = tip_cut_width, normalization=normalization,**kwargs)
         self.label = 'Lowpass filter'
 
     def _raw_impulse_response(self, x):
