@@ -19,7 +19,7 @@ class Resampler(object):
                  n_extra_samples = 0, **kwargs):
         """
         Resamples the input signal into a new bin set
-        
+
         Parameters
         ----------
         method : tuple
@@ -28,10 +28,10 @@ class Resampler(object):
                     The input signal is converted into one continously sampled
                     segment. The given number corresponds to the segment spacing
                     frequency of the input signal (e.g. the harmonic or bunch
-                    frequency of the accelerator). 
+                    frequency of the accelerator).
                 ('sequenced', double)
-                    Each segment of the signal is resampled by using a given 
-                    sampling frequency. 
+                    Each segment of the signal is resampled by using a given
+                    sampling frequency.
                 ('previous', int)
                     The signal is resampled into the previous bin set. The given
                     number corresponds to an index of the previous parameters in
@@ -55,9 +55,9 @@ class Resampler(object):
             A method how the data of the input signal are converted to the output
             binset. The output signal can be converted by:
                 'interpolation'
-                    interpolating from the input data. 
+                    interpolating from the input data.
                 'sum'
-                    calculating a bin value sum over the over lapping bins 
+                    calculating a bin value sum over the over lapping bins
                 'integral'
                     integrating the input signal over an output bin
                 'average'
@@ -70,7 +70,7 @@ class Resampler(object):
             A number of extra samples added before the first segment and after
             the last segment
         """
-        
+
         self._method = method
         self._n_samples = n_samples
         self._offset = offset
@@ -91,7 +91,7 @@ class Resampler(object):
     def _init_harmonic_bins(self, parameters, signal):
         self.signal_classes = (1,2)
         base_frequency = self._method[1]
-        
+
         if parameters['n_segments'] > 1:
             min_ref_point = np.min(parameters['segment_ref_points'])
             max_ref_point = np.max(parameters['segment_ref_points'])
@@ -193,25 +193,25 @@ class Resampler(object):
     def _init_upsampling(self, parameters, signal):
         self.signal_classes = (0,0)
         multiplier = self._method[1]
-        
+
         original_edges = parameters['bin_edges']
         new_edges = None
-        
+
         for edges in original_edges:
             new_bin_width = (edges[1]-edges[0])/float(multiplier)
-            
+
             temp_edges = np.zeros((multiplier, 2))
-            
+
             for i in xrange(multiplier):
                 temp_edges[i,0] = edges[0] + i * new_bin_width
                 temp_edges[i,1] = edges[0] + (i + 1) * new_bin_width
-                
+
             if new_edges == None:
                 new_edges = temp_edges
             else:
                 new_edges = append_bin_edges(new_edges,temp_edges)
-        
-        
+
+
         signal_class = parameters['class']
         n_segments = parameters['n_segments']
         n_bins_per_segment = parameters['n_bins_per_segment']*multiplier
@@ -231,28 +231,28 @@ class Resampler(object):
     def _init_downsampling(self, parameters, signal):
         self.signal_classes = (0,0)
         multiplier = self._method[1]
-        
+
         original_edges = parameters['bin_edges']
         original_n_bins_per_segment = parameters['n_bins_per_segment']
-        
+
         n_bins_per_segment = int(np.floor(original_n_bins_per_segment/multiplier))
         new_edges = None
-        
+
         for j in xrange(parameters['n_segments']):
             for i in xrange(n_bins_per_segment):
                 first_edge = j * original_n_bins_per_segment + i * multiplier
                 last_edge = j * original_n_bins_per_segment + (i + 1) * multiplier -1
-                
+
                 temp_edges = np.zeros((1, 2))
                 temp_edges[0,0] = original_edges[first_edge,0]
-                temp_edges[0,1] = original_edges[last_edge,1] 
-                    
+                temp_edges[0,1] = original_edges[last_edge,1]
+
                 if new_edges == None:
                     new_edges = temp_edges
                 else:
                     new_edges = append_bin_edges(new_edges,temp_edges)
-        
-        
+
+
         signal_class = parameters['class']
         n_segments = parameters['n_segments']
         segment_ref_points = parameters['segment_ref_points']
@@ -404,7 +404,7 @@ class Resampler(object):
             for j, edges in enumerate(parameters['bin_edges']):
                 if (mid >= edges[0]) and (mid < edges[1]) :
                     big_matrix[i, j] = 1
-                
+
         sparse_matrix = csr_matrix(big_matrix)
 
         def convert_signal(input_signal):
@@ -461,10 +461,10 @@ class Resampler(object):
         return self._output_parameters, output_signal
 
 class Quantizer(object):
-    def __init__(self, n_bits, input_range, **kwargs):        
+    def __init__(self, n_bits, input_range, **kwargs):
         """
         Quantizates the input signal into discrete levels
-        
+
         Parameters
         ----------
         n_bits : int
@@ -472,7 +472,7 @@ class Quantizer(object):
             worlds the singal is rounded into 2^n_bits levels.
         input_range : tuple
             A range which is divided into the n bits. The signal values exceed
-            the range are limited into the range values 
+            the range are limited into the range values
         """
 
         self._n_bits = n_bits
@@ -503,11 +503,11 @@ class ADC(object):
                  data_conversion='sum', **kwargs):
         """
         A model for an analog to digital converter. The input signal is
-        resamapled segment by segment by using a given sampling rate.   
+        resamapled segment by segment by using a given sampling rate.
         If both n_bits and input_range have been given, the output signal is also
         quantitized.
 
-         
+
         Parameters
         ----------
         sampling rate : float
@@ -520,7 +520,7 @@ class ADC(object):
             A number of bins per segment is set. If None, the number
             of samples corresponds to the ceil(segment_length*f_sampling)
         """
-        
+
         self.signal_classes = (0, 1)
         self._resampler = Resampler(('sequenced', sampling_rate) , n_samples,
                                     data_conversion=data_conversion, **kwargs)
@@ -550,18 +550,18 @@ class ADC(object):
         return output_parameters, output_signal
 
 class HarmonicADC(object):
-    def __init__(self, base_frequency, n_bits=None, input_range=None, 
+    def __init__(self, base_frequency, n_bits=None, input_range=None,
                  multiplier = 1, data_conversion='average_bin_value', **kwargs):
-        """ 
-        A model for an analog to digital converter, which is simular to the 
-        regular ADC object expect that the input signal is continously resampled 
-        ovet the segments. If both n_bits and input_range have been given, 
+        """
+        A model for an analog to digital converter, which is simular to the
+        regular ADC object expect that the input signal is continously resampled
+        ovet the segments. If both n_bits and input_range have been given,
         the output signal is also quantitized.
-            
+
         Parameters
         ----------
         base_frequency : float
-            A base frequency, which corresponds to segment spacing (e.g. 
+            A base frequency, which corresponds to segment spacing (e.g.
             a harmonic frequency of the accelerator)
         n_bits : int
             A number of bits for the quantizer
@@ -599,15 +599,15 @@ class HarmonicADC(object):
 
 
 class DAC(object):
-    def __init__(self,  n_bits = None, output_range = None, method = ('upsampling', 2),
+    def __init__(self,  n_bits = None, output_range = None, method = ('upsampling', 4),
                  data_conversion='value', **kwargs):
-        """ 
+        """
         An model for a digital to analog converter, which quantitizes and
         and upsamples the signal by default. The bin set is upsampled by default,
         because the sampling rate is often minimized in the real life applications,
-        but after the DAC the signal is reprocessed by using analog electronics. An 
-        analog signal is continous, which modelling requres higher smapling rate. 
-            
+        but after the DAC the signal is reprocessed by using analog electronics. An
+        analog signal is continous, which modelling requres higher smapling rate.
+
         Parameters
         ----------
         n_bits : int
@@ -617,12 +617,12 @@ class DAC(object):
         method : tuple
             Resampling method. Possible options are:
                 ('upsampling', int)
-                    Multiplies the original sampling rate by the given number 
+                    Multiplies the original sampling rate by the given number
                 ('previous', int)
                     Returns the previous bin set, which index is given
                 ('downsampling', int)
                     Reduces the sampling rate by the given factor
-        
+
         """
         self._resampler = Resampler(method,
                                 data_conversion=data_conversion, **kwargs)
@@ -652,8 +652,8 @@ class DAC(object):
 
 class BackToOriginalBins(Resampler):
     def __init__(self, data_conversion='interpolation', target_binset = 0, **kwargs):
-        """  
-        Returns signal to the original bin set. 
+        """
+        Returns signal to the original bin set.
         Parameters
         ----------
         data_conversion : str
@@ -665,13 +665,12 @@ class BackToOriginalBins(Resampler):
         super(self.__class__, self).__init__(('previous',target_binset),
                   data_conversion=data_conversion, **kwargs)
         self.label='BackToOriginalBins'
-        
-        
+
+
 class BunchByBunchSampler(Resampler):
     def __init__(self,f_harmonic, multiplier=1, data_conversion='average_bin_value', **kwargs):
         super(self.__class__, self).__init__(('harmonic', (f_harmonic)) , multiplier,
                                     data_conversion=data_conversion, **kwargs)
         self.label = 'Bunch by bunch sampler'
-        
-        
-        
+
+
