@@ -65,15 +65,15 @@ class SignalObject(object):
 
         self._output_signal = None
         self._output_parameters = None
-        
-        
+
+
     def set_beam_paramters(self,p0, charge=e, mass=m_p, ):
         self.charge = charge
         self.p0 = p0
         self.mass = mass
         self.gamma = np.sqrt(1 + (p0 / (mass * c))**2)
         self.beta = np.sqrt(1 - self.gamma**-2)
-        
+
 
     def __getattr__(self,attr):
         if (attr in ['x_amp', 'y_amp' ,'z_amp','xp_amp','yp_amp','dp_amp']):
@@ -132,10 +132,10 @@ class SignalObject(object):
 
     @property
     def n_macroparticles_per_slice(self):
-        
+
         return self.intensity_distribution
-    
-    
+
+
 
     @property
     def slice_sets(self):
@@ -147,8 +147,8 @@ class SignalObject(object):
             with non-zero charge
         """
         return (self.intensity_distribution != 0.)
-        
-        
+
+
 
 #    def __getattr__(self,attr):
 #        if (attr in ['x_amp','y_amp','xp_amp','yp_amp']):
@@ -416,7 +416,7 @@ class Beam(object):
             i_from = i * self._n_slices_per_bunch
             i_to = (i + 1) * self._n_slices_per_bunch
 
-            bunch.correction(signal[i_from:i_to],beam_map, var)      
+            bunch.correction(signal[i_from:i_to],beam_map, var)
 
     def combine_property(self, var):
 

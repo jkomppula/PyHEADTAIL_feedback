@@ -46,8 +46,8 @@ def plot_traces(traces,var = 'x', mark = '.'):
 
     ax1 = fig.add_subplot(211)
     ax11 = ax1.twiny()
-    
-    
+
+
     for i in xrange(n_turns):
         z=traces.z[i,:]
         t = z/c
@@ -55,15 +55,15 @@ def plot_traces(traces,var = 'x', mark = '.'):
         ax1.plot(t*1e9,d,mark)
         ax11.plot(z, np.zeros(len(z)))
         ax11.cla()
-        
+
     ax1.set_xlabel('Time [ns]')
     ax1.set_ylabel('Signal [mm]')
     ax11.set_xlabel('Distance [m]')
-                    
-    plt.show() 
+
+    plt.show()
 
 
-def plot_beam(beam,var = 'x', mark = '.', fig = None, ax1 = None, ax11 = None):
+def plot_beam(beam,var = 'x', mark = '.', fig = None, ax1 = None, ax11 = None, label = ' '):
 
     if fig is None:
         fig = plt.figure(figsize=(8, 10))
@@ -74,7 +74,7 @@ def plot_beam(beam,var = 'x', mark = '.', fig = None, ax1 = None, ax11 = None):
         ax1 = fig.add_subplot(211)
     if ax11 is None:
         ax11 = ax1.twiny()
-    
+
     z=beam.z
     t = z/c
     d = getattr(beam,var)
@@ -84,14 +84,49 @@ def plot_beam(beam,var = 'x', mark = '.', fig = None, ax1 = None, ax11 = None):
     elif var in ['xp', 'yp', 'xp_amp', 'yp_amp', 'xp_fixed', 'yp_fixed']:
         d=d*1e6
         ax1.set_ylabel('Signal [mm mrad]')
-    ax1.plot(t*1e9,d,mark)
+    ax1.plot(t*1e9,d,mark,label=label)
     ax11.plot(z, np.zeros(len(z)))
     ax11.cla()
-        
+
     ax1.set_xlabel('Time [ns]')
     ax11.set_xlabel('Distance [m]')
-                    
-#    plt.show() 
+
+#    plt.show()
+    return fig, ax1, ax11
+
+
+def plot_beams(beams, labels, var = 'x', mark = '.', fig = None, ax1 = None, ax11 = None):
+
+    if fig is None:
+        fig = plt.figure(figsize=(8, 10))
+    seq_col_brew = sns.color_palette("Blues_r")
+    sns.set_palette(seq_col_brew)
+
+    if ax1 is None:
+        ax1 = fig.add_subplot(211)
+    if ax11 is None:
+        ax11 = ax1.twiny()
+
+    for beam, label in zip(beams,labels):
+        z=beam.z[3:]
+        t = z/c
+        d = getattr(beam,var)
+        d= d[3:]
+        if var in ['x', 'y', 'x_amp', 'y_amp', 'x_fixed', 'y_fixed']:
+            d=d*1e3
+            ax1.set_ylabel('Signal [mm]')
+        elif var in ['xp', 'yp', 'xp_amp', 'yp_amp', 'xp_fixed', 'yp_fixed']:
+            d=d*1e6
+            ax1.set_ylabel('Signal [mm mrad]')
+        ax1.plot(t*1e9,d,mark,label=label)
+        ax11.plot(z, np.zeros(len(z)))
+        ax11.cla()
+
+    ax1.set_xlabel('Time [ns]')
+    ax11.set_xlabel('Distance [m]')
+    ax1.legend(loc='upper right')
+
+#    plt.show()
     return fig, ax1, ax11
 
 #def plot_3D_traces(traces,var = 'x'):
@@ -103,8 +138,8 @@ def plot_beam(beam,var = 'x', mark = '.', fig = None, ax1 = None, ax11 = None):
 #
 #    ax1 = fig.add_subplot(211)
 #    ax11 = ax1.twiny()
-#    
-#    
+#
+#
 #    for i in xrange(n_turns):
 #        z=traces.z[i,:]
 #        t = z/c
@@ -112,12 +147,12 @@ def plot_beam(beam,var = 'x', mark = '.', fig = None, ax1 = None, ax11 = None):
 #        ax1.plot(t*1e9,d,'.')
 #        ax11.plot(z, np.zeros(len(z)))
 #        ax11.cla()
-#        
+#
 #    ax1.set_xlabel('Time [ns]')
 #    ax1.set_ylabel('Signal [mm]')
 #    ax11.set_xlabel('Distance [m]')
-#                    
-#    plt.show() 
+#
+#    plt.show()
 
 
 def plot_frequency_responses(data, labels, f_c, amp_range=(1e-2,4), phase_range=(-45.,45.)):
@@ -241,15 +276,15 @@ def plot_debug_data(processors, source = 'input'):
                     ax2.plot(t*1e9,signal*1e3)
                     ax22.plot(z, np.zeros(len(z)))
                     ax22.cla()
-                    
+
     ax1.set_ylim(-1.1,1.1)
     ax1.set_xticklabels(())
     ax1.legend(loc='upper right')
     ax11.set_xlabel('Distance [m]')
-    
+
     ax2.set_xlabel('Time [ns]')
     ax2.set_ylabel('Signal [mm]')
     ax22.set_xticklabels(())
-                    
+
     plt.show()
     return fig, ax1, ax2

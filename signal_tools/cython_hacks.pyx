@@ -20,7 +20,7 @@ def cython_circular_convolution(double[::1] signal not None, double[::1] impulse
     cdef np.intp_t signal_length = len(signal)
     cdef np.intp_t impulse_length = len(impulse)
     cdef double[::1] output = np.zeros(signal_length)
-    
+
     for i in range(signal_length):
         temp_value = 0
         source_index = (i - zero_bin + signal_length)
@@ -30,13 +30,13 @@ def cython_circular_convolution(double[::1] signal not None, double[::1] impulse
 #            source_index = (i - zero_bin + j + signal_length)
             if (source_index == signal_length):
                 source_index = 0
-                
-            temp_value += signal[source_index] * impulse[j]
+
+            temp_value += signal[signal_length - source_index -1] * impulse[j]
             source_index = source_index + 1
-            
-        output[i] = temp_value
- 
-           
+
+        output[signal_length - i -1] = temp_value
+
+
     return output
 
 # def cython_matrix_product(double[:, ::1] matrix not None, double[::1] vector not None):
@@ -45,9 +45,9 @@ def cython_circular_convolution(double[::1] signal not None, double[::1] impulse
 #    dim_0 = matrix.shape[0]
 #    dim_1 = matrix.shape[1]
 #    cdef double[::1] D = np.zeros(dim_0)
-#    
+#
 #    for i in range(dim_0):
 #        for j in range(dim_1):
 #            D[i] += matrix[i,j]* vector[j]
-#            
+#
 #    return D
