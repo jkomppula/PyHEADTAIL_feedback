@@ -164,8 +164,8 @@ class CosineSumCombiner(Combiner):
     def __init__(self, *args, **kwargs):
         super(self.__class__, self).__init__(*args, **kwargs)
         self.label = 'Cosine sum combiner'
-
-    def combine(self, registers, target_location, target_beta, additional_phase_advance):
+        
+    def combine(self, registers, target_location, target_beta, additional_phase_advance, beta_conversion):
         combined_signal = None
         n_signals = 0
 
@@ -218,7 +218,7 @@ class HilbertCombiner(Combiner):
         if self._coefficients is None:
             print registers
             if self._n_taps is None:
-                self._n_taps = registers[0].max_length
+                self._n_taps = registers[0].maxlen
             self._coefficients = [None]*len(registers)
 
         combined_signal = None
@@ -520,7 +520,7 @@ class TurnDelay(object):
                                                                   signal,
                                                                   *args,
                                                                   **kwargs)
-
+#        print output_signal
         if output_signal is None:
             output_parameters = parameters
             output_signal = np.zeros(len(signal))
