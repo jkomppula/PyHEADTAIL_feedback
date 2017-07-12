@@ -1,17 +1,17 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.constants import c, pi
-
+import seaborn as sns
 from mpl_toolkits.mplot3d import Axes3D
 from matplotlib.collections import PolyCollection
 
-def plot3Dmultidamping(tracker, var):
+def plot_3D_traces(traces, var='x'):
 
-    data =  getattr(tracker,var)
+    data =  getattr(traces,var)
 
     n_turns = len(data)
     n_points = len(data[0])
-    z = tracker.z[0]
+    z = traces.z[0]
     turns = np.arange(n_turns)
     s_z = z.size
     s_turns = turns.size
@@ -25,6 +25,8 @@ def plot3Dmultidamping(tracker, var):
 
     fig = plt.figure()
     ax = fig.add_subplot(1,1,1, projection='3d')
+    seq_col_brew = sns.color_palette("Blues_r", n_turns)
+    sns.set_palette(seq_col_brew)
 
     surf = ax.plot_wireframe(z, turns, plot_data)
     ax.invert_yaxis()
@@ -34,7 +36,91 @@ def plot3Dmultidamping(tracker, var):
     plt.show()
     return fig, ax
 
-def plot_frequency_responses(data, labels, f_c):
+
+def plot_traces(traces,var = 'x', mark = '.'):
+
+    n_turns = traces.z.shape[0]
+    fig = plt.figure(figsize=(8, 10))
+    seq_col_brew = sns.color_palette("Blues", n_turns)
+    sns.set_palette(seq_col_brew)
+
+    ax1 = fig.add_subplot(211)
+    ax11 = ax1.twiny()
+    
+    
+    for i in xrange(n_turns):
+        z=traces.z[i,:]
+        t = z/c
+        d = getattr(traces,var)[i,:]
+        ax1.plot(t*1e9,d,mark)
+        ax11.plot(z, np.zeros(len(z)))
+        ax11.cla()
+        
+    ax1.set_xlabel('Time [ns]')
+    ax1.set_ylabel('Signal [mm]')
+    ax11.set_xlabel('Distance [m]')
+                    
+    plt.show() 
+
+
+def plot_beam(beam,var = 'x', mark = '.', fig = None, ax1 = None, ax11 = None):
+
+    if fig is None:
+        fig = plt.figure(figsize=(8, 10))
+    seq_col_brew = sns.color_palette("Blues_r")
+    sns.set_palette(seq_col_brew)
+
+    if ax1 is None:
+        ax1 = fig.add_subplot(211)
+    if ax11 is None:
+        ax11 = ax1.twiny()
+    
+    z=beam.z
+    t = z/c
+    d = getattr(beam,var)
+    if var in ['x', 'y', 'x_amp', 'y_amp', 'x_fixed', 'y_fixed']:
+        d=d*1e3
+        ax1.set_ylabel('Signal [mm]')
+    elif var in ['xp', 'yp', 'xp_amp', 'yp_amp', 'xp_fixed', 'yp_fixed']:
+        d=d*1e6
+        ax1.set_ylabel('Signal [mm mrad]')
+    ax1.plot(t*1e9,d,mark)
+    ax11.plot(z, np.zeros(len(z)))
+    ax11.cla()
+        
+    ax1.set_xlabel('Time [ns]')
+    ax11.set_xlabel('Distance [m]')
+                    
+#    plt.show() 
+    return fig, ax1, ax11
+
+#def plot_3D_traces(traces,var = 'x'):
+#
+#    n_turns = traces.z.shape[0]
+#    fig = plt.figure(figsize=(8, 10))
+#    seq_col_brew = sns.color_palette("Blues_r", n_turns)
+#    sns.set_palette(seq_col_brew)
+#
+#    ax1 = fig.add_subplot(211)
+#    ax11 = ax1.twiny()
+#    
+#    
+#    for i in xrange(n_turns):
+#        z=traces.z[i,:]
+#        t = z/c
+#        d = getattr(traces,var)[i,:]
+#        ax1.plot(t*1e9,d,'.')
+#        ax11.plot(z, np.zeros(len(z)))
+#        ax11.cla()
+#        
+#    ax1.set_xlabel('Time [ns]')
+#    ax1.set_ylabel('Signal [mm]')
+#    ax11.set_xlabel('Distance [m]')
+#                    
+#    plt.show() 
+
+
+def plot_frequency_responses(data, labels, f_c, amp_range=(1e-2,4), phase_range=(-45.,45.)):
     fig = plt.figure(figsize=(10, 6))
 
     ax1 = fig.add_subplot(211)
@@ -47,7 +133,7 @@ def plot_frequency_responses(data, labels, f_c):
     ax1.set_ylabel('V$_{out}$/V$_{in}$')
     ax1.legend(loc='lower left')
     ax1.set_xticklabels(())
-    ax1.annotate('Cut-off\nfrequency', xy=(1.1*f_c, 1.2e-2), xytext=(2*f_c, 3e-2),
+    ax1.annotate('Cut-off\nfrequency', xy=(1.1*f_c, 1.2*amp_range[0]), xytext=(2*f_c, 3*amp_range[0]),
                 arrowprops=dict(arrowstyle="->",
                                 connectionstyle="arc3"))
     ax1.annotate('-3dB', xy=(1.1*min(d[0]), 0.65), xytext=(3*min(d[0]), 2e-1),
@@ -55,11 +141,12 @@ def plot_frequency_responses(data, labels, f_c):
                                 connectionstyle="arc3"))
     ax1.axhline(y=1/np.sqrt(2),c="black", ls='--')
     ax1.axvline(x=f_c,c="black", ls='--')
-    ax1.set_ylim([1e-2, 4])
+    ax1.set_ylim([amp_range[0], amp_range[1]])
     ax2 = fig.add_subplot(212)
 
     for i, (d, l) in enumerate(zip(data,labels)):
-        ax2.plot(d[0],d[2],'-')
+        map_valid =  d[1] > amp_range[0]
+        ax2.plot(d[0][map_valid],d[2][map_valid],'-')
 
     ax2.set_xscale("log")
     ax2.axhline(y=-45.,c="black", ls='--')
@@ -74,6 +161,7 @@ def plot_frequency_responses(data, labels, f_c):
     fig.subplots_adjust(hspace = .05)
     plt.show()
     return fig, ax1, ax2
+
 
 def plot_debug_data(processors, source = 'input'):
 
@@ -118,7 +206,7 @@ def plot_debug_data(processors, source = 'input'):
         t = z/c
         return (t, z, bins, signal)
 
-    fig = plt.figure(figsize=(10, 6))
+    fig = plt.figure(figsize=(8, 6))
 
     ax1 = fig.add_subplot(211)
     ax11 = ax1.twiny()
@@ -128,28 +216,40 @@ def plot_debug_data(processors, source = 'input'):
     coeff = 1.
 
 
-    for processor in processors:
-
+    for i, processor in enumerate(processors):
         if source == 'input':
             if hasattr(processor, 'input_signal'):
-                t, z, bins, signal = pick_signals(processor,'input')
-                ax1.plot(t,bins*coeff)
-                ax11.plot(z, np.zeros(len(z)))
-                ax11.cla()
-                coeff *= 0.9
-                ax2.plot(t,signal)
-                ax22.plot(z, np.zeros(len(z)))
-                ax22.cla()
+                if processor.debug:
+                    t, z, bins, signal = pick_signals(processor,'input')
+                    label=processor.label
+                    ax1.plot(t*1e9,bins*coeff, label=label)
+                    ax11.plot(z, np.zeros(len(z)))
+                    ax11.cla()
+                    coeff *= 0.9
+                    ax2.plot(t*1e9,signal*1e3)
+                    ax22.plot(z, np.zeros(len(z)))
+                    ax22.cla()
         elif source == 'output':
             if hasattr(processor, 'output_signal'):
-                t, z, bins, signal = pick_signals(processor,'output')
-                ax1.plot(t,bins*coeff)
-                ax11.plot(z, np.zeros(len(z)))
-                ax11.cla()
-                coeff *= 0.9
-                ax2.plot(t,signal)
-                ax22.plot(z, np.zeros(len(z)))
-                ax22.cla()
-
+                if processor.debug:
+                    t, z, bins, signal = pick_signals(processor,'output')
+                    label=processor.label
+                    ax1.plot(t*1e9,bins*coeff, label=label)
+                    ax11.plot(z, np.zeros(len(z)))
+                    ax11.cla()
+                    coeff *= 0.9
+                    ax2.plot(t*1e9,signal*1e3)
+                    ax22.plot(z, np.zeros(len(z)))
+                    ax22.cla()
+                    
+    ax1.set_ylim(-1.1,1.1)
+    ax1.set_xticklabels(())
+    ax1.legend(loc='upper right')
+    ax11.set_xlabel('Distance [m]')
+    
+    ax2.set_xlabel('Time [ns]')
+    ax2.set_ylabel('Signal [mm]')
+    ax22.set_xticklabels(())
+                    
     plt.show()
     return fig, ax1, ax2

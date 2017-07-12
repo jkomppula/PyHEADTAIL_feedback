@@ -1,11 +1,11 @@
 import numpy as np
-from scipy.constants import c
+from scipy.constants import c, e, m_p
 
 from ..core import Parameters
 
 
 class SignalObject(object):
-    def __init__(self, bin_edges, intensity, ref_point = None, location_x=0, location_y=0, beta_x=1, beta_y=1,
+    def __init__(self, bin_edges, intensity, ref_point = None, location_x=0., location_y=0., beta_x=1., beta_y=1.,
                  x=None, xp=None, y=None, yp=None, dp=None,
                  bunch_id=None, circumference=None, h_RF=None, circular_overlapping = 0):
 
@@ -65,6 +65,23 @@ class SignalObject(object):
 
         self._output_signal = None
         self._output_parameters = None
+        
+        
+    def set_beam_paramters(self,p0, charge=e, mass=m_p, ):
+        self.charge = charge
+        self.p0 = p0
+        self.mass = mass
+        self.gamma = np.sqrt(1 + (p0 / (mass * c))**2)
+        self.beta = np.sqrt(1 - self.gamma**-2)
+        
+
+    def __getattr__(self,attr):
+        if (attr in ['x_amp', 'y_amp' ,'z_amp','xp_amp','yp_amp','dp_amp']):
+            return self.normalized_amplitude(attr.split('_')[0])
+        elif (attr in ['x_fixed','y_fixed','xp_fixed','yp_fixed']):
+            return self.fixed_amplitude(attr.split('_')[0])
+        else:
+            return object.__getattribute__(self,attr)
 
     @property
     def bunch_id(self):
@@ -103,11 +120,11 @@ class SignalObject(object):
 
     @property
     def real_z(self):
-        return self._z + self._bunch_id * self._circumference/self._h_RF
+        return self._z + self._bunch_id * self._circumference/float(self._h_RF)
 
     @property
     def real_t(self):
-        return self._z/c + self._bunch_id * self._circumference/self._h_RF/c
+        return self._z/c + self._bunch_id * self._circumference/float(self._h_RF)/c
 
     @property
     def bin_edges(self):
@@ -115,8 +132,23 @@ class SignalObject(object):
 
     @property
     def n_macroparticles_per_slice(self):
+        
         return self.intensity_distribution
+    
+    
 
+    @property
+    def slice_sets(self):
+        return [self]
+
+    @property
+    def charge_map(self):
+        """ Returns a boolean NumPy array, which gets True values for bins
+            with non-zero charge
+        """
+        return (self.intensity_distribution != 0.)
+        
+        
 
 #    def __getattr__(self,attr):
 #        if (attr in ['x_amp','y_amp','xp_amp','yp_amp']):
@@ -177,41 +209,42 @@ class SignalObject(object):
 #        print 'I am returning:'
 #        print self._output_parameters
 
-        return self._output_parameters, self._output_signal
+        return self._output_parameters, np.copy(self._output_signal)
 
     def correction(self,signal, beam_map=None, var='x'):
 
         proper_signal = signal[self._circular_overlapping:(self._circular_overlapping+len(self._z))]
         if beam_map is None:
-            beam_map = np.ones(len(self._z))
+            beam_map = np.ones(len(self._z), dtype=bool)
 
         if var == 'x':
-            self.x[self._beam_map] = self.x[self._beam_map] - proper_signal[self._beam_map]
+            self.x[beam_map] = self.x[beam_map] - proper_signal[beam_map]
         elif var == 'xp':
-            self.xp[self._beam_map] = self.xp[self._beam_map] - proper_signal[self._beam_map]
+            self.xp[beam_map] = self.xp[beam_map] - proper_signal[beam_map]
         elif var == 'y':
-            self.y[self._beam_map] = self.y[self._beam_map] - proper_signal[self._beam_map]
+            self.y[beam_map] = self.y[beam_map] - proper_signal[beam_map]
         elif var == 'yp':
-            self.yp[self._beam_map] = self.yp[self._beam_map] - proper_signal[self._beam_map]
+            self.yp[beam_map] = self.yp[beam_map] - proper_signal[beam_map]
         else:
             raise ValueError('Unknown axis')
 
     def rotate(self, angle, axis='x'):
         s = np.sin(angle)
         c = np.cos(angle)
+#        print 'self._beta_x: ' + str(self._beta_x)
 
         if (axis == 'x') or (axis == 'xp'):
-            self._total_angle_x += angle
+            self.total_angle_x += angle
             new_x = c * self.x + self._beta_x * s * self.xp
             new_xp = (-1. / self._beta_x) * s * self.x + c * self.xp
-            self.x = new_x
-            self.xp = new_xp
+            np.copyto(self.x, new_x)
+            np.copyto(self.xp, new_xp)
         elif (axis == 'y') or (axis == 'yp'):
-            self._total_angle_y += angle
+            self.total_angle_y += angle
             new_y = c * self.y + self._beta_y * s * self.yp
             new_yp = (-1. / self._beta_y) * s * self.y + c * self.yp
-            self.y = new_y
-            self.yp = new_yp
+            np.copyto(self.y, new_y)
+            np.copyto(self.yp, new_yp)
         else:
             raise ValueError('Unknown axis')
 
@@ -229,23 +262,23 @@ class SignalObject(object):
 
     def fixed_amplitude(self, axis='x', offset_angle = 0.):
         if axis == 'x':
-            s = np.sin(-1. * self._total_angle_x + offset_angle)
-            c = np.cos(-1. * self._total_angle_x + offset_angle)
+            s = np.sin(-1. * self.total_angle_x + offset_angle)
+            c = np.cos(-1. * self.total_angle_x + offset_angle)
             return c * self.x + self._beta_x * s * self.xp
 
         elif axis == 'y':
-            s = np.sin(-1. * self._total_angle_y + offset_angle)
-            c = np.cos(-1. * self._total_angle_y + offset_angle)
+            s = np.sin(-1. * self.total_angle_y + offset_angle)
+            c = np.cos(-1. * self.total_angle_y + offset_angle)
             return c * self.y + self._beta_y * s * self.yp
 
         elif axis == 'xp':
-            s = np.sin(-1. * self._total_angle_x + offset_angle)
-            c = np.cos(-1. * self._total_angle_x + offset_angle)
+            s = np.sin(-1. * self.total_angle_x + offset_angle)
+            c = np.cos(-1. * self.total_angle_x + offset_angle)
             return (-1. / self._beta_x) * s * self.x + c * self.xp
 
         elif axis == 'yp':
-            s = np.sin(-1. * self._total_angle_x + offset_angle)
-            c = np.cos(-1. * self._total_angle_x + offset_angle)
+            s = np.sin(-1. * self.total_angle_x + offset_angle)
+            c = np.cos(-1. * self.total_angle_x + offset_angle)
             return (-1. / self._beta_y) * s * self.y + c * self.yp
 
         else:
@@ -374,7 +407,16 @@ class Beam(object):
                                                  location=location,
                                                  beta=beta)
 
-        return self._output_parameters, self._output_signal
+        return self._output_parameters, np.copy(self._output_signal)
+
+
+    def correction(self,signal, beam_map=None, var='x'):
+        for i, bunch in enumerate(self._bunch_list):
+
+            i_from = i * self._n_slices_per_bunch
+            i_to = (i + 1) * self._n_slices_per_bunch
+
+            bunch.correction(signal[i_from:i_to],beam_map, var)      
 
     def combine_property(self, var):
 
@@ -391,7 +433,7 @@ class Beam(object):
             i_to = (i + 1)*self._n_slices_per_bunch
             np.copyto(combined[i_from:i_to], temp_values)
 
-        return combined
+        return np.copy(combined)
 
     def __set_values(self, values, axis='x'):
         for i, bunch in enumerate(self._bunch_list):
@@ -400,10 +442,10 @@ class Beam(object):
 
             setattr(bunch, axis, values[i_from:i_to])
 
-    def rotate(self, angle, var='x'):
+    def rotate(self, angle, axis='x'):
 
         for bunch in self._bunch_list:
-            bunch.rotate(angle, var)
+            bunch.rotate(angle, axis=axis)
 
 
 class SimpleBeam(Beam):

@@ -1,39 +1,26 @@
 import numpy as np
 from ..core import process
-import math, copy
-from abc import ABCMeta, abstractmethod
-import numpy as np
-from scipy import signal
-from scipy.constants import c, pi
-import scipy.integrate as integrate
-import scipy.special as special
-from scipy.interpolate import UnivariateSpline
+from collections import deque
+from scipy.constants import c
 
-def kick_beam(beam, kick_function, kick_var='x', seed_var='z'):
-    seed = getattr(beam, seed_var)
-    setattr(beam, kick_var, kick_function(seed))
-
-
-def damp_beam(beam, processors, gain, n_turns, Q, tracker=None, pickup_var='x', kicker_var=None):
-    if kicker_var is None:
-        kicker_var = pickup_var
-
-    angle = Q * 2. * np.pi
-
-    if tracker is not None:
-        tracker.track(beam)
+def track_beam(beam, trackers, n_turns, Q_x, Q_y=None):
+    angle_x = Q_x * 2. * np.pi
+    if Q_y is not None:
+        angle_y = Q_y * 2. * np.pi
+    else:
+        angle_y = None
+    
     for i in xrange(n_turns):
-        parameters, signal = beam.signal(pickup_var)
-        parameters, signal = process(parameters, signal, processors, slice_sets=beam.slice_sets)
-        corrected_values = getattr(beam, kicker_var)
-        corrected_values = corrected_values - gain * signal
-        setattr(beam, kicker_var, corrected_values)
-        beam.rotate(angle, pickup_var)
-        if tracker is not None:
+        #print 'Turn: ' + str(i)
+        for tracker in trackers:
             tracker.operate(beam)
+        
+        beam.rotate(angle_x, 'x')
+        if angle_y is not None:    
+            beam.rotate(angle_y, 'y')
 
-class BeamKicker(object):
-    def __init__(self, kick_turns, kick_function, kick_var='x', seed_var='z'):
+class Kicker(object):
+    def __init__(self, kick_function, kick_turns = 0, kick_var='x', seed_var='z'):
         if isinstance(kick_turns, int):
             self._kick_turns = [kick_turns]
         else:
@@ -54,6 +41,56 @@ class BeamKicker(object):
 
         self._turn_counter += 1
 
+class Tracer(object):
+    def __init__(self,n_turns,variables='x', trace_every = 1):
+        
+        self._n_turns = n_turns
+        self._counter = 0
+        self._trace_every = trace_every
+        
+        if isinstance(variables, basestring):
+            self.variables = [variables]
+        else:
+            self.variables = variables
+
+        for var in self.variables:
+            setattr(self, var, None)
+
+    def operate(self, beam, **kwargs):
+        if self._counter == 0:
+            n_slices = len(beam.z)
+            for var in self.variables:
+                setattr(self, var, np.zeros((self._n_turns,n_slices)))
+        
+        if (self._counter < self._n_turns) and (self._counter%self._trace_every == 0):
+            for var in self.variables:
+                np.copyto(getattr(self,var)[self._counter,:],getattr(beam,var))
+
+        self._counter += 1
+
+class FixedPhaseTracer(object):
+    def __init__(self,phase, variables='x', n_values=None, trace_every = 1, first_trace=0):
+        pass
+
+
+class Damper(object):
+    def __init__(self, gain, processors, pickup_variable = 'x', kick_variable = 'x'):
+        self.gain = gain
+        self.processors = processors
+        self.pickup_variable = pickup_variable
+        self.kick_variable = kick_variable
+        
+    def operate(self, beam, **kwargs):
+        parameters, signal = beam.signal(self.pickup_variable)
+        
+        kick_parameters_x, kick_signal_x = process(parameters, signal, self.processors,
+                                                   slice_sets=beam.slice_sets, **kwargs)
+        if kick_signal_x is not None:
+            kick_signal_x = kick_signal_x*self.gain
+            beam.correction(kick_signal_x, var=self.kick_variable)
+        else:
+            print 'No isgnal!!!'
+        
 
 #class Resonators(object):
 #    def __init__(self, frequencies, decay_times ,growth_rates, phase_shifts, seed = 0.01):
@@ -80,78 +117,6 @@ class BeamKicker(object):
 #
 #        self._turn_counter += 1
 
-
-def beam_rotator(n_turns, gain, Q, beam, processors, workers= None, pickup_var='x', kicker_var=None):
-    if isinstance(workers, object) and not isinstance(workers, list) :
-        workers = [workers]
-
-    if kicker_var is None:
-        kicker_var = pickup_var
-
-    angle = Q * 2. * np.pi
-
-    for i in xrange(n_turns):
-        parameters, signal = beam.signal(pickup_var)
-        parameters, signal = process(parameters, signal, processors, slice_sets=beam.slice_sets)
-        corrected_values = getattr(beam, kicker_var)
-        corrected_values = corrected_values - gain * signal
-        setattr(beam, kicker_var, corrected_values)
-        beam.rotate(angle, pickup_var)
-        if workers is not None:
-            for worker in workers:
-                worker.operate(beam, processors=processors)
-
-
-class SignalTracker(object):
-    def __init__(self):
-        self._turns = []
-        self._turn_counter = 0
-
-
-class BeamTracker(object):
-    def __init__(self,properties):
-        self._properties = properties
-
-
-        self._turns = []
-        self._turn_counter = 0
-
-        self._locations = None
-
-        self._available_properties = ['x', 'y', 'xp', 'yp', 'z', 'dp',
-                                      'x_amp', 'y_amp', 'xp_amp', 'yp_amp',
-                                      'x_fixed', 'y_fixed', 'xp_fixed', 'yp_fixed'
-                                      ]
-
-        self._trackable_properties = [i for i in self._available_properties if i in self._properties]
-        self.z = None
-
-        if len(self._trackable_properties) > 0:
-            for var in self._trackable_properties:
-                setattr(self, var, [])
-
-    def operate(self, beam, **kwargs):
-        self._turns.append(self._turn_counter)
-        self._turn_counter += 1
-
-        if self.z is None:
-            self.z = [np.copy(beam.z)]
-
-        if len(self._trackable_properties) > 0:
-            for var in self._trackable_properties:
-                new_values = getattr(beam, var)
-                getattr(self, var).append(new_values)
-class Damper(object):
-    def __init__(self, gain, processors):
-        self._gain = gain
-        self._processors = processors
-
-    def operate(self, beam, **kwargs):
-        parameters, signal = beam.damper_signal()
-
-        parameters, signal = process(parameters, signal, self._processors)
-        if signal is not None:
-            beam.damper_correction(self._gain * signal)
 
 class Wake(object):
     def __init__(self,t,x, n_turns):
@@ -184,7 +149,7 @@ class Wake(object):
             turn_length = (beam.z[-1] - beam.z[0])/c
             normalized_z = (beam.z - beam.z[0])/c
 
-            self._beam_map = beam.intensity>0.
+            self._beam_map = beam.charge_map
 
             for i in xrange(self._n_turns):
                 z_values = normalized_z + float(i)*turn_length
@@ -197,7 +162,7 @@ class Wake(object):
                 self._previous_kicks.append(np.zeros(len(normalized_z)))
 
 
-        raw_source = beam.x*beam.intensity
+        raw_source = beam.x*beam.intensity_distribution
         convolve_source = np.concatenate((raw_source,raw_source))
 
         for i, impulse in enumerate(self._kick_impulses):
@@ -210,7 +175,11 @@ class Wake(object):
             else:
                 self._previous_kicks.append(raw_kick[i_from:i_to])
 
-
+#        print 'self._wake_factor(beam): ' + str(self._wake_factor(beam))
+#        print 'kick: '
+#        print self._wake_factor(beam)*self._previous_kicks[0][self._beam_map]
+#        print 'kick_done'
+#        print self._previous_kicks[0][self._beam_map]
         beam.xp[self._beam_map] = beam.xp[self._beam_map] + self._wake_factor(beam)*self._previous_kicks[0][self._beam_map]
 
 
