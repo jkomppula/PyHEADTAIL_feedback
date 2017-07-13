@@ -39,7 +39,7 @@ class Convolution(object):
 #        ref_points = parameters['segment_ref_points']
 
         # a number of impulse values added to the both side of the segments
-        extra_bins = np.ceil(n_bins/2.)
+        extra_bins = int(np.ceil(n_bins/2.))
 
         # Reference bin edges for one segment
         impulse_ref_edges = None

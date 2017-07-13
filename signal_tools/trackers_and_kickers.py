@@ -18,7 +18,7 @@ def track_beam(beam, trackers, n_turns, Q_x, Q_y=None):
 
     done = False
     for i in xrange(n_turns):
-        # print 'Turn: ' + str(i)
+        print 'Turn: ' + str(i)
         for tracker in trackers:
             tracker.operate(beam)
             done += tracker.done
