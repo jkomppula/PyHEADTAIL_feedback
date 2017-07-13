@@ -135,150 +135,82 @@ class Wake(object):
 
         self._method = method
 
-    def _wake_factor(self,beam):
+    def _wake_factor(self, beam):
         """Universal scaling factor for the strength of a wake field
         kick.
         """
         wake_factor = (-(beam.charge)**2 / (beam.mass * beam.gamma * (beam.beta * c)**2))
-	return wake_factor
+        return wake_factor
 
-    def _operate_numpy(self,beam):
-        if not hasattr(self, '_kick_impulses'):
-            self._kick_impulses = []
-            turn_length = (beam.z[-1] - beam.z[0])/c
-            normalized_z = (beam.z - beam.z[0])/c
+    def _convolve_numpy(self, source, impulse_response):
+            raw_kick = np.convolve(source,impulse_response, mode='full')
+            i_from = len(impulse_response)
+            i_to = len(impulse_response)+len(source)
+            return raw_kick[i_from:i_to]
 
-            self._beam_map = beam.charge_map
+    def _convolve_cython(self, source, impulse_response):
+            raw_kick = np.array(cython_circular_convolution(source, impulse_response, 0))
+            return raw_kick
 
-            for i in xrange(self._n_turns):
-                z_values = normalized_z + float(i)*turn_length
+    def _convolve_fft(self, source, impulse_response):
+            raw_kick = np.real(np.fft.ifft(np.fft.fft(source) * impulse_response))
+            return raw_kick
 
-                temp_impulse = np.interp(z_values, self._t, self._x)
-                if i == 0:
-                    temp_impulse[0] = 0.
-                temp_impulse = np.append(np.zeros(len(temp_impulse)),temp_impulse)
-                self._kick_impulses.append(temp_impulse)
-                self._previous_kicks.append(np.zeros(len(normalized_z)))
+    def _convolve_fftconcolve(self, source, impulse_response):
+            raw_kick = signal.fftconvolve(source,impulse_response, mode='full')
+            i_from = len(impulse_response)
+            i_to = len(impulse_response)+len(source)
+            return raw_kick[i_from:i_to]
 
-        raw_source = beam.x*beam.intensity_distribution
-        convolve_source = np.concatenate((raw_source,raw_source))
-
-        for i, impulse in enumerate(self._kick_impulses):
-            raw_kick=np.convolve(convolve_source,impulse, mode='full')
-            i_from = len(impulse)
-            i_to = len(impulse)+len(raw_source)
-
-            if i < (self._n_turns-1):
-                self._previous_kicks[i+1] += raw_kick[i_from:i_to]
-            else:
-                self._previous_kicks.append(raw_kick[i_from:i_to])
-
-#        beam.xp = beam.xp + self._wake_factor(beam)*self._previous_kicks[0]
-        beam.xp[self._beam_map] = beam.xp[self._beam_map] + self._wake_factor(beam)*self._previous_kicks[0][self._beam_map]
-
-    def _operate_cython(self,beam):
-        if not hasattr(self, '_kick_impulses'):
-            self._kick_impulses = []
-            turn_length = (beam.z[-1] - beam.z[0])/c
-            normalized_z = (beam.z - beam.z[0])/c
-
-            self._beam_map = beam.charge_map
-
-            for i in xrange(self._n_turns):
-                z_values = normalized_z + float(i)*turn_length
-
-                temp_impulse = np.interp(z_values, self._t, self._x)
-                if i == 0:
-                    temp_impulse[0] = 0.
-                self._kick_impulses.append(temp_impulse)
-                self._previous_kicks.append(np.zeros(len(normalized_z)))
-
-        raw_source = np.copy(beam.x)*np.copy(beam.intensity_distribution)
-        convolve_source = np.copy(raw_source)
-
-        for i, impulse in enumerate(self._kick_impulses):
-            raw_kick = np.array(cython_circular_convolution(convolve_source, impulse, 0))
-
-            if i < (self._n_turns-1):
-                self._previous_kicks[i+1] = np.copy(self._previous_kicks[i+1]) + raw_kick
-            else:
-                self._previous_kicks.append(np.copy(raw_kick))
-#        beam.xp = np.copy(beam.xp) + self._wake_factor(beam)*self._previous_kicks[0]
-        beam.xp[self._beam_map] = beam.xp[self._beam_map] + self._wake_factor(beam)*self._previous_kicks[0][self._beam_map]
-
-    def _operate_numpy_fft(self,beam):
-        if not hasattr(self, '_kick_impulses'):
-            self._kick_impulses = []
-            turn_length = (beam.z[-1] - beam.z[0])/c
-            normalized_z = (beam.z - beam.z[0])/c
-
-            self._beam_map = beam.charge_map
-
-            for i in xrange(self._n_turns):
-                z_values = normalized_z + float(i)*turn_length
-
-                temp_impulse = np.interp(z_values, self._t, self._x)
-                if i == 0:
-                    temp_impulse[0] = 0.
-                self._kick_impulses.append(np.fft.fft(temp_impulse))
-                self._previous_kicks.append(np.zeros(len(normalized_z)))
-        raw_source = beam.x*beam.intensity_distribution
-        convolve_source = raw_source
-
-        for i, impulse in enumerate(self._kick_impulses):
-            raw_kick = np.real(np.fft.ifft(np.fft.fft(convolve_source) * impulse))
-
-
-            if i < (self._n_turns-1):
-                self._previous_kicks[i+1] += raw_kick
-            else:
-                self._previous_kicks.append(raw_kick)
-#        beam.xp = beam.xp + self._wake_factor(beam)*self._previous_kicks[0]
-        beam.xp[self._beam_map] = beam.xp[self._beam_map] + self._wake_factor(beam)*self._previous_kicks[0][self._beam_map]
-
-    def _operate_scipy_fftconvolve(self,beam):
-        if not hasattr(self, '_kick_impulses'):
-            self._kick_impulses = []
-            turn_length = (beam.z[-1] - beam.z[0])/c
-            normalized_z = (beam.z - beam.z[0])/c
-
-            self._beam_map = beam.charge_map
-
-            for i in xrange(self._n_turns):
-                z_values = normalized_z + float(i)*turn_length
-
-                temp_impulse = np.interp(z_values, self._t, self._x)
-                if i == 0:
-                    temp_impulse[0] = 0.
-                temp_impulse = np.append(np.zeros(len(temp_impulse)),temp_impulse)
-                self._kick_impulses.append(temp_impulse)
-                self._previous_kicks.append(np.zeros(len(normalized_z)))
-
-
-        raw_source = beam.x*beam.intensity_distribution
-        convolve_source = np.concatenate((raw_source,raw_source))
-
-        for i, impulse in enumerate(self._kick_impulses):
-            raw_kick = signal.fftconvolve(convolve_source,impulse, mode='full')
-            i_from = len(impulse)
-            i_to = len(impulse)+len(raw_source)
-
-            if i < (self._n_turns-1):
-                self._previous_kicks[i+1] += raw_kick[i_from:i_to]
-            else:
-                self._previous_kicks.append(raw_kick[i_from:i_to])
-
-#        beam.xp = beam.xp + self._wake_factor(beam)*self._previous_kicks[0]
-        beam.xp[self._beam_map] = beam.xp[self._beam_map] + self._wake_factor(beam)*self._previous_kicks[0][self._beam_map]
-
-    def operate(self, beam, **kwargs):
+    def _init(self, beam):
         if self._method == 'numpy':
-            self._operate_numpy(beam)
+            self._convolve = self._convolve_numpy
+            self._prepare_source = lambda source: np.concatenate((source,source))
+            impulse_modificator = lambda impulse: np.append(np.zeros(len(impulse)), impulse)
         elif self._method == 'cython':
-            self._operate_cython(beam)
+            self._convolve = self._convolve_cython
+            self._prepare_source = lambda source: source
+            impulse_modificator = lambda impulse: impulse
         elif self._method == 'fft':
-            self._operate_numpy_fft(beam)
+            self._convolve = self._convolve_fft
+            self._prepare_source = lambda source: source
+            impulse_modificator = lambda impulse: np.fft.fft(impulse)
         elif self._method == 'fftconvolve':
-            self._operate_scipy_fftconvolve(beam)
+            self._convolve = self._convolve_fftconcolve
+            self._prepare_source = lambda source: np.concatenate((source,source))
+            impulse_modificator = lambda impulse: np.append(np.zeros(len(impulse)), impulse)
         else:
             raise ValueError('Unknown calculation method')
+
+        self._kick_impulses = []
+        turn_length = (beam.z[-1] - beam.z[0])/c
+        normalized_z = (beam.z - beam.z[0])/c
+
+        self._beam_map = beam.charge_map
+
+        for i in xrange(self._n_turns):
+            self._previous_kicks.append(np.zeros(len(normalized_z)))
+            z_values = normalized_z + float(i)*turn_length
+
+            temp_impulse = np.interp(z_values, self._t, self._x)
+            if i == 0:
+                temp_impulse[0] = 0.
+
+            self._kick_impulses.append(impulse_modificator(temp_impulse))
+
+    def operate(self, beam, **kwargs):
+        if not hasattr(self, '_kick_impulses'):
+            self._init(beam)
+
+        source = self._prepare_source(beam.x*beam.intensity_distribution)
+
+        for i, impulse_response in enumerate(self._kick_impulses):
+            kick = self._convolve(source,impulse_response)
+
+            if i < (self._n_turns-1):
+                self._previous_kicks[i+1] += kick
+            else:
+                self._previous_kicks.append(kick)
+
+#        beam.xp = beam.xp + self._wake_factor(beam)*self._previous_kicks[0]
+        beam.xp[self._beam_map] = beam.xp[self._beam_map] + self._wake_factor(beam)*self._previous_kicks[0][self._beam_map]
