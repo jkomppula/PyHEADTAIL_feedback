@@ -503,6 +503,8 @@ class Lowpass(ConvolutionFilter):
     def _raw_impulse_response(self, x):
         if x < 0.:
             return 0.
+        elif x > 10.:
+            return 0.
         else:
             return math.exp(-1. * x)
 
@@ -570,7 +572,12 @@ class Gaussian(ConvolutionFilter):
         self.label = 'Gaussian lowpass filter'
 
     def _raw_impulse_response(self, x):
-        return np.exp(-x ** 2. / 2.) / np.sqrt(2. * pi)
+        if x < -10.:
+            return 0.
+        elif x > 10.:
+            return 0.
+        else:
+            return np.exp(-x ** 2. / 2.) / np.sqrt(2. * pi)
 
 
 class Sinc(ConvolutionFilter):

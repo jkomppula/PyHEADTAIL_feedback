@@ -145,7 +145,7 @@ class Wake(object):
     def _convolve_numpy(self, source, impulse_response):
             raw_kick = np.convolve(source,impulse_response, mode='full')
             i_from = len(impulse_response)
-            i_to = len(impulse_response)+len(source)
+            i_to = len(impulse_response)+len(source)/2
             return raw_kick[i_from:i_to]
 
     def _convolve_cython(self, source, impulse_response):
@@ -159,7 +159,7 @@ class Wake(object):
     def _convolve_fftconcolve(self, source, impulse_response):
             raw_kick = signal.fftconvolve(source,impulse_response, mode='full')
             i_from = len(impulse_response)
-            i_to = len(impulse_response)+len(source)
+            i_to = len(impulse_response)+len(source)/2
             return raw_kick[i_from:i_to]
 
     def _init(self, beam):

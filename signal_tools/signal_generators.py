@@ -7,7 +7,7 @@ from ..core import Parameters
 class SignalObject(object):
     def __init__(self, bin_edges, intensity, ref_point = None, location_x=0., location_y=0., beta_x=1., beta_y=1.,
                  x=None, xp=None, y=None, yp=None, dp=None,
-                 bunch_id=None, circumference=None, h_RF=None, circular_overlapping = 0):
+                 bunch_id=None, circumference=None, h_RF=None, circular_overlapping = 0, n_segments = 1):
 
         self._bunch_id = bunch_id
         self._circumference = circumference
@@ -27,6 +27,8 @@ class SignalObject(object):
         self._z = (self._bin_edges[:, 0]+self._bin_edges[:, 1])/2.
         self._z_bins = np.append(self._bin_edges[:, 0], np.array([self._bin_edges[-1, 1]]))
         self._n_slices = len(self._z)
+        self._n_segments = n_segments
+        self._n_bins_per_segment = len(bin_edges)/self._n_segments
 
         if x is not None:
             self.x = x
@@ -163,57 +165,62 @@ class SignalObject(object):
 
 
     def signal(self, var = 'x'):
+        overlapping = self._circular_overlapping * self._n_bins_per_segment
         if self._output_signal is None:
-            self._output_signal = np.zeros(self._n_slices + 2 * self._circular_overlapping)
+            self._output_signal = np.zeros(self._n_slices + 2 * overlapping)
 
         if self._output_parameters is None:
-
-            prefix_offset = self._bin_edges[self._circular_overlapping,0] - self._bin_edges[0,0]
-            postfix_offset = self._bin_edges[-1,1] - self._bin_edges[-self._circular_overlapping,1]
-            bin_edges = np.concatenate((self._bin_edges[0:self._circular_overlapping]+prefix_offset,self._bin_edges),axis=0)
-            if self._circular_overlapping > 0:
-                bin_edges = np.concatenate((bin_edges,self._bin_edges[-self._circular_overlapping:]+postfix_offset),axis=0)
+            if self._circular_overlapping == 0:
+                bin_edges = np.copy(self._bin_edges)
+            else:
+                prefix_offset = -self._bin_edges[-overlapping,0] - self._bin_edges[overlapping,0]
+                postfix_offset = -self._bin_edges[0,0] + self._bin_edges[-1,1]
+                bin_edges = np.concatenate((self._bin_edges[-overlapping:]+prefix_offset,self._bin_edges),axis=0)
+                bin_edges = np.concatenate((bin_edges,self._bin_edges[:overlapping]+postfix_offset),axis=0)
 #            else:
 #                bin_edges = self._bin_edges
 
-            if self._ref_point is not None:
-                bunch_ref_point = self._ref_point
-                bin_edges = bin_edges + self._ref_point
-            else:
-                bunch_ref_point = np.mean(self._z_bins)
+            bunch_ref_points = []
+            for i in xrange(self._n_segments):
+                i_from = i * self._n_bins_per_segment
+                i_to = (i + 1) * self._n_bins_per_segment
+                bunch_ref_points.append(np.mean(self._z[i_from:i_to]))
 
-            self._output_parameters = Parameters(2, bin_edges, 1, len(bin_edges),
-                    [bunch_ref_point],location=self._location_x, beta=self._beta_x)
+            if self._ref_point is not None:
+                bunch_ref_points = bunch_ref_points - np.mean(bunch_ref_points) + self._ref_point
+                bin_edges = bin_edges + self._ref_point
+
+            self._output_parameters = Parameters(2, bin_edges, self._n_segments + 2*self._circular_overlapping, self._n_bins_per_segment,
+                    bunch_ref_points,location=self._location_x, beta=self._beta_x)
 
         if var == 'x':
-            np.copyto(self._output_signal[self._circular_overlapping:
-                (self._circular_overlapping+self._n_slices)], self.x)
+            np.copyto(self._output_signal[overlapping:
+                (overlapping+self._n_slices)], self.x)
         elif var == 'xp':
-            np.copyto(self._output_signal[self._circular_overlapping:
-                (self._circular_overlapping+self._n_slices)], self.xp)
+            np.copyto(self._output_signal[overlapping:
+                (overlapping+self._n_slices)], self.xp)
         elif var == 'y':
-            np.copyto(self._output_signal[self._circular_overlapping:
-                (self._circular_overlapping+self._n_slices)], self.y)
+            np.copyto(self._output_signal[overlapping:
+                (overlapping+self._n_slices)], self.y)
         elif var == 'yp':
-            np.copyto(self._output_signal[self._circular_overlapping:
-                (self._circular_overlapping+self._n_slices)], self.yp)
+            np.copyto(self._output_signal[overlapping:
+                (overlapping+self._n_slices)], self.yp)
         else:
             raise ValueError('Unknown axis')
 
         if self._circular_overlapping > 0 :
-            np.copyto(self._output_signal[:self._circular_overlapping],
-                      self._output_signal[self._n_slices:(self._circular_overlapping+self._n_slices)])
-            np.copyto(self._output_signal[-self._circular_overlapping:],
-                      self._output_signal[self._circular_overlapping:(2*self._circular_overlapping)])
-
-#        print 'I am returning:'
-#        print self._output_parameters
-
+            np.copyto(self._output_signal[:overlapping],
+                      self._output_signal[-2*overlapping:-1*overlapping])
+            np.copyto(self._output_signal[-overlapping:],
+                      self._output_signal[overlapping:2*overlapping])
         return self._output_parameters, np.copy(self._output_signal)
 
     def correction(self,signal, beam_map=None, var='x'):
+        overlapping = self._circular_overlapping * self._n_bins_per_segment
 
-        proper_signal = signal[self._circular_overlapping:(self._circular_overlapping+len(self._z))]
+        proper_signal = signal[overlapping:(overlapping+self._n_slices)]
+
+
         if beam_map is None:
             beam_map = np.ones(len(self._z), dtype=bool)
 
