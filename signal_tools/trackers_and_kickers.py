@@ -71,6 +71,84 @@ class Tracer(object):
 
         self._counter += 1
 
+
+class EmittanceTracer(object):
+    def __init__(self, n_turns, variables=['x'], start_from = 0):
+        self._n_turns = n_turns
+        self._start_from = start_from
+        self._end_to = self._start_from + self._n_turns
+
+        self.variables = variables
+
+        self.data_tables = []
+        for i in xrange(len(self.variables)):
+            self.data_tables.append(np.zeros((n_turns, 2)))
+
+        self._counter = 0
+
+    def operate(self, beam, **kwargs):
+
+        if (self._counter >= self._start_from) and (self._counter < self._end_to):
+            idx = self._counter - self._start_from
+            for i, var in enumerate(self.variables):
+                val = np.mean(np.power(getattr(beam, var), 2))
+                val_p = np.mean(np.power(getattr(beam, var + 'p'), 2))
+                val_val_p = np.mean(np.power(getattr(beam, var)*getattr(beam, var + 'p'), 2))
+
+                self.data_tables[i][idx, 0] = self._counter
+                self.data_tables[i][idx, 1] = np.sqrt(val*val_p - val_val_p)
+
+        self._counter += 1
+
+    def start_now(self):
+        self._start_from = self._counter
+
+    def end_now(self):
+        self._end_to = self._counter
+
+    def save_to_file(self, file_prefix):
+        for var, data in zip(self.variables, self.data_tables):
+            data.tofile(file_prefix + '_' + var + '.dat')
+
+
+class DataTracer(object):
+    def __init__(self, n_turns, variables=['x'], start_from = 0):
+        self._n_turns = n_turns
+        self._start_from = start_from
+        self._end_to = self._start_from + self._n_turns
+        self.variables = variables
+        self.data_tables = None
+        self._counter = 0
+        self.z = None
+
+    def operate(self, beam, **kwargs):
+
+        if self.data_tables is None:
+            self.data_tables = []
+            self.z = np.copy(beam.z)
+            for i in xrange(len(self.variables)):
+                self.data_tables.append(np.zeros((self._n_turns, len(beam.z)+1)))
+
+        if (self._counter >= self._start_from) and (self._counter < self._end_to):
+            idx = self._counter - self._start_from
+            for i, var in enumerate(self.variables):
+                self.data_tables[i][idx, 0] = self._counter
+                np.copyto(self.data_tables[i][idx, 1:], getattr(beam, var))
+
+        self._counter += 1
+
+    def start_now(self):
+        self._start_from = self._counter
+
+    def end_now(self):
+        self._end_to = self._counter
+
+    def save_to_file(self, file_prefix):
+        self.z.tofile(file_prefix + '_z.dat')
+        for var, data in zip(self.variables, self.data_tables):
+            data.tofile(file_prefix + '_' + var + '.dat')
+
+
 class FixedPhaseTracer(object):
     def __init__(self,phase, variables='x', n_values=None, trace_every = 1, first_trace=0):
         pass
