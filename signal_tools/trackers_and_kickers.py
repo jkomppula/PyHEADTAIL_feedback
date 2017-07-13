@@ -1,26 +1,34 @@
 import numpy as np
-from ..core import process
+from ..core import process, version
 from collections import deque
 from scipy.constants import c
 from cython_hacks import cython_circular_convolution
 from scipy import signal
 
 import matplotlib.pyplot as plt
+
+
 def track_beam(beam, trackers, n_turns, Q_x, Q_y=None):
+    print 'Feedback version: ' + version
     angle_x = Q_x * 2. * np.pi
     if Q_y is not None:
         angle_y = Q_y * 2. * np.pi
     else:
         angle_y = None
 
+    done = False
     for i in xrange(n_turns):
-        #print 'Turn: ' + str(i)
+        # print 'Turn: ' + str(i)
         for tracker in trackers:
             tracker.operate(beam)
+            done += tracker.done
 
         beam.rotate(angle_x, 'x')
         if angle_y is not None:
             beam.rotate(angle_y, 'y')
+        if done > 0:
+            print 'Mission completed in ' + str(i) + ' turns!'
+            break
 
 class Kicker(object):
     def __init__(self, kick_function, kick_turns = 0, kick_var='x', seed_var='z'):
@@ -43,6 +51,10 @@ class Kicker(object):
             setattr(beam, self._kick_var, prev_values + self._kick_function(seed))
 
         self._turn_counter += 1
+
+    @property
+    def done(self):
+        return False
 
 class Tracer(object):
     def __init__(self,n_turns,variables='x', trace_every = 1):
@@ -71,6 +83,10 @@ class Tracer(object):
 
         self._counter += 1
 
+    @property
+    def done(self):
+        return False
+
 
 class EmittanceTracer(object):
     def __init__(self, n_turns, variables=['x'], start_from = 0):
@@ -91,12 +107,8 @@ class EmittanceTracer(object):
         if (self._counter >= self._start_from) and (self._counter < self._end_to):
             idx = self._counter - self._start_from
             for i, var in enumerate(self.variables):
-                val = np.mean(np.power(getattr(beam, var), 2))
-                val_p = np.mean(np.power(getattr(beam, var + 'p'), 2))
-                val_val_p = np.mean(np.power(getattr(beam, var)*getattr(beam, var + 'p'), 2))
-
                 self.data_tables[i][idx, 0] = self._counter
-                self.data_tables[i][idx, 1] = np.sqrt(val*val_p - val_val_p)
+                self.data_tables[i][idx, 1] = getattr(beam, 'epsn_'+var)
 
         self._counter += 1
 
@@ -104,15 +116,23 @@ class EmittanceTracer(object):
         self._start_from = self._counter
 
     def end_now(self):
-        self._end_to = self._counter
+        self._start_from = self._counter
+        self._end_to = self._start_from + self._n_turns
 
     def save_to_file(self, file_prefix):
         for var, data in zip(self.variables, self.data_tables):
             data.tofile(file_prefix + '_' + var + '.dat')
 
+    @property
+    def done(self):
+        if (self._counter >= self._end_to):
+            return True
+        else:
+            return False
 
 class DataTracer(object):
-    def __init__(self, n_turns, variables=['x'], start_from = 0):
+    def __init__(self, n_turns, variables=['x'], start_from = 0.,
+                 lim_epsn_x=None, lim_epsn_y=None):
         self._n_turns = n_turns
         self._start_from = start_from
         self._end_to = self._start_from + self._n_turns
@@ -120,6 +140,12 @@ class DataTracer(object):
         self.data_tables = None
         self._counter = 0
         self.z = None
+
+        self._lim_epsn_x = lim_epsn_x
+        self._lim_epsn_y = lim_epsn_y
+
+        self._epsn_x_start = None
+        self._epsn_y_start = None
 
     def operate(self, beam, **kwargs):
 
@@ -134,11 +160,27 @@ class DataTracer(object):
             for i, var in enumerate(self.variables):
                 self.data_tables[i][idx, 0] = self._counter
                 np.copyto(self.data_tables[i][idx, 1:], getattr(beam, var))
+        else:
+            if (self._counter < self._end_to):
+                if self._lim_epsn_x is not None:
+                    if beam.epsn_x > self._lim_epsn_x:
+                        self.start_now()
+                if self._lim_epsn_y is not None:
+                    if beam.epsn_y > self._lim_epsn_y:
+                        self.start_now()
 
         self._counter += 1
 
+    @property
+    def done(self):
+        if (self._counter >= self._end_to):
+            return True
+        else:
+            return False
+
     def start_now(self):
         self._start_from = self._counter
+        self._end_to = self._start_from + self._n_turns
 
     def end_now(self):
         self._end_to = self._counter
@@ -170,7 +212,12 @@ class Damper(object):
             kick_signal_x = kick_signal_x*self.gain
             beam.correction(kick_signal_x, var=self.kick_variable)
         else:
-            print 'No isgnal!!!'
+            print 'No signal!!!'
+
+    @property
+    def done(self):
+        return False
+
 
 
 #class Resonators(object):
@@ -212,6 +259,10 @@ class Wake(object):
         self._previous_kicks = deque(maxlen=n_turns)
 
         self._method = method
+
+    @property
+    def done(self):
+        return False
 
     def _wake_factor(self, beam):
         """Universal scaling factor for the strength of a wake field

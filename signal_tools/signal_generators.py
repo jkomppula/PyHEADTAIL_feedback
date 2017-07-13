@@ -138,7 +138,6 @@ class SignalObject(object):
         return self.intensity_distribution
 
 
-
     @property
     def slice_sets(self):
         return [self]
@@ -149,6 +148,22 @@ class SignalObject(object):
             with non-zero charge
         """
         return (self.intensity_distribution != 0.)
+
+    @property
+    def epsn_x(self):
+        x = np.mean(np.power(self.x, 2))
+        xp = np.mean(np.power(self.xp, 2))
+        x_xp = np.mean(np.power(self.x*self.xp, 2))
+
+        return np.sqrt(x*xp - x_xp)
+
+    @property
+    def epsn_y(self):
+        y = np.mean(np.power(self.y, 2))
+        yp = np.mean(np.power(self.yp, 2))
+        y_yp = np.mean(np.power(self.y*self.yp, 2))
+
+        return np.sqrt(y*yp - y_yp)
 
 
 
