@@ -18,7 +18,7 @@ def track_beam(beam, trackers, n_turns, Q_x, Q_y=None):
 
     done = False
     for i in xrange(n_turns):
-        print 'Turn: ' + str(i)
+#        print 'Turn: ' + str(i)
         for tracker in trackers:
             tracker.operate(beam)
             done += tracker.done
@@ -28,7 +28,8 @@ def track_beam(beam, trackers, n_turns, Q_x, Q_y=None):
             beam.rotate(angle_y, 'y')
         if done > 0:
             print 'Mission completed in ' + str(i) + ' turns!'
-            break
+            if i < (n_turns - 2):
+                break
 
 class Kicker(object):
     def __init__(self, kick_function, kick_turns = 0, kick_var='x', seed_var='z'):
