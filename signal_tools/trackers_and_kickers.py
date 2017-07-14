@@ -124,6 +124,11 @@ class EmittanceTracer(object):
         for var, data in zip(self.variables, self.data_tables):
             data.tofile(file_prefix + '_' + var + '.dat')
 
+    def reset_data(self):
+        if self.data_tables is not None:
+            for data in self.data_tables:
+                data.fill(0.)
+
     @property
     def done(self):
         if (self._counter >= self._end_to):
@@ -185,6 +190,12 @@ class DataTracer(object):
 
     def end_now(self):
         self._end_to = self._counter
+
+    def reset_data(self):
+        if self.data_tables is not None:
+            for data in self.data_tables:
+                data.fill(0.)
+
 
     def save_to_file(self, file_prefix):
         self.z.tofile(file_prefix + '_z.dat')
