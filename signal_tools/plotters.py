@@ -168,7 +168,7 @@ def plot_frequency_responses(data, labels, f_c, amp_range=(1e-2,4), phase_range=
     ax1.set_ylabel('V$_{out}$/V$_{in}$')
     ax1.legend(loc='lower left')
     ax1.set_xticklabels(())
-    ax1.annotate('Cut-off\nfrequency', xy=(1.1*f_c, 1.2*amp_range[0]), xytext=(2*f_c, 3*amp_range[0]),
+    ax1.annotate('Cut-off\nfrequency', xy=(0.9*f_c, 1.2*amp_range[0]), xytext=(0.3*f_c, 3*amp_range[0]),
                 arrowprops=dict(arrowstyle="->",
                                 connectionstyle="arc3"))
     ax1.annotate('-3dB', xy=(1.1*min(d[0]), 0.65), xytext=(3*min(d[0]), 2e-1),
@@ -177,6 +177,7 @@ def plot_frequency_responses(data, labels, f_c, amp_range=(1e-2,4), phase_range=
     ax1.axhline(y=1/np.sqrt(2),c="black", ls='--')
     ax1.axvline(x=f_c,c="black", ls='--')
     ax1.set_ylim([amp_range[0], amp_range[1]])
+    ax1.set_xlim(np.min(data[0][0]),np.max(data[0][0]))
     ax2 = fig.add_subplot(212)
 
     for i, (d, l) in enumerate(zip(data,labels)):
@@ -191,6 +192,7 @@ def plot_frequency_responses(data, labels, f_c, amp_range=(1e-2,4), phase_range=
     ax2.set_ylabel('Phase shift [deg]')
     ax2.set_yticks([-90, -67.5,-45,-22.5,0,22.5,45,67.5,90])
     ax2.set_ylim([-93, 93])
+    ax2.set_xlim(np.min(data[0][0]),np.max(data[0][0]))
     ax2.title.set_visible(False)
 
     fig.subplots_adjust(hspace = .05)

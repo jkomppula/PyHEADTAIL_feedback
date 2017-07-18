@@ -9,7 +9,6 @@ import scipy.integrate as integrate
 import scipy.special as special
 from scipy.interpolate import UnivariateSpline
 from ..core import debug_extension
-from ..core import bin_mids
 # TODO: - 2nd order cutoff by using gaussian filter
 
 class Convolution(object):
@@ -175,15 +174,12 @@ class Convolution(object):
         return parameters, output_signal
 
 class Delay(Convolution):
+    """ Delays signal in the units of time
+    """
+
     def __init__(self,delay, **kwargs):
 
-
         self._z_delay = delay*c
-
-        if self._z_delay < 0.:
-            impulse_range = (self._z_delay, 0.)
-        else:
-            impulse_range = (0., self._z_delay)
 
         super(self.__class__, self).__init__(**kwargs)
         self.label = 'Delay'
@@ -212,18 +208,20 @@ class Delay(Convolution):
 
 
 class MovingAverage(Convolution):
-    """ Returns a signal, which consists an average value of the input signal. A sums of the rows in the matrix
-        are normalized to be one (i.e. a sum of the input signal doesn't change).
+    """ Calculates a moving average
     """
 
-    def __init__(self,window_length, quantity = 'time', **kwargs):
+    def __init__(self,window_length, **kwargs):
+        """
+            Parameters
+            ----------
+            window_length : float
+                Window width in the units of time [t]
+            n_copies : int
+                A number of copies
+        """
 
-        if quantity == 'time':
-            self._window = (-0.5 * window_length * c, 0.5 * window_length * c)
-        elif quantity == 'distance':
-            self._window = (-0.5 * window_length, 0.5 * window_length)
-        else:
-            raise ValueError('Unknown value in Average.quantity')
+        self._window = (-0.5 * window_length * c, 0.5 * window_length * c)
 
         super(self.__class__, self).__init__(**kwargs)
         self.label = 'Average'
@@ -247,8 +245,19 @@ class MovingAverage(Convolution):
 
 
 class WaveletGenerator(Convolution):
+    """ Makes copies from the signal.
+    """
 
     def __init__(self,spacing,n_copies, **kwargs):
+        """
+            Parameters
+            ----------
+            spacing : float
+                Gap between the copies [s]
+            n_copies : int
+                A number of copies
+        """
+
         self._spacing = spacing
         self._n_copies = n_copies
 
@@ -328,8 +337,10 @@ class ConvolutionFilter(Convolution):
 
     __metaclass__ = ABCMeta
 
-    def __init__(self,scaling,impulse_range,zero_bin_value = None, tip_cut_width=None,
-                 normalization=None, **kwargs):
+    def __init__(self,scaling, zero_bin_value=None, normalization=None,
+                 f_cutoff_2nd=None, **kwargs):
+
+        self._f_cutoff_2nd = f_cutoff_2nd
 
         self._scaling = scaling
         self._normalization = normalization
@@ -338,9 +349,6 @@ class ConvolutionFilter(Convolution):
         super(ConvolutionFilter, self).__init__(**kwargs)
         self.label='ConvolutionFilter'
         # NOTE: is the tip cut needed? How to work with the sharp tips of the ideal filters?
-        if (self._normalization is None) and (tip_cut_width is not None):
-            self._normalization = 'integral'
-        self._impulse_response = self._impulse_response_generator(tip_cut_width)
 
     def response_function(self, impulse_ref_edges, n_segments, original_segment_length):
         impulse = np.zeros(len(impulse_ref_edges))
@@ -357,6 +365,9 @@ class ConvolutionFilter(Convolution):
         # normalizes the impulse response
         impulse = self._normalize(impulse_ref_edges, impulse, original_segment_length)
 
+        if self._f_cutoff_2nd is not None:
+            impulse = self._filter_2nd_cutoff(impulse,impulse_ref_edges, n_segments, original_segment_length)
+
         # searches the zero bin and adds it the set zero bin value if it is
         # determined
         if self._zero_bin_value is not None:
@@ -365,6 +376,23 @@ class ConvolutionFilter(Convolution):
                     impulse[i] = impulse_ref_edges[i] + self._zero_bin_value
 
         return impulse
+
+    def _filter_2nd_cutoff(self, impulse,impulse_ref_edges, n_segments, original_segment_length):
+            ref_points = []
+            mids = bin_mids(impulse_ref_edges)
+            n_bins_per_segment = int(len(impulse)/n_segments)
+            for i in xrange(n_segments):
+                i_from = i * n_bins_per_segment
+                i_to = (i + 1) * n_bins_per_segment
+                ref_points.append(np.mean(mids[i_from:i_to]))
+            parameters = Parameters(signal_class=1, bin_edges=impulse_ref_edges, n_segments=n_segments,
+                                    n_bins_per_segment=n_bins_per_segment, segment_ref_points=ref_points,
+                                    previous_parameters=[], location=0, beta=1.)
+
+            impulse_filter = Gaussian(self._f_cutoff_2nd)
+
+            output_parameters, output_signal = impulse_filter.process(parameters,impulse)
+            return output_signal
 
     def _normalize(self, impulse_ref_edges, impulse, segment_length):
 
@@ -458,49 +486,26 @@ class ConvolutionFilter(Convolution):
 #        return impulse_values
 
     @abstractmethod
-    def _raw_impulse_response(self, x):
+    def _impulse_response(self, x):
         """ Impulse response of the filter.
         :param x: normalized time (t*2.*pi*f_c)
         :return: response at the given time
         """
         pass
 
-    def _impulse_response_generator(self,tip_cut_width):
-        """ A function which generates the response function from the raw impulse response. If 2nd cut-off frequency
-            is given, the value of the raw impulse response is set to constant at the time scale below that.
-            The integral over the response function is normalized to value 1.
-        """
-
-        if tip_cut_width is not None:
-            def transfer_function(x):
-                if np.abs(x) < tip_cut_width:
-                    return self._raw_impulse_response(np.sign(x)*tip_cut_width)
-                else:
-                    return self._raw_impulse_response(x)
-        else:
-            def transfer_function(x):
-                    return self._raw_impulse_response(x)
-
-        return transfer_function
 
 
 class Lowpass(ConvolutionFilter):
     """ A classical lowpass filter, which is also known as a RC-filter or one
         poll roll off.
     """
-    def __init__(self,f_cutoff, impulse_length = 5., f_cutoff_2nd = None, normalization=('integral',(-5.,5.)), **kwargs):
+    def __init__(self,f_cutoff, normalization=('integral',(-5.,5.)), **kwargs):
         scaling = 2. * pi * f_cutoff / c
-        impulse_range = (0, impulse_length/scaling)
 
-        if f_cutoff_2nd is not None:
-            tip_cut_width = f_cutoff / f_cutoff_2nd
-        else:
-            tip_cut_width = None
-
-        super(self.__class__, self).__init__(scaling, impulse_range, tip_cut_width = tip_cut_width, normalization=normalization,**kwargs)
+        super(self.__class__, self).__init__(scaling, normalization=normalization,**kwargs)
         self.label = 'Lowpass filter'
 
-    def _raw_impulse_response(self, x):
+    def _impulse_response(self, x):
         if x < 0.:
             return 0.
         elif x > 10.:
@@ -513,19 +518,13 @@ class Highpass(ConvolutionFilter):
         multiplying the lowpass filter by a factor of -1 and adding to the first
         bin 1
     """
-    def __init__(self,f_cutoff, impulse_length = 5., f_cutoff_2nd = None, normalization=('integral',(-5.,5.)), **kwargs):
+    def __init__(self,f_cutoff, normalization=('integral',(-5.,5.)), **kwargs):
         scaling = 2. * pi * f_cutoff / c
-        impulse_range = (0, impulse_length/scaling)
 
-        if f_cutoff_2nd is not None:
-            tip_cut_width = f_cutoff / f_cutoff_2nd
-        else:
-            tip_cut_width = None
-
-        super(self.__class__, self).__init__( scaling, impulse_range, zero_bin_value= 1., tip_cut_width = tip_cut_width, normalization=normalization, **kwargs)
+        super(self.__class__, self).__init__( scaling, zero_bin_value= 1., normalization=normalization, **kwargs)
         self.label = 'Highpass filter'
 
-    def _raw_impulse_response(self, x):
+    def _impulse_response(self, x):
         if x < 0.:
             return 0.
         else:
@@ -539,19 +538,13 @@ class PhaseLinearizedLowpass(ConvolutionFilter):
         frequency, which smooths the impulse response by using a Gaussian filter.
     """
 
-    def __init__(self, f_cutoff, impulse_length = 5., f_cutoff_2nd = None, normalization=('integral',(-5.,5.)), **kwargs):
+    def __init__(self, f_cutoff, normalization=('integral',(-5.,5.)), **kwargs):
         scaling = 2. * pi * f_cutoff / c
-        impulse_range = (-1.*impulse_length/scaling, impulse_length/scaling)
 
-        if f_cutoff_2nd is not None:
-            tip_cut_width = f_cutoff / f_cutoff_2nd
-        else:
-            tip_cut_width = None
-
-        super(self.__class__, self).__init__( scaling, impulse_range, tip_cut_width = tip_cut_width, normalization=normalization, **kwargs)
+        super(self.__class__, self).__init__( scaling, normalization=normalization, **kwargs)
         self.label = 'Phaselinearized lowpass filter'
 
-    def _raw_impulse_response(self, x):
+    def _impulse_response(self, x):
         if x == 0.:
             return 0.
         else:
@@ -561,17 +554,13 @@ class PhaseLinearizedLowpass(ConvolutionFilter):
 class Gaussian(ConvolutionFilter):
     """ A Gaussian low pass filter, which impulse response is a Gaussian function.
     """
-    def __init__(self, f_cutoff, impulse_length = 5., normalization=('integral',(-5.,5.)), **kwargs):
+    def __init__(self, f_cutoff, normalization=('integral',(-5.,5.)), **kwargs):
         scaling = 2. * pi * f_cutoff / c
-        impulse_range = (-1.*impulse_length/scaling, impulse_length/scaling)
 
-
-        tip_cut_width = None
-
-        super(self.__class__, self).__init__( scaling, impulse_range, tip_cut_width = tip_cut_width, normalization=normalization, **kwargs)
+        super(self.__class__, self).__init__( scaling, normalization=normalization, **kwargs)
         self.label = 'Gaussian lowpass filter'
 
-    def _raw_impulse_response(self, x):
+    def _impulse_response(self, x):
         if x < -10.:
             return 0.
         elif x > 10.:
@@ -605,11 +594,10 @@ class Sinc(ConvolutionFilter):
 
         self.window_width = float(window_width)
         self.window_type = window_type
-        impulse_range = (-1.*pi *window_width/scaling, pi*window_width/scaling)
-        super(self.__class__, self).__init__(scaling, impulse_range,normalization=normalization, **kwargs)
+        super(self.__class__, self).__init__(scaling,normalization=normalization, **kwargs)
         self.label = 'Sinc filter'
 
-    def _raw_impulse_response(self, x):
+    def _impulse_response(self, x):
         if np.abs(x/pi) > self.window_width:
             return 0.
         else:
@@ -628,8 +616,18 @@ class Sinc(ConvolutionFilter):
 
 
 class FIRFilter(Convolution):
+    """ Calculates a convolution over the signal by using the given coefficients as a kernel.
+    """
 
     def __init__(self, coefficients, zero_tap = 0, **kwargs):
+        """
+            Parameters
+            ----------
+            coefficients : array
+                A list of the filter coefficients
+            zero_tap : int
+                A list index for the coefficient at
+        """
 
         self._zero_tap = zero_tap
 
