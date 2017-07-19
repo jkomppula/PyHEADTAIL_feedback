@@ -13,6 +13,9 @@ from PyHEADTAIL.particles.slicing import UniformBinSlicer
 
 
 class Machine(Synchrotron):
+    """ Note that this is a toy machine for testing, which pameters are tuned for testing
+        purposes.
+    """
 
     def __init__(self, n_segments = 1, Q_x=64.28, Q_y=59.31, Q_s=0.0020443):
 
@@ -24,7 +27,7 @@ class Machine(Synchrotron):
         alpha = 53.86**-2
         self.h_RF = 35640
 
-        p0 = 7000e9 * e / c
+        p0 = 450e9 * e / c
         p_increment = 0.
         self.accQ_x = Q_x
         self.accQ_y = Q_y
@@ -51,7 +54,7 @@ class Machine(Synchrotron):
         wrap_z=True
 
 #        name = None
-        self.sigma_z = 0.081
+        self.sigma_z = 5* 0.081
         self.epsn_x = 3.75e-6  # [m rad]
         self.epsn_y = 3.75e-6  # [m rad]
         self.intensity = 1.05e11
@@ -290,15 +293,15 @@ def plot_debug_data(processors, source = 'input'):
                     ax2.plot(t*1e9,signal*1e3)
                     ax22.plot(z, np.zeros(len(z)))
                     ax22.cla()
-                    
+
     ax1.set_ylim(-1.1,1.1)
     ax1.set_xticklabels(())
     ax1.legend(loc='upper right')
     ax11.set_xlabel('Distance [m]')
-    
+
     ax2.set_xlabel('Time [ns]')
     ax2.set_ylabel('Signal [mm]')
     ax22.set_xticklabels(())
-                    
+
     plt.show()
     return fig, ax1, ax2

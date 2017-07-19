@@ -16,7 +16,7 @@ from scipy.sparse import csr_matrix
 class Resampler(object):
 
     def __init__(self, method, n_samples=None, offset=0., data_conversion='sum',
-                 n_extra_samples = 0, **kwargs):
+                 n_extras = 0, **kwargs):
         """
         Resamples the input signal into a new bin set
 
@@ -66,7 +66,7 @@ class Resampler(object):
                     caclulating an average value of the overlaping bins
                 'value'
                     returning a value of the overlapping bin
-        n_extra_samples : int
+        n_extras : int
             A number of extra samples added before the first segment and after
             the last segment
         """
@@ -75,7 +75,7 @@ class Resampler(object):
         self._n_samples = n_samples
         self._offset = offset
 
-        self._n_extra_samples = n_extra_samples
+        self._n_extras = n_extras
 
         self._data_conversion = data_conversion
 
@@ -113,7 +113,7 @@ class Resampler(object):
         n_sampled_sequencies = (max_ref_point-min_ref_point) / segment_length + 1
         n_sampled_sequencies = int(np.round(n_sampled_sequencies))
 
-        total_n_samples = int(n_sampled_sequencies * n_bins_per_segment)
+        total_n_samples = int((n_sampled_sequencies + 2*self._n_extras) * n_bins_per_segment)
 
         segment_z_bins = np.linspace(0, segment_length, n_bins_per_segment+1)
         segment_z_bins = segment_z_bins + (self._offset - np.floor(n_bins_per_segment/2.)-0.5)*bin_width
@@ -121,8 +121,22 @@ class Resampler(object):
 
         bin_edges = None
 
+        for i in xrange(self._n_extras):
+            offset = start_mid - (self._n_extras-i)*segment_length
+            if bin_edges is None:
+                bin_edges = np.copy(segment_bin_edges+offset)
+            else:
+                bin_edges = append_bin_edges(bin_edges, segment_bin_edges+offset)
+
         for i in xrange(n_sampled_sequencies):
             offset = i*segment_length + start_mid
+            if bin_edges is None:
+                bin_edges = np.copy(segment_bin_edges+offset)
+            else:
+                bin_edges = append_bin_edges(bin_edges, segment_bin_edges+offset)
+
+        for i in xrange(self._n_extras):
+            offset = start_mid + (i+n_sampled_sequencies)*segment_length
             if bin_edges is None:
                 bin_edges = np.copy(segment_bin_edges+offset)
             else:
