@@ -178,7 +178,7 @@ class Averager(LinearTransform):
         super(self.__class__, self).__init__(mode, normalization, **kwargs)
         self.label = 'Averager'
 
-    def response_function(self, ref_bin_mid, ref_bin_from, ref_bin_to, bin_mid, bin_from, bin_to):
+    def response_function(self, parameters, ref_bin_mid, ref_bin_from, ref_bin_to, bin_mid, bin_from, bin_to):
         return 1
 
 class Delay(LinearTransform):
@@ -189,7 +189,7 @@ class Delay(LinearTransform):
         super(self.__class__, self).__init__( **kwargs)
         self.label = 'Delay'
 
-    def response_function(self, ref_bin_mid, ref_bin_from, ref_bin_to, bin_mid, bin_from, bin_to):
+    def response_function(self, parameters, ref_bin_mid, ref_bin_from, ref_bin_to, bin_mid, bin_from, bin_to):
 
         return self.__CDF(bin_to, ref_bin_from, ref_bin_to) - self.__CDF(bin_from, ref_bin_from, ref_bin_to)
 
@@ -214,7 +214,7 @@ class LinearTransformFromFile(LinearTransform):
         super(self.__class__, self).__init__( **kwargs)
         self.label = 'LT from file'
 
-    def response_function(self, ref_bin_mid, ref_bin_from, ref_bin_to, bin_mid, bin_from, bin_to):
+    def response_function(self, parameters, ref_bin_mid, ref_bin_from, ref_bin_to, bin_mid, bin_from, bin_to):
             return np.interp(bin_mid - ref_bin_mid, self._data[:, 0], self._data[:, 1])
 
 
@@ -329,8 +329,8 @@ class PhaseLinearizedLowpass(LinearTransformFilter):
     """ A phase linearized 1st order lowpass filter. Note that the narrow and
         sharp peak of the impulse response makes the filter to be sensitive
         to the bin width and may yield an unrealistically good response for the
-        short signals. Thus it is recommended to set a second order cut off
-        frequency, which smooths the impulse response by using a Gaussian filter.
+        short signals. Thus, it is recommended to use a higher bandwidth Gaussian
+        filter together with this filter.
     """
 
     def __init__(self,f_cutoff, normalization=None, max_impulse_length = 5., **kwargs):
