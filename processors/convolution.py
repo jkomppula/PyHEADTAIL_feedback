@@ -1,14 +1,13 @@
-import copy, math
 import numpy as np
 from abc import ABCMeta, abstractmethod
 
 from ..core import Parameters, Signal
 from ..core import bin_widths, bin_mids, bin_edges_to_z_bins, z_bins_to_bin_edges
+from ..core import debug_extension
 from scipy.constants import c, pi
 import scipy.integrate as integrate
-import scipy.special as special
 from scipy.interpolate import UnivariateSpline
-from ..core import debug_extension
+import abstract_filter_responses
 # TODO: - 2nd order cutoff by using gaussian filter
 
 class Convolution(object):
@@ -363,7 +362,8 @@ class ConvolutionFilter(Convolution):
             impulse[i], _ = integrate.quad(self._impulse_response, integral_from, integral_to)
 
         # normalizes the impulse response
-        impulse = self._normalize(impulse_ref_edges, impulse, original_segment_length)
+        norm_coeff = self. _normalization_coefficient(impulse_ref_edges, impulse, original_segment_length)
+        impulse = impulse/norm_coeff
 
         if self._f_cutoff_2nd is not None:
             impulse = self._filter_2nd_cutoff(impulse,impulse_ref_edges, n_segments, original_segment_length)
@@ -394,14 +394,13 @@ class ConvolutionFilter(Convolution):
             output_parameters, output_signal = impulse_filter.process(parameters,impulse)
             return output_signal
 
-    def _normalize(self, impulse_ref_edges, impulse, segment_length):
+    def _normalization_coefficient(self, impulse_ref_edges, impulse, segment_length):
 
         if self._normalization is None:
             pass
         elif isinstance(self._normalization, tuple):
             if self._normalization[0] == 'integral':
                 norm_coeff, _ = integrate.quad(self._impulse_response, self._normalization[1][0], self._normalization[1][1])
-                impulse = impulse/norm_coeff
             elif self._normalization[0] == 'bunch_by_bunch':
                 f_h = self._normalization[1]
 
@@ -413,19 +412,18 @@ class ConvolutionFilter(Convolution):
                 #print x
                 #print self._normalization[1] * self._scaling * c
                 #print self._normalization[1] * c
-                impulse = impulse/norm_coeff/(segment_length * self._scaling)
 
 
-
+                norm_coeff = norm_coeff*(segment_length * self._scaling)
             else:
                 raise ValueError('Unknown normalization method!')
         elif self._normalization == 'sum':
-            impulse = impulse/np.sum(impulse)
+            norm_coeff = np.sum(impulse)
 
         else:
             raise ValueError('Unknown normalization method!')
 
-        return impulse
+        return norm_coeff
 #
 #        if self._normalization is None:
 #            pass
@@ -485,8 +483,7 @@ class ConvolutionFilter(Convolution):
 #
 #        return impulse_values
 
-    @abstractmethod
-    def _impulse_response(self, x):
+    def _impulse_response(x):
         """ Impulse response of the filter.
         :param x: normalized time (t*2.*pi*f_c)
         :return: response at the given time
@@ -499,36 +496,33 @@ class Lowpass(ConvolutionFilter):
     """ A classical lowpass filter, which is also known as a RC-filter or one
         poll roll off.
     """
-    def __init__(self,f_cutoff, normalization=('integral',(-5.,5.)), **kwargs):
+    def __init__(self,f_cutoff, normalization=None, max_impulse_length = 5., **kwargs):
         scaling = 2. * pi * f_cutoff / c
+
+        if normalization is None:
+            normalization=('integral',(-max_impulse_length,max_impulse_length))
+
+        self._impulse_response = abstract_filter_responses.normalized_lowpass(max_impulse_length)
 
         super(self.__class__, self).__init__(scaling, normalization=normalization,**kwargs)
         self.label = 'Lowpass filter'
 
-    def _impulse_response(self, x):
-        if x < 0.:
-            return 0.
-        elif x > 10.:
-            return 0.
-        else:
-            return math.exp(-1. * x)
 
 class Highpass(ConvolutionFilter):
     """ A high pass version of the lowpass filter, which is constructed by
         multiplying the lowpass filter by a factor of -1 and adding to the first
         bin 1
     """
-    def __init__(self,f_cutoff, normalization=('integral',(-5.,5.)), **kwargs):
+    def __init__(self,f_cutoff, normalization=None, max_impulse_length = 5., **kwargs):
         scaling = 2. * pi * f_cutoff / c
+
+        if normalization is None:
+            normalization=('integral',(-max_impulse_length,max_impulse_length))
+
+        self._impulse_response = abstract_filter_responses.normalized_highpass(max_impulse_length)
 
         super(self.__class__, self).__init__( scaling, zero_bin_value= 1., normalization=normalization, **kwargs)
         self.label = 'Highpass filter'
-
-    def _impulse_response(self, x):
-        if x < 0.:
-            return 0.
-        else:
-            return -1.* math.exp(-1. * x)
 
 class PhaseLinearizedLowpass(ConvolutionFilter):
     """ A phase linearized 1st order lowpass filter. Note that the narrow and
@@ -538,35 +532,31 @@ class PhaseLinearizedLowpass(ConvolutionFilter):
         frequency, which smooths the impulse response by using a Gaussian filter.
     """
 
-    def __init__(self, f_cutoff, normalization=('integral',(-5.,5.)), **kwargs):
+    def __init__(self,f_cutoff, normalization=None, max_impulse_length = 5., **kwargs):
         scaling = 2. * pi * f_cutoff / c
+
+        if normalization is None:
+            normalization=('integral',(-max_impulse_length,max_impulse_length))
+
+        self._impulse_response = abstract_filter_responses.normalized_phase_linearized_lowpass(max_impulse_length)
 
         super(self.__class__, self).__init__( scaling, normalization=normalization, **kwargs)
         self.label = 'Phaselinearized lowpass filter'
-
-    def _impulse_response(self, x):
-        if x == 0.:
-            return 0.
-        else:
-            return special.k0(abs(x))
 
 
 class Gaussian(ConvolutionFilter):
     """ A Gaussian low pass filter, which impulse response is a Gaussian function.
     """
-    def __init__(self, f_cutoff, normalization=('integral',(-5.,5.)), **kwargs):
+    def __init__(self,f_cutoff, normalization=None, max_impulse_length = 5., **kwargs):
         scaling = 2. * pi * f_cutoff / c
+
+        if normalization is None:
+            normalization=('integral',(-max_impulse_length,max_impulse_length))
+
+        self._impulse_response = abstract_filter_responses.normalized_Gaussian(max_impulse_length)
 
         super(self.__class__, self).__init__( scaling, normalization=normalization, **kwargs)
         self.label = 'Gaussian lowpass filter'
-
-    def _impulse_response(self, x):
-        if x < -10.:
-            return 0.
-        elif x > 10.:
-            return 0.
-        else:
-            return np.exp(-x ** 2. / 2.) / np.sqrt(2. * pi)
 
 
 class Sinc(ConvolutionFilter):
@@ -580,7 +570,8 @@ class Sinc(ConvolutionFilter):
         code in example/test 004_analog_signal_processors.ipynb
     """
 
-    def __init__(self, f_cutoff, window_width = 3, window_type = 'blackman', normalization=('integral',(-10.,10.)), **kwargs):
+    def __init__(self, f_cutoff, window_width = 3., window_type = 'blackman', normalization=None,
+                 **kwargs):
         """
         :param f_cutoff: a cutoff frequency of the filter
         :param delay: a delay of the filter [s]
@@ -589,30 +580,15 @@ class Sinc(ConvolutionFilter):
         :param norm_type: see class LinearTransform
         :param norm_range: see class LinearTransform
         """
-
         scaling = 2. * pi * f_cutoff / c
 
-        self.window_width = float(window_width)
-        self.window_type = window_type
+        if normalization is None:
+            normalization=('integral',(-window_width,window_width))
+
+        self._impulse_response = abstract_filter_responses.normalized_sinc(window_type, window_width)
+
         super(self.__class__, self).__init__(scaling,normalization=normalization, **kwargs)
         self.label = 'Sinc filter'
-
-    def _impulse_response(self, x):
-        if np.abs(x/pi) > self.window_width:
-            return 0.
-        else:
-            if self.window_type == 'blackman':
-                return np.sinc(x/pi)*self.blackman_window(x)
-            elif self.window_type == 'hamming':
-                return np.sinc(x/pi)*self.hamming_window(x)
-
-    def blackman_window(self,x):
-        return 0.42-0.5*np.cos(2.*pi*(x/pi+self.window_width)/(2.*self.window_width))\
-               +0.08*np.cos(4.*pi*(x/pi+self.window_width)/(2.*self.window_width))
-
-    def hamming_window(self, x):
-        return 0.54-0.46*np.cos(2.*pi*(x/pi+self.window_width)/(2.*self.window_width))
-
 
 
 class FIRFilter(Convolution):
