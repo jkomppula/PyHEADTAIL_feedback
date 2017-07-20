@@ -9,7 +9,6 @@ import matplotlib.pyplot as plt
 
 
 def track_beam(beam, trackers, n_turns, Q_x, Q_y=None):
-    print 'Feedback version: ' + version
     angle_x = Q_x * 2. * np.pi
     if Q_y is not None:
         angle_y = Q_y * 2. * np.pi

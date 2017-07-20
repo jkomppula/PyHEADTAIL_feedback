@@ -7,7 +7,7 @@ import copy
 # TODO: change the base unit from distance to time
 
 
-version = '0.2_b2'
+version = '0.2_b2+dev'
 
 def Parameters(signal_class=0, bin_edges=np.array([]), n_segments=0,
                n_bins_per_segment=0, segment_ref_points=np.array([]),
