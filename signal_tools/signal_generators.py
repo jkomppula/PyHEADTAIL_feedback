@@ -153,17 +153,17 @@ class SignalObject(object):
     def epsn_x(self):
         x = np.mean(np.power(self.x, 2))
         xp = np.mean(np.power(self.xp, 2))
-        x_xp = np.mean(np.power(self.x*self.xp, 2))
+        x_xp = np.mean(self.x*self.xp)
 
-        return np.sqrt(x*xp - x_xp)
+        return np.sqrt(x*xp - x_xp*x_xp)
 
     @property
     def epsn_y(self):
         y = np.mean(np.power(self.y, 2))
         yp = np.mean(np.power(self.yp, 2))
-        y_yp = np.mean(np.power(self.y*self.yp, 2))
+        y_yp = np.mean(self.y*self.yp)
 
-        return np.sqrt(y*yp - y_yp)
+        return np.sqrt(y*yp - y_yp*y_yp)
 
     @property
     def abs_mean_x(self):
