@@ -165,6 +165,13 @@ class SignalObject(object):
 
         return np.sqrt(y*yp - y_yp)
 
+    @property
+    def abs_mean_x(self):
+        return np.mean(np.abs(self.x))
+
+    @property
+    def abs_mean_y(self):
+        return np.mean(np.abs(self.y))
 
 
 #    def __getattr__(self,attr):
