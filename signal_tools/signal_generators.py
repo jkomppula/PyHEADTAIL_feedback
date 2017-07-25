@@ -1,7 +1,7 @@
 import numpy as np
 from scipy.constants import c, e, m_p
 
-from ..core import Parameters
+from ..core import Parameters, bin_mids
 
 
 class SignalObject(object):
@@ -203,10 +203,11 @@ class SignalObject(object):
 #                bin_edges = self._bin_edges
 
             bunch_ref_points = []
-            for i in xrange(self._n_segments):
+            mids = bin_mids(bin_edges)
+            for i in xrange(self._n_segments + 2*self._circular_overlapping):
                 i_from = i * self._n_bins_per_segment
                 i_to = (i + 1) * self._n_bins_per_segment
-                bunch_ref_points.append(np.mean(self._z[i_from:i_to]))
+                bunch_ref_points.append(np.mean(mids[i_from:i_to]))
 
             if self._ref_point is not None:
                 bunch_ref_points = bunch_ref_points - np.mean(bunch_ref_points) + self._ref_point
@@ -216,25 +217,31 @@ class SignalObject(object):
                     bunch_ref_points,location=self._location_x, beta=self._beta_x)
 
         if var == 'x':
-            np.copyto(self._output_signal[overlapping:
-                (overlapping+self._n_slices)], self.x)
+            raw_signal = np.copy(self.x)
+#            np.copyto(self._output_signal[overlapping:
+#                (overlapping+self._n_slices)], self.x)
         elif var == 'xp':
-            np.copyto(self._output_signal[overlapping:
-                (overlapping+self._n_slices)], self.xp)
+            raw_signal = np.copy(self.xp)
+#            np.copyto(self._output_signal[overlapping:
+#                (overlapping+self._n_slices)], self.xp)
         elif var == 'y':
-            np.copyto(self._output_signal[overlapping:
-                (overlapping+self._n_slices)], self.y)
+            raw_signal = np.copy(self.y)
+#            np.copyto(self._output_signal[overlapping:
+#                (overlapping+self._n_slices)], self.y)
         elif var == 'yp':
-            np.copyto(self._output_signal[overlapping:
-                (overlapping+self._n_slices)], self.yp)
+            raw_signal = np.copy(self.yp)
+#            np.copyto(self._output_signal[overlapping:
+#                (overlapping+self._n_slices)], self.yp)
         else:
             raise ValueError('Unknown axis')
 
+        np.copyto(self._output_signal[overlapping:(overlapping+len(raw_signal))],raw_signal)
+
         if self._circular_overlapping > 0 :
             np.copyto(self._output_signal[:overlapping],
-                      self._output_signal[-2*overlapping:-1*overlapping])
+                      raw_signal[-1*overlapping:])
             np.copyto(self._output_signal[-overlapping:],
-                      self._output_signal[overlapping:2*overlapping])
+                      raw_signal[:overlapping])
         return self._output_parameters, np.copy(self._output_signal)
 
     def correction(self,signal, beam_map=None, var='x'):

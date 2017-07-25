@@ -37,7 +37,8 @@ class Convolution(object):
 #        ref_points = parameters['segment_ref_points']
 
         # a number of impulse values added to the both side of the segments
-        extra_bins = int(np.ceil(n_bins/2.))
+#        extra_bins = int(np.ceil(n_bins/2.))
+        extra_bins = 0
 
         # Reference bin edges for one segment
         impulse_ref_edges = None
@@ -62,12 +63,13 @@ class Convolution(object):
             # original bins corresponing to the signal
             org_edges = bin_edges[i_from:i_to, :]
             # extra bins before the original bins
-            prefix_offset = org_edges[(extra_bins-1), 1]-org_edges[0, 0]
-            # extra bins after the original bins
-            postfix_offset = org_edges[-extra_bins, 0]-org_edges[-1, 1]
+#            prefix_offset = org_edges[(extra_bins-1), 1]-org_edges[0, 0]
+#            # extra bins after the original bins
+#            postfix_offset = org_edges[-extra_bins, 0]-org_edges[-1, 1]
 
-            edges = np.concatenate(((org_edges[:extra_bins]-prefix_offset), org_edges), axis=0)
-            edges = np.concatenate((edges, org_edges[extra_bins:]-postfix_offset), axis=0)
+            edges = np.copy(org_edges)
+#            edges = np.concatenate(((org_edges[:extra_bins]-prefix_offset), org_edges), axis=0)
+#            edges = np.concatenate((edges, org_edges[extra_bins:]-postfix_offset), axis=0)
 
             # reference points of the segments, which correspond to midpoint of
             # the bin sets in this case.
@@ -117,17 +119,20 @@ class Convolution(object):
             # cleans the calculated impulse response, i.e. removes the segments where
             # response is zero.
             n_bins_per_segment = n_bins + 2* extra_bins
+#            print 'I am ' + str(i) + ', my ref point is: ' + str(ref_point) + ' and targets are: '
             for k in xrange(n_seg):
+
                 i_from = k * n_bins_per_segment
                 i_to = (k+1) * n_bins_per_segment
 
                 if np.sum(np.abs(dashed_impulse_response[i_from:i_to])) > 0.:
+#                    print 'target: ' + str(k)
                     target_segments.append(k)
                     cleaned_impulse = np.append(cleaned_impulse, dashed_impulse_response[i_from:i_to])
 
             self._dashed_impulse_responses.append(cleaned_impulse)
 
-            self._impulses_from_segments.append(np.zeros(len(cleaned_impulse)))
+            self._impulses_from_segments.append(np.zeros(len(cleaned_impulse)+idx_offset))
             for idx, target_idx in enumerate(target_segments):
                 i_from = idx * n_bins_per_segment + extra_bins + idx_offset
                 i_to = idx * n_bins_per_segment + extra_bins + n_bins + idx_offset
@@ -148,7 +153,7 @@ class Convolution(object):
         for i in xrange(self._n_seg):
             i_from = i*self._n_bins
             i_to = (i+1)*self._n_bins
-            np.copyto(self._impulses_from_segments[i],
+            np.copyto(self._impulses_from_segments[i][:len(self._dashed_impulse_responses[i])],
                       np.convolve(self._dashed_impulse_responses[i],
                                   signal[i_from:i_to], mode='same'))
 
@@ -158,6 +163,10 @@ class Convolution(object):
 
             i_from = i*self._n_bins
             i_to = (i+1)*self._n_bins
+#            print np.sum(self._impulses_to_segments[i], axis=0)
+#            print len(np.sum(self._impulses_to_segments[i], axis=0))
+#            print output_signal[i_from:i_to]
+#            print len(output_signal[i_from:i_to])
             np.copyto(output_signal[i_from:i_to], np.sum(self._impulses_to_segments[i], axis=0))
 
         return output_signal
