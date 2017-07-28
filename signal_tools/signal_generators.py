@@ -320,7 +320,8 @@ class SignalObject(object):
         else:
             raise ValueError('Unknown axis')
 
-    def init_noise(self,noise_level, var='x'):
+    def init_noise(self,noise_level, var='x', seed = 0):
+        np.random.seed(seed)
         if var == 'x':
             self.x = np.random.normal(0., noise_level, len(self.x))
             self.xp = (1. / self._beta_x)*np.random.normal(0., noise_level, len(self.x))
