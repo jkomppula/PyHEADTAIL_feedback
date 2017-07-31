@@ -56,134 +56,55 @@ class Kicker(object):
     def done(self):
         return False
 
+class AvgValueTracer(object):
+    def __init__(self, n_turns, variables=['abs_mean_x'], start_from = 0):
+        self._n_turns = n_turns
+        self._start_from = start_from
+        self._end_to = self._start_from + self._n_turns
+
+        self.variables = variables
+
+        self.data_tables = []
+        for i in xrange(len(self.variables)):
+            self.data_tables.append(np.zeros((n_turns, 2)))
+            setattr(self, self.variables[i], np.array(self.data_tables[-1], copy=False))
+
+        self._counter = 0
+
+    def operate(self, beam, **kwargs):
+
+        if (self._counter >= self._start_from) and (self._counter < self._end_to):
+            idx = self._counter - self._start_from
+            for i, var in enumerate(self.variables):
+                self.data_tables[i][idx, 0] = self._counter
+                self.data_tables[i][idx, 1] = getattr(beam, var)
+
+        self._counter += 1
+
+    def start_now(self):
+        self._start_from = self._counter
+
+    def end_now(self):
+        self._start_from = self._counter
+        self._end_to = self._start_from + self._n_turns
+
+    def save_to_file(self, file_prefix):
+        for var, data in zip(self.variables, self.data_tables):
+            data.tofile(file_prefix + var + '.dat')
+
+    def reset_data(self):
+        if self.data_tables is not None:
+            for data in self.data_tables:
+                data.fill(0.)
+
+    @property
+    def done(self):
+        if (self._counter >= self._end_to):
+            return True
+        else:
+            return False
+
 class Tracer(object):
-    def __init__(self,n_turns,variables='x', trace_every = 1):
-
-        self._n_turns = n_turns
-        self._counter = 0
-        self._trace_every = trace_every
-
-        if isinstance(variables, basestring):
-            self.variables = [variables]
-        else:
-            self.variables = variables
-
-        for var in self.variables:
-            setattr(self, var, None)
-
-    def operate(self, beam, **kwargs):
-        if self._counter == 0:
-            n_slices = len(beam.z)
-            for var in self.variables:
-                setattr(self, var, np.zeros((self._n_turns,n_slices)))
-
-        if (self._counter < self._n_turns) and (self._counter%self._trace_every == 0):
-            for var in self.variables:
-                np.copyto(getattr(self,var)[self._counter,:],getattr(beam,var))
-
-        self._counter += 1
-
-    @property
-    def done(self):
-        return False
-
-
-class EmittanceTracer(object):
-    def __init__(self, n_turns, variables=['x'], start_from = 0):
-        self._n_turns = n_turns
-        self._start_from = start_from
-        self._end_to = self._start_from + self._n_turns
-
-        self.variables = variables
-
-        self.data_tables = []
-        for i in xrange(len(self.variables)):
-            self.data_tables.append(np.zeros((n_turns, 2)))
-
-        self._counter = 0
-
-    def operate(self, beam, **kwargs):
-
-        if (self._counter >= self._start_from) and (self._counter < self._end_to):
-            idx = self._counter - self._start_from
-            for i, var in enumerate(self.variables):
-                self.data_tables[i][idx, 0] = self._counter
-                self.data_tables[i][idx, 1] = getattr(beam, 'epsn_'+var)
-
-        self._counter += 1
-
-    def start_now(self):
-        self._start_from = self._counter
-
-    def end_now(self):
-        self._start_from = self._counter
-        self._end_to = self._start_from + self._n_turns
-
-    def save_to_file(self, file_prefix):
-        for var, data in zip(self.variables, self.data_tables):
-            data.tofile(file_prefix + '_' + var + '.dat')
-
-    def reset_data(self):
-        if self.data_tables is not None:
-            for data in self.data_tables:
-                data.fill(0.)
-
-    @property
-    def done(self):
-        if (self._counter >= self._end_to):
-            return True
-        else:
-            return False
-
-
-class AbsMeanTracer(object):
-    def __init__(self, n_turns, variables=['x'], start_from=0):
-        self._n_turns = n_turns
-        self._start_from = start_from
-        self._end_to = self._start_from + self._n_turns
-
-        self.variables = variables
-
-        self.data_tables = []
-        for i in xrange(len(self.variables)):
-            self.data_tables.append(np.zeros((n_turns, 2)))
-
-        self._counter = 0
-
-    def operate(self, beam, **kwargs):
-
-        if (self._counter >= self._start_from) and (self._counter < self._end_to):
-            idx = self._counter - self._start_from
-            for i, var in enumerate(self.variables):
-                self.data_tables[i][idx, 0] = self._counter
-                self.data_tables[i][idx, 1] = getattr(beam, 'abs_mean_'+var)
-
-        self._counter += 1
-
-    def start_now(self):
-        self._start_from = self._counter
-
-    def end_now(self):
-        self._start_from = self._counter
-        self._end_to = self._start_from + self._n_turns
-
-    def save_to_file(self, file_prefix):
-        for var, data in zip(self.variables, self.data_tables):
-            data.tofile(file_prefix + '_' + var + '.dat')
-
-    def reset_data(self):
-        if self.data_tables is not None:
-            for data in self.data_tables:
-                data.fill(0.)
-
-    @property
-    def done(self):
-        if (self._counter >= self._end_to):
-            return True
-        else:
-            return False
-
-class DataTracer(object):
     def __init__(self, n_turns, variables=['x'], start_from = 0.,
                  lim_epsn_x=None, lim_epsn_y=None):
         self._n_turns = n_turns
@@ -207,6 +128,7 @@ class DataTracer(object):
             self.z = np.copy(beam.z)
             for i in xrange(len(self.variables)):
                 self.data_tables.append(np.zeros((self._n_turns, len(beam.z)+1)))
+                setattr(self, self.variables[i], np.array(self.data_tables[-1], copy=False))
 
         if (self._counter >= self._start_from) and (self._counter < self._end_to):
             idx = self._counter - self._start_from
@@ -242,7 +164,6 @@ class DataTracer(object):
         if self.data_tables is not None:
             for data in self.data_tables:
                 data.fill(0.)
-
 
     def save_to_file(self, file_prefix):
         self.z.tofile(file_prefix + '_z.dat')
