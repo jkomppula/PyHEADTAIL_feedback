@@ -232,11 +232,12 @@ class AbstractTracer(object):
     def done(self):
         return self._done
 
+
 class AvgValueTracer(AbstractTracer):
     """ A tracker, which stores average values of the beam/bunch, e.g. emittance or average
         displacement.
     """
-    def __init__(self, n_turns, variables, **kwargs):
+    def __init__(self, n_turns, variables=['mean_x','mean_abs_x','epsn_x'], **kwargs):
         """
         Parameters
         ----------
@@ -253,7 +254,7 @@ class AvgValueTracer(AbstractTracer):
                 ('mean_abs_x', 1e-3) :  triggers recording when an average displament of the beam
                                         is over 1 mm
         """
-        super(self.__class__, self).__init__(**kwargs)
+        super(self.__class__, self).__init__(n_turns, variables, **kwargs)
 
 
     def _init_data_tables(self, beam):
@@ -263,17 +264,18 @@ class AvgValueTracer(AbstractTracer):
 
     def _update_tables(self, beam):
         for i, var in enumerate(self.variables):
-            self.data_tables[i][self._n_turns_stored, 0] = self._n_turns_stored
+            self.data_tables[i][self._n_turns_stored, 0] = self._n_turns_tracked
             self.data_tables[i][self._n_turns_stored, 1] = getattr(beam, var)
 
     def save_to_file(self, file_prefix):
         for var, data in zip(self.variables, self.data_tables):
             data.tofile(file_prefix + var + '.dat')
 
+
 class Tracer(AbstractTracer):
     """ A tracer which stores slice-by-slive/bunch-by-bunch values of the bunch/beam
     """
-    def __init__(self, n_turns, variables, **kwargs):
+    def __init__(self, n_turns, variables, triggers, **kwargs):
         """
         Parameters
         ----------
@@ -289,7 +291,7 @@ class Tracer(AbstractTracer):
                 ('mean_abs_x', 1e-3) :  triggers recording when an average displament of the beam
                                         is over 1 mm
         """
-        super(self.__class__, self).__init__(**kwargs)
+        super(self.__class__, self).__init__(n_turns, variables, triggers, **kwargs)
 
 
     def _init_data_tables(self, beam):
@@ -301,7 +303,7 @@ class Tracer(AbstractTracer):
 
     def _update_tables(self, beam):
             for i, var in enumerate(self.variables):
-                self.data_tables[i][self._n_turns_stored, 0] = self._n_turns_stored
+                self.data_tables[i][self._n_turns_stored, 0] = self._n_turns_tracked
                 np.copyto(self.data_tables[i][self._n_turns_stored, 1:], getattr(beam, var))
 
     def save_to_file(self, file_prefix):
@@ -442,7 +444,6 @@ class Wake(object):
         self._beam_map = beam.charge_map
 
         for i in xrange(self._n_turns):
-
 
             self._previous_kicks.append(np.zeros(len(normalized_z)))
             z_values = normalized_z + float(i)*turn_length
