@@ -173,7 +173,6 @@ class SignalObject(object):
     def mean_abs_y(self):
         return np.mean(np.abs(self.y))
 
-
     @property
     def mean_x(self):
         return np.mean(self.x)
@@ -194,8 +193,24 @@ class SignalObject(object):
 #        else:
 #            return object.__getattribute__(self,attr)
 
+    def phase_shifted_signal(self, var, phase):
 
-    def signal(self, var = 'x'):
+        if (phase is None) or (phase == 0.):
+            return getattr(self, var)
+        else:
+            if var == 'x':
+                return np.cos(phase)*self.x + self.beta_x*np.sin(phase)*self.xp
+            elif var == 'y':
+                return np.cos(phase)*self.y + self.beta_y*np.sin(phase)*self.xy
+            elif var == 'xp':
+                return -np.sin(phase)*self.x/self.beta_x + np.cos(phase)*self.xp
+            elif var == 'yp':
+                return -np.sin(phase)*self.y/self.beta_y + np.cos(phase)*self.yp
+            else:
+                print 'Unknown variable'
+
+
+    def signal(self, var = 'x', phase_shift = None):
         overlapping = self._circular_overlapping * self._n_bins_per_segment
         if self._output_signal is None:
             self._output_signal = np.zeros(self._n_slices + 2 * overlapping)
@@ -225,24 +240,8 @@ class SignalObject(object):
             self._output_parameters = Parameters(2, bin_edges, self._n_segments + 2*self._circular_overlapping, self._n_bins_per_segment,
                     bunch_ref_points,location=self._location_x, beta=self._beta_x)
 
-        if var == 'x':
-            raw_signal = np.copy(self.x)
-#            np.copyto(self._output_signal[overlapping:
-#                (overlapping+self._n_slices)], self.x)
-        elif var == 'xp':
-            raw_signal = np.copy(self.xp)
-#            np.copyto(self._output_signal[overlapping:
-#                (overlapping+self._n_slices)], self.xp)
-        elif var == 'y':
-            raw_signal = np.copy(self.y)
-#            np.copyto(self._output_signal[overlapping:
-#                (overlapping+self._n_slices)], self.y)
-        elif var == 'yp':
-            raw_signal = np.copy(self.yp)
-#            np.copyto(self._output_signal[overlapping:
-#                (overlapping+self._n_slices)], self.yp)
-        else:
-            raise ValueError('Unknown axis')
+
+        raw_signal = np.copy(self.phase_shifted_signal(var,phase_shift))
 
         np.copyto(self._output_signal[overlapping:(overlapping+len(raw_signal))],raw_signal)
 
