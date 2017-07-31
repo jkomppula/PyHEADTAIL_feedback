@@ -57,7 +57,7 @@ class Kicker(object):
         return False
 
 class AvgValueTracer(object):
-    def __init__(self, n_turns, variables=['abs_mean_x'], start_from = 0):
+    def __init__(self, n_turns, variables=['mean_abs_x'], start_from = 0):
         self._n_turns = n_turns
         self._start_from = start_from
         self._end_to = self._start_from + self._n_turns
