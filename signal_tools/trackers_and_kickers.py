@@ -1,14 +1,33 @@
 import numpy as np
-from ..core import process, version
+from ..core import process
 from collections import deque
 from scipy.constants import c
 from cython_hacks import cython_circular_convolution
 from scipy import signal
-
-import matplotlib.pyplot as plt
+from abc import ABCMeta, abstractmethod
 
 
 def track_beam(beam, trackers, n_turns, Q_x, Q_y=None):
+    """
+    A function which tracks beam by passing turn by turn the beam through the given list of
+    trackers. If Q_y is given, both X- and Y-planes are tracked.
+
+    Parameters
+    ----------
+    beam : int
+        The beam object which is tracked
+    trackers : list
+        A list of trackers which operate the beam turn by turn
+    n_turns : int
+        A maximum number of turns tracked. If some of the trackers returns done before the given
+        number of turns, the simulations is stopped.
+    Q_x : float
+        Tune for X-plane
+    Q_y : float
+        Tune for Y-plane
+    """
+
+    # betatron roation angle per turn in radians
     angle_x = Q_x * 2. * np.pi
     if Q_y is not None:
         angle_y = Q_y * 2. * np.pi
@@ -16,22 +35,49 @@ def track_beam(beam, trackers, n_turns, Q_x, Q_y=None):
         angle_y = None
 
     done = False
+
     for i in xrange(n_turns):
-#        print 'Turn: ' + str(i)
+
+        # passes the beam through the trackers
         for tracker in trackers:
             tracker.operate(beam)
             done += tracker.done
 
+        # Rotates beam in betatron phase
         beam.rotate(angle_x, 'x')
         if angle_y is not None:
             beam.rotate(angle_y, 'y')
+
+        # Tracking is stopped if some of the trackers return done
         if done > 0:
             print 'Mission completed in ' + str(i) + ' turns!'
             if i < (n_turns - 2):
                 break
 
+
 class Kicker(object):
-    def __init__(self, kick_function, kick_turns = 0, kick_var='x', seed_var='z'):
+    """ A tracker, which kicks beam after a given number of turns.
+    """
+
+    def __init__(self, kick_function, kick_turns=0, kick_var='x', seed_var='z'):
+        """
+        Parameters
+        ----------
+        kick_function : function
+            A python function, which calculates the kick. The input parameter for the function
+            is the beam property (Numpy array) determined by the parameter seed_var and the
+            function returns a Numpy array which is added to the beam property determined in the
+            parameter kick_var
+        kick_turns : int or list
+            A turn, when the kick is applied. If a list of numbers is given, the kick is applied
+            every turn given in the list.
+        kick_var : str
+            A beam property which is changed by the kick, e.g. 'x', 'xp', 'y', 'yp', etc
+        seed_var : str
+            A beam property which is used as a seed for the kick function,
+            e.g. 'z', 'x', 'xp', etc
+        """
+
         if isinstance(kick_turns, int):
             self._kick_turns = [kick_turns]
         else:
@@ -42,7 +88,6 @@ class Kicker(object):
         self._seed_var = seed_var
 
         self._turn_counter = 0
-
 
     def operate(self, beam, **kwargs):
         if self._turn_counter in self._kick_turns:
@@ -56,114 +101,208 @@ class Kicker(object):
     def done(self):
         return False
 
-class AvgValueTracer(object):
-    def __init__(self, n_turns, variables=['mean_abs_x'], start_from = 0):
+
+class AbstractTracer(object):
+    __metaclass__ = ABCMeta
+    """ An abstract class for tracers.
+    """
+    def __init__(self, n_turns, variables, triggers=None):
+        """
+        Parameters
+        ----------
+         n_turns : int
+            A maximum number of turns to be stored.
+        variables : list
+            A list of names of beam properties to be stored. Possible properties are mean_x,
+            mean_abs_x, epsn_x, mean_y, mean_abs_y and/or epsn_y
+        triggers : list
+            A list if tuples, which are used as triggers for storing the data. The trigger can be
+            a turn number or an mean property of the beam, e.g.
+                ('turn', 100) :         triggers recording after 100 turns of tracking
+                ('epsn_x', 1e-10) :     triggers recording when emittance of the beam is over 1e-10
+                ('mean_abs_x', 1e-3) :  triggers recording when an average displament of the beam
+                                        is over 1 mm
+        """
         self._n_turns = n_turns
-        self._start_from = start_from
-        self._end_to = self._start_from + self._n_turns
 
         self.variables = variables
 
-        self.data_tables = []
-        for i in xrange(len(self.variables)):
-            self.data_tables.append(np.zeros((n_turns, 2)))
-            setattr(self, self.variables[i], np.array(self.data_tables[-1], copy=False))
+        # Generates buffers for the data
+        self.data_tables = None
+        self.tracked_turns = None
 
-        self._counter = 0
+        self._n_turns_tracked = 0
+        self._n_turns_stored = 0
+
+        self._triggers = triggers
+
+        self._triggered = False
+        self._done = False
+
+    def _init_attributes(self, beam):
+        """ Creates attributes, which allow access to the data by using variable names of the
+            the original beam object
+        """
+
+        for i, var in enumerate(self.variables):
+            setattr(self, self.variables[i], np.array(self.data_tables[i][:, 1:], copy=False))
+
+        self.tracked_turns = np.array(self.data_tables[0][:, 0], copy=False)
+
+    @abstractmethod
+    def _init_data_tables(self, beam):
+        """ Creates data tables
+        """
+        pass
+
+    @abstractmethod
+    def _update_tables(self, beam):
+        """ Copies data from the beam to the data_tables.
+        """
+        pass
+
+    @abstractmethod
+    def save_to_file(self, file_prefix):
+        """ Saves data to files
+        """
+        pass
 
     def operate(self, beam, **kwargs):
 
-        if (self._counter >= self._start_from) and (self._counter < self._end_to):
-            idx = self._counter - self._start_from
-            for i, var in enumerate(self.variables):
-                self.data_tables[i][idx, 0] = self._counter
-                self.data_tables[i][idx, 1] = getattr(beam, var)
+        # init variables and buffers
+        if self.data_tables is None:
+            self._init_data_tables(beam)
+            self._init_attributes(beam)
 
-        self._counter += 1
+        # checks if tracer should be triggered
+        if self._triggered is False:
+            self._check_for_triggering(beam)
+
+        # if storing is triggered and not done, data are stored
+        if (self._triggered is True) and (self._done is False):
+
+            self._update_tables(beam)
+            self._n_turns_stored += 1
+
+            if self._n_turns_stored >= self._n_turns:
+                self._done = True
+
+        self._n_turns_tracked += 1
+
+    def _check_for_triggering(self, beam):
+        """ Checks if any value exceed the trigger levels
+        """
+        if self._triggers is not None:
+            for trigger in self._triggers:
+                if trigger[0] == 'turn':
+                    if self._n_turns_tracked > trigger[1]:
+                        self._triggered = True
+                else:
+                    if getattr(beam, trigger[0]) > trigger[1]:
+                        self._triggered = True
+        else:
+            self._triggered = True
 
     def start_now(self):
-        self._start_from = self._counter
+        """ Starts recording the data
+        """
+        self._triggered = True
+        self._done = False
 
     def end_now(self):
-        self._start_from = self._counter
-        self._end_to = self._start_from + self._n_turns
+        """ Ends recording the data
+        """
+        self._triggered = False
+        self._done = True
+
+    def reset_data(self):
+        """ Clears the data from buffers.
+        """
+        self._triggered = False
+        self._done = False
+
+        self._n_turns_tracked = 0
+        self._n_turns_stored = 0
+
+        if self.data_tables is not None:
+            for data in self.data_tables:
+                data.fill(0.)
+
+    @property
+    def done(self):
+        return self._done
+
+class AvgValueTracer(AbstractTracer):
+    """ A tracker, which stores average values of the beam/bunch, e.g. emittance or average
+        displacement.
+    """
+    def __init__(self, n_turns, variables, **kwargs):
+        """
+        Parameters
+        ----------
+         n_turns : int
+            A maximum number of turns to be stored.
+        variables : list
+            A list of names of beam properties to be stored. Possible properties are mean_x,
+            mean_abs_x, epsn_x, mean_y, mean_abs_y and/or epsn_y
+        triggers : list
+            A list if tuples, which are used as triggers for storing the data. The trigger can be
+            a turn number or an mean property of the beam, e.g.
+                ('turn', 100) :         triggers recording after 100 turns of tracking
+                ('epsn_x', 1e-10) :     triggers recording when emittance of the beam is over 1e-10
+                ('mean_abs_x', 1e-3) :  triggers recording when an average displament of the beam
+                                        is over 1 mm
+        """
+        super(self.__class__, self).__init__(**kwargs)
+
+
+    def _init_data_tables(self, beam):
+        self.data_tables = []
+        for i in xrange(len(self.variables)):
+            self.data_tables.append(np.zeros((self._n_turns, 2)))
+
+    def _update_tables(self, beam):
+        for i, var in enumerate(self.variables):
+            self.data_tables[i][self._n_turns_stored, 0] = self._n_turns_stored
+            self.data_tables[i][self._n_turns_stored, 1] = getattr(beam, var)
 
     def save_to_file(self, file_prefix):
         for var, data in zip(self.variables, self.data_tables):
             data.tofile(file_prefix + var + '.dat')
 
-    def reset_data(self):
-        if self.data_tables is not None:
-            for data in self.data_tables:
-                data.fill(0.)
+class Tracer(AbstractTracer):
+    """ A tracer which stores slice-by-slive/bunch-by-bunch values of the bunch/beam
+    """
+    def __init__(self, n_turns, variables, **kwargs):
+        """
+        Parameters
+        ----------
+         n_turns : int
+            A maximum number of turns to be stored.
+        variables : list
+            A list of names of beam properties to be stored, e.g. 'x', 'xp', etc
+        triggers : list
+            A list if tuples, which are used as triggers for storing the data. The trigger can be
+            a turn number or an mean property of the beam, e.g.
+                ('turn', 100) :         triggers recording after 100 turns of tracking
+                ('epsn_x', 1e-10) :     triggers recording when emittance of the beam is over 1e-10
+                ('mean_abs_x', 1e-3) :  triggers recording when an average displament of the beam
+                                        is over 1 mm
+        """
+        super(self.__class__, self).__init__(**kwargs)
 
-    @property
-    def done(self):
-        if (self._counter >= self._end_to):
-            return True
-        else:
-            return False
 
-class Tracer(object):
-    def __init__(self, n_turns, variables=['x'], start_from = 0.,
-                 lim_epsn_x=None, lim_epsn_y=None):
-        self._n_turns = n_turns
-        self._start_from = start_from
-        self._end_to = self._start_from + self._n_turns
-        self.variables = variables
-        self.data_tables = None
-        self._counter = 0
-        self.z = None
+    def _init_data_tables(self, beam):
+        self.data_tables = []
+        self.z = np.copy(beam.z)
+        for i in xrange(len(self.variables)):
+            self.data_tables.append(np.zeros((self._n_turns, len(beam.z)+1)))
+            setattr(self, self.variables[i], np.array(self.data_tables[-1], copy=False))
 
-        self._lim_epsn_x = lim_epsn_x
-        self._lim_epsn_y = lim_epsn_y
-
-        self._epsn_x_start = None
-        self._epsn_y_start = None
-
-    def operate(self, beam, **kwargs):
-
-        if self.data_tables is None:
-            self.data_tables = []
-            self.z = np.copy(beam.z)
-            for i in xrange(len(self.variables)):
-                self.data_tables.append(np.zeros((self._n_turns, len(beam.z)+1)))
-                setattr(self, self.variables[i], np.array(self.data_tables[-1], copy=False))
-
-        if (self._counter >= self._start_from) and (self._counter < self._end_to):
-            idx = self._counter - self._start_from
+    def _update_tables(self, beam):
             for i, var in enumerate(self.variables):
-                self.data_tables[i][idx, 0] = self._counter
-                np.copyto(self.data_tables[i][idx, 1:], getattr(beam, var))
-        else:
-            if (self._counter < self._end_to):
-                if self._lim_epsn_x is not None:
-                    if beam.epsn_x > self._lim_epsn_x:
-                        self.start_now()
-                if self._lim_epsn_y is not None:
-                    if beam.epsn_y > self._lim_epsn_y:
-                        self.start_now()
-
-        self._counter += 1
-
-    @property
-    def done(self):
-        if (self._counter >= self._end_to):
-            return True
-        else:
-            return False
-
-    def start_now(self):
-        self._start_from = self._counter
-        self._end_to = self._start_from + self._n_turns
-
-    def end_now(self):
-        self._end_to = self._counter
-
-    def reset_data(self):
-        if self.data_tables is not None:
-            for data in self.data_tables:
-                data.fill(0.)
+                self.data_tables[i][self._n_turns_stored, 0] = self._n_turns_stored
+                np.copyto(self.data_tables[i][self._n_turns_stored, 1:], getattr(beam, var))
 
     def save_to_file(self, file_prefix):
         self.z.tofile(file_prefix + '_z.dat')
@@ -171,23 +310,36 @@ class Tracer(object):
             data.tofile(file_prefix + '_' + var + '.dat')
 
 
-class FixedPhaseTracer(object):
-    def __init__(self,phase, variables='x', n_values=None, trace_every = 1, first_trace=0):
-        pass
-
-
 class Damper(object):
+    """ A tracer which damps beam oscillations as a trasverse damper.
+    """
     def __init__(self, gain, processors, pickup_variable = 'x', kick_variable = 'x'):
+        """
+        Parameters
+        ----------
+        gain : float
+            Pass band gain of the damper, i.e. 2/damping_time
+        processors : list
+            A list of signal processors
+        pickup_variable : str
+            A beam property, which is readed as a pickup signal
+        kick_variable : str
+            A beam property, which is kicked
+        """
         self.gain = gain
         self.processors = processors
         self.pickup_variable = pickup_variable
         self.kick_variable = kick_variable
 
     def operate(self, beam, **kwargs):
+
+        # generates signal from the beam
         parameters, signal = beam.signal(self.pickup_variable)
 
+        # processes the signal
         kick_parameters_x, kick_signal_x = process(parameters, signal, self.processors,
                                                    slice_sets=beam.slice_sets, **kwargs)
+        # applies the kick
         if kick_signal_x is not None:
             kick_signal_x = kick_signal_x*self.gain
             beam.correction(kick_signal_x, var=self.kick_variable)
@@ -199,44 +351,35 @@ class Damper(object):
         return False
 
 
-
-#class Resonators(object):
-#    def __init__(self, frequencies, decay_times ,growth_rates, phase_shifts, seed = 0.01):
-#
-#        if
-#
-#        if isinstance(kick_turns, int):
-#            self._kick_turns = [kick_turns]
-#        else:
-#            self._kick_turns = kick_turns
-#
-#        self._kick_function = kick_function
-#        self._kick_var = kick_var
-#        self._seed_var = seed_var
-#
-#        self._turn_counter = 0
-#
-#
-#    def operate(self, beam, **kwargs):
-#        if self._turn_counter in self._kick_turns:
-#            seed = getattr(beam, self._seed_var)
-#            prev_values = getattr(beam, self._kick_var)
-#            setattr(beam, self._kick_var, prev_values + self._kick_function(seed))
-#
-#        self._turn_counter += 1
-
-
 class Wake(object):
-    def __init__(self,t,x, n_turns, method = 'numpy'):
+    """ A tracer which applies dipole wake kicks to the beam.
+    """
+    def __init__(self,t,x, n_turns_wake, method = 'numpy'):
+        """
+        Parameters
+        ----------
+        t : Numpy array
+            Time data for the numerical wake function given in the parameter x [ns]
+        x : Numpy array
+            Numerical trasverse wake function [V/pC/mm]
+        n_turns_wake : int
+            A length of the wake function in the units of accelerator turns
+        method : str
+            Convolution method (affects only performance):
+            'numpy': circular convultion calculated by using the linear np.convolution
+            'cython': pure circular convolution programmed in Cython
+            'fft': pure circular convolution by using np.ifft(np.fft(source)*np.fft(wake))
+            'fftconvolve': circular convultion calculated by using the linear SciPy fftconvolve
+        """
 
         convert_to_V_per_Cm = -1e15
         self._t = t*1e-9
         self._x = x*convert_to_V_per_Cm
-        self._n_turns = n_turns
+        self._n_turns = n_turns_wake
 
         self._z_values = None
 
-        self._previous_kicks = deque(maxlen=n_turns)
+        self._previous_kicks = deque(maxlen=n_turns_wake)
 
         self._method = method
 
@@ -246,7 +389,7 @@ class Wake(object):
 
     def _wake_factor(self, beam):
         """Universal scaling factor for the strength of a wake field
-        kick.
+        kick from PyHEADTAIL.
         """
         wake_factor = (-(beam.charge)**2 / (beam.mass * beam.gamma * (beam.beta * c)**2))
         return wake_factor
@@ -292,16 +435,25 @@ class Wake(object):
             raise ValueError('Unknown calculation method')
 
         self._kick_impulses = []
-        turn_length = (beam.z[-1] - beam.z[0])/c
+        edges = beam.bin_edges
+        turn_length = (edges[-1,1] - edges[0,0])/c
         normalized_z = (beam.z - beam.z[0])/c
 
         self._beam_map = beam.charge_map
 
         for i in xrange(self._n_turns):
+
+
             self._previous_kicks.append(np.zeros(len(normalized_z)))
             z_values = normalized_z + float(i)*turn_length
 
+            # wake function values are interpolated from the input data
             temp_impulse = np.interp(z_values, self._t, self._x)
+
+            # The bunch does not kick itself, because it is assumed that the beam is below the
+            # TMCI threshold. It would also difficult to determine the value for the first bin,
+            # because the wake function is very time sensitive at the beging, and kick might be
+            # non-constant over the first bunch
             if i == 0:
                 temp_impulse[0] = 0.
 
@@ -311,15 +463,21 @@ class Wake(object):
         if not hasattr(self, '_kick_impulses'):
             self._init(beam)
 
+        # wake source, which is charge weighted displacement. The raw data is prepared (lengthened)
+        # for the convolution method in the prepare function
         source = self._prepare_source(beam.x*beam.intensity_distribution)
 
+        # kicks for all turns are calculated
         for i, impulse_response in enumerate(self._kick_impulses):
             kick = self._convolve(source,impulse_response)
 
+            # the kicks are acculumated by adding data to values from previously tracked turns.
+            # The index i+1 is used bacause, the last kick appending the list pops out
+            # the first value
             if i < (self._n_turns-1):
                 self._previous_kicks[i+1] += kick
             else:
                 self._previous_kicks.append(kick)
 
-#        beam.xp = beam.xp + self._wake_factor(beam)*self._previous_kicks[0]
+        # kick is applied
         beam.xp[self._beam_map] = beam.xp[self._beam_map] + self._wake_factor(beam)*self._previous_kicks[0][self._beam_map]
