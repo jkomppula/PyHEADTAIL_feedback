@@ -356,14 +356,13 @@ class Damper(object):
 class Wake(object):
     """ A tracer which applies dipole wake kicks to the beam.
     """
-    def __init__(self,t,x, n_turns_wake, method = 'numpy'):
+    def __init__(self,wake_function, n_turns_wake, method = 'numpy', **kwargs):
         """
         Parameters
         ----------
-        t : Numpy array
-            Time data for the numerical wake function given in the parameter x [ns]
-        x : Numpy array
-            Numerical trasverse wake function [V/pC/mm]
+        wake_function : function
+            A function which takes z [m] values of the bins as a input parameter and returns
+            the wake functions values in the units of [V/C/m]
         n_turns_wake : int
             A length of the wake function in the units of accelerator turns
         method : str
@@ -374,9 +373,8 @@ class Wake(object):
             'fftconvolve': circular convultion calculated by using the linear SciPy fftconvolve
         """
 
-        convert_to_V_per_Cm = -1e15
-        self._t = t*1e-9
-        self._x = x*convert_to_V_per_Cm
+        self._wake_function = wake_function
+
         self._n_turns = n_turns_wake
 
         self._z_values = None
@@ -438,8 +436,8 @@ class Wake(object):
 
         self._kick_impulses = []
         edges = beam.bin_edges
-        turn_length = (edges[-1,1] - edges[0,0])/c
-        normalized_z = (beam.z - beam.z[0])/c
+        turn_length = (edges[-1,1] - edges[0,0])
+        normalized_z = (beam.z - beam.z[0])
 
         self._beam_map = beam.charge_map
 
@@ -449,7 +447,8 @@ class Wake(object):
             z_values = normalized_z + float(i)*turn_length
 
             # wake function values are interpolated from the input data
-            temp_impulse = np.interp(z_values, self._t, self._x)
+            temp_impulse = self._wake_function(z_values)
+#            temp_impulse = np.interp(z_values, self._t, self._x)
 
             # The bunch does not kick itself, because it is assumed that the beam is below the
             # TMCI threshold. It would also difficult to determine the value for the first bin,
@@ -482,3 +481,58 @@ class Wake(object):
 
         # kick is applied
         beam.xp[self._beam_map] = beam.xp[self._beam_map] + self._wake_factor(beam)*self._previous_kicks[0][self._beam_map]
+
+
+class WakesFromFile(Wake):
+    """ Wake from a wake file
+    """
+    def __init__(self, filename, time_column, wake_column, n_turns_wake, **kwargs):
+        """
+        Parameters
+        ----------
+        filename : float
+            Wake filename
+        time_column : int
+            An index to the column including time stamps for the wake data (in the units of [ns])
+        wake_column : float
+            An index to the column including the wake data (in the units of [V/pC/mm])
+        n_turns_wake: int
+            A length of the wake function in the units of accelerator turns
+        """
+        wakedata = np.loadtxt(filename)
+        data_t = wakedata[:, time_column]
+        data_x = wakedata[:, wake_column]
+        convert_to_V_per_Cm = -1e15
+
+        def wake_function(z):
+            t = z/c
+            return np.interp(t, data_t*1e-9, data_x*convert_to_V_per_Cm)
+
+        super(self.__class__, self).__init__(wake_function, n_turns_wake, **kwargs)
+
+
+class ResistiveWallWake(Wake):
+    """ Circular resistive wall wake from an analytical formula.
+    """
+    def __init__(self, b, sigma, L, n_turns_wake, **kwargs):
+        """
+        Parameters
+        ----------
+        b : float
+            A radius of the pipe [m]
+        sigma : float
+            An electrical conductivity of the wall [Ohm^-1 m^-1]
+        L : float
+            A length of the pipe [m]
+        n_turns_wake: int
+            A length of the wake function in the units of accelerator turns
+        """
+        def wake_function(z):
+            if z[0] == 0.:
+                z[0] = 1e-15
+            Z_0 = 119.9169832 * np.pi
+            return -2./(np.pi*b**3)*np.sqrt((4.*np.pi*c)/(Z_0*c*sigma))*L/np.sqrt(z)*(Z_0*c)/(4.*np.pi)
+
+        super(self.__class__, self).__init__(wake_function, n_turns_wake, **kwargs)
+
+
