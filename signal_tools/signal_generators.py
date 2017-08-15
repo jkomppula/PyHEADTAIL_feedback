@@ -331,8 +331,9 @@ class SignalObject(object):
     def init_noise(self,noise_level, var='x', seed = 0):
         np.random.seed(seed)
         if var == 'x':
-            self.x = np.random.normal(0., noise_level, len(self.x))
-            self.xp = (1. / self._beta_x)*np.random.normal(0., noise_level, len(self.x))
+            n_bunches = np.sum(self.charge_map)
+            self.x[self.charge_map] = np.random.normal(0., noise_level, n_bunches)
+            self.xp[self.charge_map] = (1. / self._beta_x)*np.random.normal(0., noise_level, n_bunches)
         else:
             raise ValueError('Unknown variable')
 
