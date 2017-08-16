@@ -219,12 +219,11 @@ class SignalObject(object):
             if self._circular_overlapping == 0:
                 bin_edges = np.copy(self._bin_edges)
             else:
-                prefix_offset = -self._bin_edges[-overlapping,0] - self._bin_edges[overlapping,0]
-                postfix_offset = -self._bin_edges[0,0] + self._bin_edges[-1,1]
-                bin_edges = np.concatenate((self._bin_edges[-overlapping:]+prefix_offset,self._bin_edges),axis=0)
-                bin_edges = np.concatenate((bin_edges,self._bin_edges[:overlapping]+postfix_offset),axis=0)
-#            else:
-#                bin_edges = self._bin_edges
+                offset = self._bin_edges[-1,1] - self._bin_edges[0,0]
+                bin_edges = np.concatenate((self._bin_edges[-overlapping:]-offset,
+                                            self._bin_edges), axis=0)
+                bin_edges = np.concatenate((bin_edges,
+                                            self._bin_edges[:overlapping]+offset), axis=0)
 
             bunch_ref_points = []
             mids = bin_mids(bin_edges)
@@ -257,9 +256,9 @@ class SignalObject(object):
 
         proper_signal = signal[overlapping:(overlapping+self._n_slices)]
 
-
         if beam_map is None:
-            beam_map = np.ones(len(self._z), dtype=bool)
+#            beam_map = np.ones(len(self._z), dtype=bool)
+            beam_map = self.charge_map
 
         if var == 'x':
             self.x[beam_map] = self.x[beam_map] - proper_signal[beam_map]

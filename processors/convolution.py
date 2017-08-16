@@ -32,13 +32,10 @@ class Convolution(object):
         self._n_seg = parameters['n_segments']
         self._n_bins = parameters['n_bins_per_segment']
         bin_edges = parameters['bin_edges']
-        n_seg = parameters['n_segments']
-        n_bins = parameters['n_bins_per_segment']
-#        ref_points = parameters['segment_ref_points']
 
         # a number of impulse values added to the both side of the segments
-#        extra_bins = int(np.ceil(n_bins/2.))
-        extra_bins = 0
+        extra_bins = int(np.ceil(self._n_bins/2.))
+#        extra_bins = 0
 
         # Reference bin edges for one segment
         impulse_ref_edges = None
@@ -51,23 +48,27 @@ class Convolution(object):
 
         # List of impulses to the corresponding segments
         self._impulses_to_segments = []
-        for i in xrange(n_seg):
+        for i in xrange(self._n_seg):
             self._impulses_to_segments.append([])
 
         ref_points = []
 
-        for i in xrange(n_seg):
-            i_from = i*n_bins
-            i_to = (i+1)*n_bins
+        for i in xrange(self._n_seg):
+            i_from = i*self._n_bins
+            i_to = (i+1)*self._n_bins
 
             # original bins corresponing to the signal
             org_edges = bin_edges[i_from:i_to, :]
+            offset = org_edges[-1,1] - org_edges[0,0]
+            edges = np.concatenate((org_edges[-extra_bins:]-offset,org_edges),axis=0)
+            edges = np.concatenate((edges,org_edges[:extra_bins]+offset),axis=0)
+
             # extra bins before the original bins
 #            prefix_offset = org_edges[(extra_bins-1), 1]-org_edges[0, 0]
 #            # extra bins after the original bins
 #            postfix_offset = org_edges[-extra_bins, 0]-org_edges[-1, 1]
 
-            edges = np.copy(org_edges)
+#            edges = np.copy(org_edges)
 #            edges = np.concatenate(((org_edges[:extra_bins]-prefix_offset), org_edges), axis=0)
 #            edges = np.concatenate((edges, org_edges[extra_bins:]-postfix_offset), axis=0)
 
@@ -106,10 +107,10 @@ class Convolution(object):
                     mid_offset = -1 * max_min
 
             impulse_edges = impulse_edges - mid_offset
-            original_segment_length = bin_edges[n_bins-1,1]-bin_edges[0,0]
+            original_segment_length = bin_edges[extra_bins+self._n_bins-1,1]-bin_edges[extra_bins,0]
 
             # calculates impulse response for the determined bin set
-            dashed_impulse_response = self.response_function(impulse_edges, n_seg,
+            dashed_impulse_response = self.response_function(impulse_edges, self._n_seg,
                                                                            original_segment_length)
 
             cleaned_impulse = np.array([])
@@ -118,25 +119,28 @@ class Convolution(object):
 
             # cleans the calculated impulse response, i.e. removes the segments where
             # response is zero.
-            n_bins_per_segment = n_bins + 2* extra_bins
-#            print 'I am ' + str(i) + ', my ref point is: ' + str(ref_point) + ' and targets are: '
-            for k in xrange(n_seg):
+            n_bins_per_segment = self._n_bins + 2*extra_bins
+
+            for k in xrange(self._n_seg):
 
                 i_from = k * n_bins_per_segment
                 i_to = (k+1) * n_bins_per_segment
 
+#                target_segments.append(k)
+#                cleaned_impulse = np.append(cleaned_impulse, dashed_impulse_response[i_from:i_to])
+
                 if np.sum(np.abs(dashed_impulse_response[i_from:i_to])) > 0.:
-#                    print 'target: ' + str(k)
                     target_segments.append(k)
                     cleaned_impulse = np.append(cleaned_impulse, dashed_impulse_response[i_from:i_to])
 
             self._dashed_impulse_responses.append(cleaned_impulse)
 
             self._impulses_from_segments.append(np.zeros(len(cleaned_impulse)+idx_offset))
+
             for idx, target_idx in enumerate(target_segments):
-                i_from = idx * n_bins_per_segment + extra_bins + idx_offset
-                i_to = idx * n_bins_per_segment + extra_bins + n_bins + idx_offset
-                self._impulses_to_segments[target_idx].append(np.array(self._impulses_from_segments[i][i_from:i_to], copy=False))
+                i_from = idx * n_bins_per_segment + idx_offset + extra_bins
+                i_to = i_from + self._n_bins
+                self._impulses_to_segments[target_idx].append(np.array(self._impulses_from_segments[-1][i_from:i_to], copy=False))
 
     @abstractmethod
     def response_function(self, impulse_ref_edges, n_seg, original_segment_length):
