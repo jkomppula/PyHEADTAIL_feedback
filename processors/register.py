@@ -268,7 +268,7 @@ class HilbertCombiner(Combiner):
 
     def combine(self, registers, target_location, target_beta, additional_phase_advance, beta_conversion):
         if self._coefficients is None:
-            print registers
+#            print registers
             if self._n_taps is None:
                 self._n_taps = registers[0].maxlen
             self._coefficients = [None]*len(registers)
