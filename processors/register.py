@@ -4,9 +4,14 @@ from abc import ABCMeta, abstractmethod
 import numpy as np
 from scipy.constants import pi
 
-from ..core import Parameters
-from ..core import debug_extension
+from ..core import Parameters, debug_extension
 
+"""
+    @author Jani Komppula
+    @date 16/08/2017
+    @copyright CERN
+
+"""
 
 class Register(object):
     """
@@ -96,6 +101,9 @@ class Register(object):
 
 
 class UncorrectedDelay(object):
+    """ Delays the signal in the units of turns without any betatron pahse 
+    advance correction
+    """
     def __init__(self, delay, **kwargs):
 
         self._delay = delay
@@ -194,7 +202,28 @@ class Combiner(object):
         return self._combined_parameters, output_signal
 
 class CosineSumCombiner(Combiner):
+    """ A combiner, which utilizes "Cosine sum"- algorithm for the betatron
+    phase advance correction.
+    
+    In the other words, it can be proven that, the sum of the singnals 
+    multiplied by cos(phase advance to the target) approaches a half value of
+    the correct signal, when the number of the singal with equally distributed
+    (random) phase advances increases.
+    """
+    
     def __init__(self, *args, **kwargs):
+        """
+        Parameters
+        ----------
+        registers : list
+          A list of registers, which are a source for the signal
+        target_location : number
+          A target phase advance in radians of betatron motion
+        additional_phase_advance : number
+          Additional phase advance for the target location.
+          For example, np.pi/2. for shift from displacement in the pick up to
+          divergenve in the kicker
+        """
         super(self.__class__, self).__init__(*args, **kwargs)
         self.label = 'Cosine sum combiner'
 
@@ -228,7 +257,21 @@ class CosineSumCombiner(Combiner):
         return combined_signal
 
 class DummyCombiner(Combiner):
+    """ A combiner, which by passes the signal without any corrections
+    """
     def __init__(self, *args, **kwargs):
+        """
+        Parameters
+        ----------
+        registers : list
+          A list of registers, which are a source for the signal
+        target_location : number
+          A target phase advance in radians of betatron motion
+        additional_phase_advance : number
+          Additional phase advance for the target location.
+          For example, np.pi/2. for shift from displacement in the pick up to
+          divergenve in the kicker
+        """
         super(self.__class__, self).__init__(*args, **kwargs)
         self.label = 'Dummy combiner'
 
@@ -247,7 +290,21 @@ class DummyCombiner(Combiner):
         return beta_correction*combined_signal
 
 class HilbertCombiner(Combiner):
+    """ A combiner, which utilizes a algorithm based on the Hilbert transform.
+    """
     def __init__(self, *args, **kwargs):
+        """
+        Parameters
+        ----------
+        registers : list
+          A list of registers, which are a source for the signal
+        target_location : number
+          A target phase advance in radians of betatron motion
+        additional_phase_advance : number
+          Additional phase advance for the target location.
+          For example, np.pi/2. for shift from displacement in the pick up to
+          divergenve in the kicker
+        """
         if 'n_taps' in kwargs:
             self._n_taps = kwargs['n_taps']
         else:
@@ -330,7 +387,26 @@ class HilbertCombiner(Combiner):
 
 
 class VectorSumCombiner(Combiner):
+    """ A combiner, which utilizes vector calculus for the correction.
+    
+    It can be proven that if the oscillation amplitude doesn't change
+    turn by turn (e.g. the damper gain is low), the correction is
+    ideal if the signal from two different phase advances (e.g. turns or
+    pickups) are available.
+    """
     def __init__(self, *args, **kwargs):
+        """
+        Parameters
+        ----------
+        registers : list
+          A list of registers, which are a source for the signal
+        target_location : number
+          A target phase advance in radians of betatron motion
+        additional_phase_advance : number
+          Additional phase advance for the target location.
+          For example, np.pi/2. for shift from displacement in the pick up to
+          divergenve in the kicker
+        """
         super(self.__class__, self).__init__(*args, **kwargs)
         self.label = 'Vector sum combiner'
         self._warning_printed = False
@@ -488,7 +564,17 @@ class VectorSumCombiner(Combiner):
 
 
 class FIRCombiner(Combiner):
+    """ A combiner object, which correct the betatron phase advance by using 
+    the given coefficient.
+    """
+    
     def __init__(self, coefficients, *args, **kwargs):
+        """
+        Parameters
+        ----------
+        coefficients: list
+            A list of FIR coefficients
+        """
         self._coefficients = coefficients
         super(self.__class__, self).__init__(*args, **kwargs)
         self.label = 'FIR combiner'
@@ -508,7 +594,23 @@ class FIRCombiner(Combiner):
 
 
 class TurnFIRFilter(object):
+    """A signal processor, which can be used as a FIR filer in turn domain.
+    """ 
+    
     def __init__(self, coefficients, tune, delay = 0, additional_phase_advance = 0., **kwargs):
+        """
+        Parameters
+        ----------
+        coefficients: list
+            A list of FIR coefficients
+        tune: float
+            A betatron tune of the plane
+        delay: int
+            A delay of the signal in the units of turn before the filter
+        addtional_phase_advance: float
+            An additional betatron phase advance in radians to be taken into
+            account to the betatron phase correction.
+        """
         self._coefficients = coefficients
         self._tune = tune
         self._additional_phase_advance = additional_phase_advance
@@ -547,8 +649,28 @@ class TurnFIRFilter(object):
                                                    target_beta, extra_phase)
 
 class TurnDelay(object):
+    """ Delays the signal a number of turns given as an input parameter. 
+    """
     def __init__(self, delay, tune, n_taps=2, combiner='vector_sum',
                  additional_phase_advance=0, **kwargs):
+        """
+        Parameters
+        ----------
+        delay: int
+            A number of turns signal is delayed
+        tune: float
+            A betatron tune of the plane
+        n_taps: int
+            A number of turns of data used for betatron phase advance
+            correction of the delay. Note that typically the group delay is 
+            delay + n_taps/2 depending on the correction algorithm.
+        combiner: str or object
+            Combiner object, which is used for betatron correction
+        addtional_phase_advance: float
+            An additional betatron phase advance in radians to be taken into
+            account to the betatron phase correction.
+            
+        """
 
         self._delay = delay
         self._tune = tune

@@ -6,11 +6,13 @@ from core import z_bins_to_bin_edges, append_bin_edges
 from processors.register import VectorSumCombiner, CosineSumCombiner
 from processors.register import HilbertCombiner, DummyCombiner
 """
-    This file contains feedback modules for PyHEADTAIL, which can be used as interfaces between
-    PyHEADTAIL and the signal processors.
+    This file contains objecst, which can be used as transverse feedback
+    systems in the one turn map in PyHEADTAIL. The signal processing in the
+    feedback systems can be modelled by giving a list of the necessary signal
+    processors describing the system to the objects.
 
     @author Jani Komppula
-    @date 24/03/2017
+    @date 16/08/2017
     @copyright CERN
 """
 
@@ -181,10 +183,50 @@ def kick_bunches(local_slice_sets, bunch_list, local_bunch_indexes,
 
 
 class OneboxFeedback(object):
+    """ An transverse feedback object for the one turn map in PyHEADTAIL.
+    
+    By using this object, the pickup and the kicker are in the same location 
+    of the accelerator. Bandwidth limitations, turn delays, noise, etc can be
+    applied by using signal processors. The axises for the pickup signal and 
+    the correction are by default same, but they can be also specified to be 
+    different (e.g. displacement and divergence).
+    """
 
     def __init__(self, gain, slicer, processors_x, processors_y,
                  pickup_axis='divergence', kicker_axis=None, mpi=False,
                  phase_x=None, phase_y=None, beta_x=1., beta_y=1.):
+        """
+        Parameters
+        ----------
+        gain : float or tuple
+            A fraction of the oscillations is corrected, when the perfectly
+            betatron motion corrected pickup signal by passes the signal 
+            processors without modifications, i.e. 2/(damping time [turns]). 
+            Separate values can be set to x and y planes by giving two values
+            in a tuple.
+        slicer : PyHEADTAIL slicer object
+        processors_x : list
+            A list of signal processors for the x-plane
+        processors_y : list
+            A list of signal processors for the y-plane
+        pickup_axis : str
+            A axis, which values are used as a pickup signal
+        kicker_axis : str
+            A axis, to which the correction is applied. If None, the axis is 
+            same as the pickup axis
+        mpi : bool
+            If True, data from multiple bunches are gathered by using MPI
+        phase_x : float
+            Initial betatron phase rotation for the signal in x-plane in the 
+            units of radians
+        phase_y : float
+            Initial betatron phase rotation for the signal in y-plane in the 
+            units of radians
+        beta_x : float
+            A value of the x-plane beta function in the feedback location
+        beta_y : float
+            A value of the y-plane beta function in the feedback location
+        """
 
         if isinstance(gain, collections.Container):
             self._gain_x = gain[0]
@@ -314,8 +356,45 @@ class OneboxFeedback(object):
             self._mpi_gatherer.rebunch(bunch)
 
 class PickUp(object):
+    """ A pickup object for the one turn map in PyHEADTAIL.
+    
+    This object can be used as a pickup in the trasverse feedback systems
+    consisting of separate pickup(s) and kicker(s). A model for signal 
+    processing (including, for example, bandwidth limitations and noise) can be
+    implemented by using signal processors. The signal can be transferred to
+    kicker(s) by putting registers to the signal processor chains.
+    """
+    
     def __init__(self, slicer, processors_x, processors_y, location_x, beta_x,
                  location_y, beta_y, mpi=False, phase_x=None, phase_y=None):
+        """
+        Parameters
+        ----------
+        slicer : PyHEADTAIL slicer object
+        processors_x : list
+            A list of signal processors for the x-plane
+        processors_y : list
+            A list of signal processors for the y-plane
+            used as a signal source in the y-plane
+        location_x : float
+            A location of the pickup in x-plane in the units of betatron phase
+            advance from a chosen reference point
+        beta_x : float
+            A value of the x-plane beta function in the pickup location
+        location_y : float
+            A location of the pickup in y-plane in the units of betatron phase
+            advance from a chosen reference point
+        beta_y : float
+            A value of the y-plane beta function in the pickup location
+        mpi : bool
+            If True, data from multiple bunches are gathered by using MPI
+        phase_x : float
+            Initial betatron phase rotation of the signal in x-plane in the 
+            units of radians
+        phase_y : float
+            Initial betatron phase rotation of the signal in y-plane in the 
+            units of radians
+        """
 
         self._slicer = slicer
 
@@ -398,9 +477,53 @@ class PickUp(object):
 
 
 class Kicker(object):
+    """ A Kicker object for the one turn map in PyHEADTAIL.
+    
+    This object can be used as a kicker in the trasverse feedback systems
+    consisting of separate pickup(s) and kicker(s). A model for signal 
+    processing (including, for example, bandwidth limitations and noise) can be
+    implemented by using signal processors. The input signals for the kicker
+    are the lists of register objects given as a input paramter.
+    """
     def __init__(self, gain, slicer, processors_x, processors_y,
                  registers_x, registers_y, location_x, beta_x,
                  location_y, beta_y, combiner='vector_sum', mpi=False):
+        """
+        Parameters
+        ----------
+        gain : float or tuple
+            A fraction of the oscillations is corrected, when the perfectly
+            betatron motion corrected pickup signal by passes the signal 
+            processors without modifications, i.e. 2/(damping time [turns]). 
+            Separate values can be set to x and y planes by giving two values
+            in a tuple.
+        slicer : PyHEADTAIL slicer object
+        processors_x : list
+            A list of signal processors for the x-plane
+        processors_y : list
+            A list of signal processors for the y-plane
+        registers_x : list
+            A list of register object(s) (from pickup(s) processor chain(s) 
+            used as a signal source in the x-plane
+        registers_y : list
+            A list of register object(s) (from pickup(s) processor chain(s) 
+            used as a signal source in the y-plane
+        location_x : float
+            A location of the kicker in x-plane in the units of betatron phase
+            advance from a chosen reference point
+        beta_x : float
+            A value of the x-plane beta function in the kicker location
+        location_y : float
+            A location of the kicker in y-plane in the units of betatron phase
+            advance from a chosen reference point
+        beta_y : float
+            A value of the y-plane beta function in the kicker location
+        combiner : string or object
+            A combiner, which is used for combining signals from
+            the registers. 
+        mpi : bool
+            If True, data from multiple bunches are gathered by using MPI
+        """
 
         if isinstance(gain, collections.Container):
             self._gain_x = gain[0]
