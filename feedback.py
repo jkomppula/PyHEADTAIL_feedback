@@ -79,8 +79,8 @@ def generate_parameters(signal_slice_sets, location=0., beta=1.):
     segment_ref_points = []
 
     for slice_set in signal_slice_sets:
-            edges = z_bins_to_bin_edges(slice_set.z_bins)
-            segment_ref_points.append(np.mean(slice_set.z_bins))
+            edges = -1.*z_bins_to_bin_edges(slice_set.z_bins)
+            segment_ref_points.append(-1.*np.mean(slice_set.z_bins))
             if bin_edges is None:
                 bin_edges = np.copy(edges)
             else:
@@ -184,11 +184,11 @@ def kick_bunches(local_slice_sets, bunch_list, local_bunch_indexes,
 
 class OneboxFeedback(object):
     """ An transverse feedback object for the one turn map in PyHEADTAIL.
-    
-    By using this object, the pickup and the kicker are in the same location 
+
+    By using this object, the pickup and the kicker are in the same location
     of the accelerator. Bandwidth limitations, turn delays, noise, etc can be
-    applied by using signal processors. The axises for the pickup signal and 
-    the correction are by default same, but they can be also specified to be 
+    applied by using signal processors. The axises for the pickup signal and
+    the correction are by default same, but they can be also specified to be
     different (e.g. displacement and divergence).
     """
 
@@ -200,8 +200,8 @@ class OneboxFeedback(object):
         ----------
         gain : float or tuple
             A fraction of the oscillations is corrected, when the perfectly
-            betatron motion corrected pickup signal by passes the signal 
-            processors without modifications, i.e. 2/(damping time [turns]). 
+            betatron motion corrected pickup signal by passes the signal
+            processors without modifications, i.e. 2/(damping time [turns]).
             Separate values can be set to x and y planes by giving two values
             in a tuple.
         slicer : PyHEADTAIL slicer object
@@ -212,15 +212,15 @@ class OneboxFeedback(object):
         pickup_axis : str
             A axis, which values are used as a pickup signal
         kicker_axis : str
-            A axis, to which the correction is applied. If None, the axis is 
+            A axis, to which the correction is applied. If None, the axis is
             same as the pickup axis
         mpi : bool
             If True, data from multiple bunches are gathered by using MPI
         phase_x : float
-            Initial betatron phase rotation for the signal in x-plane in the 
+            Initial betatron phase rotation for the signal in x-plane in the
             units of radians
         phase_y : float
-            Initial betatron phase rotation for the signal in y-plane in the 
+            Initial betatron phase rotation for the signal in y-plane in the
             units of radians
         beta_x : float
             A value of the x-plane beta function in the feedback location
@@ -258,7 +258,7 @@ class OneboxFeedback(object):
             (self._kicker_axis == 'divergence') or \
             (phase_x is not None) or \
             (phase_y is not None):
-            print 'I am adding divergence parameters!'
+#            print 'I am adding divergence parameters!'
 
             self._required_variables.append('mean_xp')
             self._required_variables.append('mean_yp')
@@ -267,7 +267,7 @@ class OneboxFeedback(object):
             (self._kicker_axis == 'displacement') or \
             (phase_x is not None) or \
             (phase_y is not None):
-            print 'I am adding displacement parameters!'
+#            print 'I am adding displacement parameters!'
 
             self._required_variables.append('mean_x')
             self._required_variables.append('mean_y')
@@ -357,14 +357,14 @@ class OneboxFeedback(object):
 
 class PickUp(object):
     """ A pickup object for the one turn map in PyHEADTAIL.
-    
+
     This object can be used as a pickup in the trasverse feedback systems
-    consisting of separate pickup(s) and kicker(s). A model for signal 
+    consisting of separate pickup(s) and kicker(s). A model for signal
     processing (including, for example, bandwidth limitations and noise) can be
     implemented by using signal processors. The signal can be transferred to
     kicker(s) by putting registers to the signal processor chains.
     """
-    
+
     def __init__(self, slicer, processors_x, processors_y, location_x, beta_x,
                  location_y, beta_y, mpi=False, phase_x=None, phase_y=None):
         """
@@ -389,10 +389,10 @@ class PickUp(object):
         mpi : bool
             If True, data from multiple bunches are gathered by using MPI
         phase_x : float
-            Initial betatron phase rotation of the signal in x-plane in the 
+            Initial betatron phase rotation of the signal in x-plane in the
             units of radians
         phase_y : float
-            Initial betatron phase rotation of the signal in y-plane in the 
+            Initial betatron phase rotation of the signal in y-plane in the
             units of radians
         """
 
@@ -478,9 +478,9 @@ class PickUp(object):
 
 class Kicker(object):
     """ A Kicker object for the one turn map in PyHEADTAIL.
-    
+
     This object can be used as a kicker in the trasverse feedback systems
-    consisting of separate pickup(s) and kicker(s). A model for signal 
+    consisting of separate pickup(s) and kicker(s). A model for signal
     processing (including, for example, bandwidth limitations and noise) can be
     implemented by using signal processors. The input signals for the kicker
     are the lists of register objects given as a input paramter.
@@ -493,8 +493,8 @@ class Kicker(object):
         ----------
         gain : float or tuple
             A fraction of the oscillations is corrected, when the perfectly
-            betatron motion corrected pickup signal by passes the signal 
-            processors without modifications, i.e. 2/(damping time [turns]). 
+            betatron motion corrected pickup signal by passes the signal
+            processors without modifications, i.e. 2/(damping time [turns]).
             Separate values can be set to x and y planes by giving two values
             in a tuple.
         slicer : PyHEADTAIL slicer object
@@ -503,10 +503,10 @@ class Kicker(object):
         processors_y : list
             A list of signal processors for the y-plane
         registers_x : list
-            A list of register object(s) (from pickup(s) processor chain(s) 
+            A list of register object(s) (from pickup(s) processor chain(s)
             used as a signal source in the x-plane
         registers_y : list
-            A list of register object(s) (from pickup(s) processor chain(s) 
+            A list of register object(s) (from pickup(s) processor chain(s)
             used as a signal source in the y-plane
         location_x : float
             A location of the kicker in x-plane in the units of betatron phase
@@ -520,7 +520,7 @@ class Kicker(object):
             A value of the y-plane beta function in the kicker location
         combiner : string or object
             A combiner, which is used for combining signals from
-            the registers. 
+            the registers.
         mpi : bool
             If True, data from multiple bunches are gathered by using MPI
         """
