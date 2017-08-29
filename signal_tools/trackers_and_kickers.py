@@ -460,7 +460,7 @@ class Wake(object):
                     temp_impulse[0] = 0.
                 else:
                     value = self._wake_function(np.array([self._first_bin*c]))
-                    temp_impulse[0] = self._wake_function(value[0])
+                    temp_impulse[0] = value[0]
 
 
             self._kick_impulses.append(impulse_modificator(temp_impulse))
