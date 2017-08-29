@@ -356,7 +356,7 @@ class Damper(object):
 class Wake(object):
     """ A tracer which applies dipole wake kicks to the beam.
     """
-    def __init__(self,wake_function, n_turns_wake, method = 'numpy', **kwargs):
+    def __init__(self,wake_function, n_turns_wake, method='numpy', first_bin=None, **kwargs):
         """
         Parameters
         ----------
@@ -382,6 +382,7 @@ class Wake(object):
         self._previous_kicks = deque(maxlen=n_turns_wake)
 
         self._method = method
+        self._first_bin = first_bin
 
     @property
     def done(self):
@@ -455,7 +456,11 @@ class Wake(object):
             # because the wake function is very time sensitive at the beging, and kick might be
             # non-constant over the first bunch
             if i == 0:
-                temp_impulse[0] = 0.
+                if self._first_bin is None:
+                    temp_impulse[0] = 0.
+                else:
+                    temp_impulse[0] = self._wake_function(self._first_bin*c)
+
 
             self._kick_impulses.append(impulse_modificator(temp_impulse))
 
