@@ -52,7 +52,7 @@ def normalized_Gaussian(max_impulse_length):
         elif x > max_impulse_length:
             return 0.
         else:
-            return np.exp(-x ** 2. / 2.) / np.sqrt(2. * np.pi)
+            return np.exp(-x ** 2. / 2.* (2.*np.log(2))) / np.sqrt(2. * np.pi)
 
     return response_function
 
