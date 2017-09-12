@@ -418,8 +418,8 @@ def get_processor_variables(processors, required_variables=None):
 def default_macros(obj, label=None, **kwargs):
     func_list = []
 
-    func_list = func_list + debug_macro(obj, label=None, **kwargs)
-    func_list = func_list + label_macro(obj, label=None, **kwargs)
+    func_list = func_list + debug_macro(obj, label=label, **kwargs)
+    func_list = func_list + label_macro(obj, label=label, **kwargs)
 
     return func_list
 
