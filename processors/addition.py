@@ -1,8 +1,7 @@
 from abc import ABCMeta, abstractmethod, abstractproperty
 import numpy as np
-import copy
 from scipy.constants import c, pi
-from ..core import debug_extension
+from ..core import default_macros
 
 class Addition(object):
     __metaclass__ = ABCMeta
@@ -38,13 +37,12 @@ class Addition(object):
 
         self.signal_classes = (0,0)
 
+        self.extensions = []
+        self._macros = [] + default_macros(self, 'Addition', **kwargs)
+
         if self._seed not in ['bin_length','bin_midpoint','signal']:
             self.extensions.append('bunch')
             self.required_variables = [self._seed]
-
-
-        self.extensions = ['debug']
-        self._extension_objects = [debug_extension(self, label, **kwargs)]
 
     @abstractmethod
     def addend_function(self, seed):
@@ -56,11 +54,6 @@ class Addition(object):
             self.__calculate_addend(parameters, signal, slice_sets)
 
         output_signal = signal + self._addend
-
-        for extension in self._extension_objects:
-            extension(self, parameters, signal, parameters, output_signal,
-                      *args, **kwargs)
-
 
         # process the signal
         return parameters, output_signal

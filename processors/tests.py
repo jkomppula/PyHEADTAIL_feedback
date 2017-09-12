@@ -2,7 +2,7 @@ from linear_transform import LinearTransform
 from addition import Addition
 from multiplication import Multiplication
 from convolution import FIRfilter
-from ..core import debug_extension
+from ..core import default_macros
 
 
 class BypassLinearTransform(LinearTransform):

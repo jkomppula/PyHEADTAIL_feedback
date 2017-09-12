@@ -4,7 +4,7 @@ from abc import ABCMeta, abstractmethod
 import numpy as np
 from scipy.constants import pi
 
-from ..core import Parameters, debug_extension
+from ..core import Parameters, default_macros
 
 """
     @author Jani Komppula
@@ -40,8 +40,8 @@ class Register(object):
         self._signal_register = deque(maxlen=(n_values + delay))
         self._parameter_register = deque(maxlen=(n_values + delay))
 
-        self.extensions = ['debug', 'register']
-        self._extension_objects = [debug_extension(self, 'Register', **kwargs)]
+        self.extensions = ['register']
+        self._macros = [] + default_macros(self, 'Register', **kwargs)
 
     @property
     def parameters(self):
@@ -90,10 +90,6 @@ class Register(object):
 
     def process(self, parameters, signal, *args, **kwargs):
 
-        for extension in self._extension_objects:
-            extension(self, parameters, signal, parameters, signal,
-                      *args, **kwargs)
-
         self._parameter_register.append(parameters)
         self._signal_register.append(signal)
 
@@ -101,7 +97,7 @@ class Register(object):
 
 
 class UncorrectedDelay(object):
-    """ Delays the signal in the units of turns without any betatron pahse 
+    """ Delays the signal in the units of turns without any betatron pahse
     advance correction
     """
     def __init__(self, delay, **kwargs):
@@ -109,8 +105,8 @@ class UncorrectedDelay(object):
         self._delay = delay
         self._register = Register(n_values=1, tune=1., delay=self._delay)
 
-        self.extensions = ['debug', 'register']
-        self._extension_objects = [debug_extension(self, 'Register', **kwargs)]
+        self.extensions = ['register']
+        self._macros = [] + default_macros(self, 'UncorrectedDelay', **kwargs)
 
     @property
     def delay(self):
@@ -128,10 +124,6 @@ class UncorrectedDelay(object):
         if output_parameters is None:
             output_parameters = parameters
             output_signal = np.zeros(len(signal))
-
-        for extension in self._extension_objects:
-            extension(self, parameters, signal, output_parameters, output_signal,
-                      *args, **kwargs)
 
         return output_parameters, output_signal
 
@@ -171,8 +163,8 @@ class Combiner(object):
         self._combined_parameters = None
 
 
-        self.extensions = ['debug', 'combiner']
-        self._extension_objects = [debug_extension(self, 'Combiner', **kwargs)]
+        self.extensions = ['combiner']
+        self._macros = [] + default_macros(self, 'Combiner', **kwargs)
 
     @abstractmethod
     def combine(self, registers, target_location, target_beta, additional_phase_advance, beta_conversion):
@@ -191,26 +183,18 @@ class Combiner(object):
             self._combined_parameters['location'] = self._target_location
             self._combined_parameters['beta'] = self._target_beta
 
-
-
-        for extension in self._extension_objects:
-            extension(self, parameters, signal, self._combined_parameters, output_signal,
-                      *args, **kwargs)
-
-#        print 'Combiner output: ' + str(signal)
-
         return self._combined_parameters, output_signal
 
 class CosineSumCombiner(Combiner):
     """ A combiner, which utilizes "Cosine sum"- algorithm for the betatron
     phase advance correction.
-    
-    In the other words, it can be proven that, the sum of the singnals 
+
+    In the other words, it can be proven that, the sum of the singnals
     multiplied by cos(phase advance to the target) approaches a half value of
     the correct signal, when the number of the singal with equally distributed
     (random) phase advances increases.
     """
-    
+
     def __init__(self, *args, **kwargs):
         """
         Parameters
@@ -388,7 +372,7 @@ class HilbertCombiner(Combiner):
 
 class VectorSumCombiner(Combiner):
     """ A combiner, which utilizes vector calculus for the correction.
-    
+
     It can be proven that if the oscillation amplitude doesn't change
     turn by turn (e.g. the damper gain is low), the correction is
     ideal if the signal from two different phase advances (e.g. turns or
@@ -564,10 +548,10 @@ class VectorSumCombiner(Combiner):
 
 
 class FIRCombiner(Combiner):
-    """ A combiner object, which correct the betatron phase advance by using 
+    """ A combiner object, which correct the betatron phase advance by using
     the given coefficient.
     """
-    
+
     def __init__(self, coefficients, *args, **kwargs):
         """
         Parameters
@@ -595,8 +579,8 @@ class FIRCombiner(Combiner):
 
 class TurnFIRFilter(object):
     """A signal processor, which can be used as a FIR filer in turn domain.
-    """ 
-    
+    """
+
     def __init__(self, coefficients, tune, delay = 0, additional_phase_advance = 0., **kwargs):
         """
         Parameters
@@ -617,8 +601,8 @@ class TurnFIRFilter(object):
         self._register = Register(len(self._coefficients), self._tune, delay)
         self._combiner = None
 
-        self.extensions = ['debug']
-        self._extension_objects = [debug_extension(self, 'TurnFIRFilter', **kwargs)]
+        self.extensions = []
+        self._macros = [] + default_macros(self, 'TurnFIRFilter', **kwargs)
 
     def process(self, parameters, signal, *args, **kwargs):
         self._register.process(parameters, signal, *args, **kwargs)
@@ -634,10 +618,6 @@ class TurnFIRFilter(object):
             output_parameters = parameters
             output_signal = np.zeros(len(signal))
 
-        for extension in self._extension_objects:
-            extension(self, parameters, signal, output_parameters, output_signal,
-                      *args, **kwargs)
-
         return output_parameters, output_signal
 
     def __init_combiner(self, parameters):
@@ -649,7 +629,7 @@ class TurnFIRFilter(object):
                                                    target_beta, extra_phase)
 
 class TurnDelay(object):
-    """ Delays the signal a number of turns given as an input parameter. 
+    """ Delays the signal a number of turns given as an input parameter.
     """
     def __init__(self, delay, tune, n_taps=2, combiner='vector_sum',
                  additional_phase_advance=0, **kwargs):
@@ -662,14 +642,14 @@ class TurnDelay(object):
             A betatron tune of the plane
         n_taps: int
             A number of turns of data used for betatron phase advance
-            correction of the delay. Note that typically the group delay is 
+            correction of the delay. Note that typically the group delay is
             delay + n_taps/2 depending on the correction algorithm.
         combiner: str or object
             Combiner object, which is used for betatron correction
         addtional_phase_advance: float
             An additional betatron phase advance in radians to be taken into
             account to the betatron phase correction.
-            
+
         """
 
         self._delay = delay
@@ -681,8 +661,8 @@ class TurnDelay(object):
         self._register = Register(self._n_taps, self._tune, self._delay)
         self._combiner = None
 
-        self.extensions = ['debug']
-        self._extension_objects = [debug_extension(self, 'TurnDelay', **kwargs)]
+        self.extensions = []
+        self._macros = [] + default_macros(self, 'TurnDelay', **kwargs)
 
     def process(self, parameters, signal, *args, **kwargs):
         self._register.process(parameters, signal, *args, **kwargs)
@@ -698,10 +678,6 @@ class TurnDelay(object):
         if output_signal is None:
             output_parameters = parameters
             output_signal = np.zeros(len(signal))
-
-        for extension in self._extension_objects:
-            extension(self, parameters, signal, output_parameters, output_signal,
-                      *args, **kwargs)
 
         return output_parameters, output_signal
 

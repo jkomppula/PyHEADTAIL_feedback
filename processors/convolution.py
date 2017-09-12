@@ -3,7 +3,7 @@ from abc import ABCMeta, abstractmethod
 
 from ..core import Parameters, Signal
 from ..core import bin_widths, bin_mids, bin_edges_to_z_bins, z_bins_to_bin_edges
-from ..core import debug_extension
+from ..core import default_macros
 from scipy.constants import c, pi
 import scipy.integrate as integrate
 from scipy.interpolate import UnivariateSpline
@@ -22,8 +22,8 @@ class Convolution(object):
         self._n_seg = None
         self._n_bins = None
 
-        self.extensions = ['debug']
-        self._extension_objects = [debug_extension(self, 'Convolution', **kwargs)]
+        self.extensions = []
+        self._macros = [] + default_macros(self, 'Convolution', **kwargs)
 
     def _init_convolution(self, parameters):
 
@@ -178,10 +178,6 @@ class Convolution(object):
     def process(self, parameters, signal, *args, **kwargs):
 
         output_signal = self._apply_convolution(parameters, signal)
-
-        for extension in self._extension_objects:
-            extension(self, parameters, signal, parameters, output_signal,
-                      *args, **kwargs)
 
         return parameters, output_signal
 

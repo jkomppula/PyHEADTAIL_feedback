@@ -5,7 +5,7 @@ from scipy.constants import c, pi
 import scipy.integrate as integrate
 from scipy import linalg
 from cython_hacks import cython_matrix_product
-from ..core import debug_extension
+from ..core import default_macros
 import abstract_filter_responses
 
 # TODO: clean code here!
@@ -53,13 +53,12 @@ class LinearTransform(object):
         self._n_bins_per_segment = None
         self._mid_bunch = None
 
-        self.extensions = ['debug']
+        self.extensions = []
+        self._macros = [] + default_macros(self, 'LinearTransform', **kwargs)
+
         if bin_middle == 'particles':
             self.extensions.append('bunch')
             self.required_variables = ['mean_z']
-
-        self._extension_objects = [debug_extension(self, 'LinearTransform', **kwargs)]
-
 
 
     @abstractmethod
@@ -96,10 +95,6 @@ class LinearTransform(object):
                 np.copyto(output_signal[idx_from:idx_to],cython_matrix_product(self._matrix, signal[idx_from:idx_to]))
         else:
             raise ValueError('Unknown value for LinearTransform._mode ')
-
-        for extension in self._extension_objects:
-            extension(self, parameters, signal, parameters, output_signal,
-                      *args, **kwargs)
 
         return parameters, output_signal
 

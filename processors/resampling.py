@@ -3,7 +3,7 @@ from scipy.constants import c, pi
 import copy
 from scipy import interpolate
 from ..core import Parameters, bin_edges_to_z_bins, z_bins_to_bin_edges, append_bin_edges, bin_mids
-from ..core import debug_extension
+from ..core import default_macros
 from scipy.sparse import csr_matrix
 
 """
@@ -84,8 +84,8 @@ class Resampler(object):
 
         self._convert_signal = None
 
-        self.extensions = ['debug']
-        self._extension_objects = [debug_extension(self, 'Resampler', **kwargs)]
+        self.extensions = []
+        self._macros = [] + default_macros(self, 'Resampler', **kwargs)
         self.signal_classes = None
 
     def _init_harmonic_bins(self, parameters, signal):
@@ -468,10 +468,6 @@ class Resampler(object):
 
         output_signal = self._convert_signal(signal)
 
-        for extension in self._extension_objects:
-            extension(self, parameters, signal, self._output_parameters, output_signal,
-                      *args, **kwargs)
-
         return self._output_parameters, output_signal
 
 class Quantizer(object):
@@ -496,18 +492,14 @@ class Quantizer(object):
 
         self.signal_classes = (0, 0)
 
-        self.extensions = ['debug']
-        self._extension_objects = [debug_extension(self, 'Quantizer', **kwargs)]
+        self.extensions = []
+        self._macros = [] + default_macros(self, 'Quantizer', **kwargs)
 
     def process(self, parameters, signal, *args, **kwargs):
         output_signal = self._step_size*np.floor(signal/self._step_size+0.5)
 
         output_signal[output_signal < self._input_range[0]] = self._input_range[0]
         output_signal[output_signal > self._input_range[1]] = self._input_range[1]
-
-        for extension in self._extension_objects:
-            extension(self, parameters, signal, parameters, output_signal,
-                      *args, **kwargs)
 
         return parameters, output_signal
 
@@ -545,10 +537,8 @@ class ADC(object):
         elif (n_bits is not None) or (input_range is not None):
             raise ValueError('Both n_bits and input_range are required for the Quantizer.')
 
-
-
-        self.extensions = ['debug']
-        self._extension_objects = [debug_extension(self, 'ADC', **kwargs)]
+        self.extensions = []
+        self._macros = [] + default_macros(self, 'ADC', **kwargs)
 
     def process(self, parameters, signal, *args, **kwargs):
         output_parameters, output_signal = self._resampler.process(parameters, signal, *args, **kwargs)
@@ -556,10 +546,6 @@ class ADC(object):
         if self._digitizer is not None:
             output_parameters, output_signal = self._digitizer.process(output_parameters, output_signal
                                                                               , *args, **kwargs)
-
-        for extension in self._extension_objects:
-            extension(self, parameters, signal, output_parameters, output_signal,
-                      *args, **kwargs)
 
         return output_parameters, output_signal
 
@@ -595,8 +581,8 @@ class HarmonicADC(object):
         elif (n_bits is not None) or (input_range is not None):
             raise ValueError('Both n_bits and input_range are required for the Quantizer.')
 
-        self.extensions = ['debug']
-        self._extension_objects = [debug_extension(self, 'HarmonicADC', **kwargs)]
+        self.extensions = []
+        self._macros = [] + default_macros(self, 'HarmonicADC', **kwargs)
 
     def process(self, parameters, signal, *args, **kwargs):
         output_parameters, output_signal = self._resampler.process(parameters, signal, *args, **kwargs)
@@ -604,10 +590,6 @@ class HarmonicADC(object):
         if self._digitizer is not None:
             output_parameters, output_signal = self._digitizer.process(output_parameters, output_signal
                                                                               , *args, **kwargs)
-
-        for extension in self._extension_objects:
-            extension(self, parameters, signal, output_parameters, output_signal,
-                      *args, **kwargs)
 
         return output_parameters, output_signal
 
@@ -648,8 +630,8 @@ class DAC(object):
         elif (n_bits is not None) or (output_range is not None):
             raise ValueError('Both n_bits and input_range are required for the Quantizer.')
 
-        self.extensions = ['debug']
-        self._extension_objects = [debug_extension(self, 'DAC', **kwargs)]
+        self.extensions = []
+        self._macros = [] + default_macros(self, 'DAC', **kwargs)
 
     def process(self, parameters, signal, *args, **kwargs):
         output_parameters, output_signal = self._resampler.process(parameters, signal, *args, **kwargs)
@@ -658,9 +640,6 @@ class DAC(object):
             output_parameters, output_signal = self._digitizer.process(output_parameters, output_signal,
                                                                               *args, **kwargs)
 
-        for extension in self._extension_objects:
-            extension(self, parameters, signal, output_parameters, output_signal,
-                      *args, **kwargs)
 
         return output_parameters, output_signal
 

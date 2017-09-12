@@ -1,8 +1,7 @@
 from abc import ABCMeta, abstractmethod
 import numpy as np
 from scipy.constants import c, pi
-from ..core import debug_extension
-import copy
+from ..core import default_macros
 
 class Multiplication(object):
     __metaclass__ = ABCMeta
@@ -36,8 +35,9 @@ class Multiplication(object):
 
         self.signal_classes = (0,0)
 
-        self.extensions = ['debug']
-        self._extension_objects = [debug_extension(self, 'Multiplication', **kwargs)]
+        self.extensions = []
+        self._macros = [] + default_macros(self, 'Multiplication', **kwargs)
+
         if self._seed not in ['bin_length','bin_midpoint','signal','ones']:
             self.extensions.append('bunch')
             self.required_variables = [self._seed]
@@ -53,10 +53,6 @@ class Multiplication(object):
             self.__calculate_multiplier(parameters, signal, slice_sets)
 
         output_signal =  self._multiplier*signal
-
-        for extension in self._extension_objects:
-            extension(self, parameters, signal, parameters, output_signal,
-                      *args, **kwargs)
 
         # process the signal
         return parameters, output_signal
