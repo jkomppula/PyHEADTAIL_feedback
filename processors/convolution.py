@@ -33,6 +33,8 @@ class Convolution(object):
         self._n_bins = parameters['n_bins_per_segment']
         bin_edges = parameters['bin_edges']
 
+        original_segment_length = bin_edges[self._n_bins-1,1] - bin_edges[0,0]
+
         # a number of impulse values added to the both side of the segments
         extra_bins = int(np.ceil(self._n_bins/2.))
 #        extra_bins = 0
@@ -107,7 +109,6 @@ class Convolution(object):
                     mid_offset = -1 * max_min
 
             impulse_edges = impulse_edges - mid_offset
-            original_segment_length = bin_edges[extra_bins+self._n_bins-1,1]-bin_edges[extra_bins,0]
 
             # calculates impulse response for the determined bin set
             dashed_impulse_response = self.response_function(impulse_edges, self._n_seg,
