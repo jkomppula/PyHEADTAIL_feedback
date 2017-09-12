@@ -86,6 +86,9 @@ def generate_parameters(signal_slice_sets, location=0., beta=1.):
             else:
                 bin_edges = append_bin_edges(bin_edges, edges)
 
+    bin_edges = bin_edges[::-1]
+    segment_ref_points = segment_ref_points[::-1]
+
     n_bins_per_segment = len(bin_edges)/len(signal_slice_sets)
     segment_ref_points = np.array(segment_ref_points)
 

@@ -195,6 +195,8 @@ class Resampler(object):
         temp_parameters['previous_parameters'] = []
         self._output_parameters['previous_parameters'] = copy.deepcopy(parameters['previous_parameters'])
         self._output_parameters['previous_parameters'].append(temp_parameters)
+        print "self._output_parameters['n_segments']: " + str(self._output_parameters['n_segments'])
+        print "self._output_parameters['n_bins_per_segment']: " + str(self._output_parameters['n_bins_per_segment'])
         self._output_signal = np.zeros(self._output_parameters['n_segments'] * self._output_parameters['n_bins_per_segment'])
 
     def _init_previous_bins(self, parameters, signal):
