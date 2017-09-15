@@ -323,7 +323,6 @@ class Resampler(object):
         for i, output_edges in enumerate(self._output_parameters['bin_edges']):
             for j, input_edges in enumerate(parameters['bin_edges']):
                 big_matrix[i, j] = CDF(output_edges[1], input_edges) - CDF(output_edges[0], input_edges)
-
         sparse_matrix = csr_matrix(big_matrix)
 
         def convert_signal(input_signal):
