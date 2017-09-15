@@ -3,7 +3,7 @@ import types
 import copy
 
 # TODO: change the base unit from distance to time
-version = '0.2_b2.1'
+version = '0.2_b2.2'
 
 """
 This file contains the core functions and variables for the signal processing
