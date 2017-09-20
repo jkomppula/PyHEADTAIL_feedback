@@ -232,7 +232,7 @@ class SignalMixer(Multiplication):
         self.label = 'Signal mixer'
 
     def multiplication_function(self, seed):
-        multiplier = np.sin(2.*pi*self._frequency*seed/c + self._phase_shift)
+        multiplier = np.sin(2.*pi*self._frequency*seed + self._phase_shift)
         return multiplier
 
 
@@ -275,9 +275,9 @@ class MultiplicationFromFile(Multiplication):
         self._data = np.loadtxt(self._filename)
 
         if self._x_axis == 'time':
-            self._data[:, 0] = self._data[:, 0] * c
-        elif self._x_axis == 'position':
             pass
+        elif self._x_axis == 'position':
+            self._data[:, 0] = self._data[:, 0] / c
         else:
             raise ValueError('Unknown value in MultiplicationFromFile._x_axis')
 

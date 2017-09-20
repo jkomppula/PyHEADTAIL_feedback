@@ -107,7 +107,7 @@ class Resampler(object):
         else:
             n_bins_per_segment = 1
 
-        segment_length = c/base_frequency
+        segment_length = 1./base_frequency
         bin_width = segment_length/float(n_bins_per_segment)
 
         n_sampled_sequencies = (max_ref_point-min_ref_point) / segment_length + 1
@@ -162,7 +162,7 @@ class Resampler(object):
 
     def _init_sequenced_bins(self, parameters, signal):
         self.signal_classes = (0,1)
-        bin_width = 1./self._method[1]*c
+        bin_width = 1./self._method[1]
         if self._n_samples is not None:
             n_bins_per_segment = self._n_samples
         else:
@@ -171,7 +171,7 @@ class Resampler(object):
             raw_segment_length = segment_to - segment_from
             n_bins_per_segment = int(np.ceil(raw_segment_length/bin_width))
 
-        segment_z_bins = np.linspace(0, n_bins_per_segment/self._method[1]*c, n_bins_per_segment+1)
+        segment_z_bins = np.linspace(0, n_bins_per_segment/self._method[1], n_bins_per_segment+1)
         segment_z_bins = segment_z_bins - np.mean(segment_z_bins) + self._offset*bin_width
         segment_bin_edges = z_bins_to_bin_edges(segment_z_bins)
 

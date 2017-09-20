@@ -188,7 +188,7 @@ class Delay(Convolution):
 
     def __init__(self,delay, **kwargs):
 
-        self._z_delay = delay*c
+        self._delay = delay
 
         super(self.__class__, self).__init__(**kwargs)
         self.label = 'Delay'
@@ -197,8 +197,8 @@ class Delay(Convolution):
         impulse_values = np.zeros(len(impulse_ref_edges))
         bin_spacing =  np.mean(impulse_ref_edges[:,1]-impulse_ref_edges[:,0])
 
-        ref_bin_from = -0.5*bin_spacing+self._z_delay
-        ref_bin_to = 0.5*bin_spacing+self._z_delay
+        ref_bin_from = -0.5*bin_spacing+self._delay
+        ref_bin_to = 0.5*bin_spacing+self._delay
 
         for i, edges in enumerate(impulse_ref_edges):
             impulse_values[i] = self._CDF(edges[1],ref_bin_from,ref_bin_to) - self._CDF(edges[0],ref_bin_from,ref_bin_to)
@@ -230,7 +230,7 @@ class MovingAverage(Convolution):
                 A number of copies
         """
 
-        self._window = (-0.5 * window_length * c, 0.5 * window_length * c)
+        self._window = (-0.5 * window_length, 0.5 * window_length)
 
         super(self.__class__, self).__init__(**kwargs)
         self.label = 'Average'
@@ -278,7 +278,7 @@ class WaveletGenerator(Convolution):
             self._i_from = min(self._n_copies,0)
             self._i_to = max(self._n_copies,0)
 
-        self._window = (self._i_from*self._spacing*c,self._i_to*self._spacing*c)
+        self._window = (self._i_from*self._spacing,self._i_to*self._spacing)
 
         super(self.__class__, self).__init__(**kwargs)
         self.label = 'Wavelet generator'
@@ -291,7 +291,7 @@ class WaveletGenerator(Convolution):
         impulse_values = np.zeros(len(impulse_bin_mids))
 
         for i in xrange(self._i_from,(self._i_to+1)):
-            copy_mid = i*self._spacing*c
+            copy_mid = i*self._spacing
             copy_from = copy_mid - 0.5 * bin_spacing
             copy_to = copy_mid + 0.5 * bin_spacing
 
@@ -416,7 +416,7 @@ class ConvolutionFilter(Convolution):
 
                 norm_coeff = 0.
                 for i in xrange(-1000,1000):
-                    x = float(i)* (1./f_h) * self._scaling * c
+                    x = float(i)* (1./f_h) * self._scaling
                     norm_coeff += self._impulse_response(x)
                 #print norm_coeff
                 #print x
@@ -507,7 +507,7 @@ class Lowpass(ConvolutionFilter):
         poll roll off.
     """
     def __init__(self,f_cutoff, normalization=None, max_impulse_length = 5., **kwargs):
-        scaling = 2. * pi * f_cutoff / c
+        scaling = 2. * pi * f_cutoff
 
         if normalization is None:
             normalization=('integral',(-max_impulse_length,max_impulse_length))
@@ -524,7 +524,7 @@ class Highpass(ConvolutionFilter):
         bin 1
     """
     def __init__(self,f_cutoff, normalization=None, max_impulse_length = 5., **kwargs):
-        scaling = 2. * pi * f_cutoff / c
+        scaling = 2. * pi * f_cutoff
 
         if normalization is None:
             normalization=('integral',(-max_impulse_length,max_impulse_length))
@@ -543,7 +543,7 @@ class PhaseLinearizedLowpass(ConvolutionFilter):
     """
 
     def __init__(self,f_cutoff, normalization=None, max_impulse_length = 5., **kwargs):
-        scaling = 2. * pi * f_cutoff / c
+        scaling = 2. * pi * f_cutoff
 
         if normalization is None:
             normalization=('integral',(-max_impulse_length,max_impulse_length))
@@ -558,7 +558,7 @@ class Gaussian(ConvolutionFilter):
     """ A Gaussian low pass filter, which impulse response is a Gaussian function.
     """
     def __init__(self,f_cutoff, normalization=None, max_impulse_length = 5., **kwargs):
-        scaling = 2. * pi * f_cutoff / c
+        scaling = 2. * pi * f_cutoff
 
         if normalization is None:
             normalization=('integral',(-max_impulse_length,max_impulse_length))
@@ -590,7 +590,7 @@ class Sinc(ConvolutionFilter):
         :param norm_type: see class LinearTransform
         :param norm_range: see class LinearTransform
         """
-        scaling = 2. * pi * f_cutoff / c
+        scaling = 2. * pi * f_cutoff
 
         if normalization is None:
             normalization=('integral',(-window_width,window_width))

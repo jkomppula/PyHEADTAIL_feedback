@@ -24,8 +24,8 @@ class SignalObject(object):
         self._beta_y = beta_y
 
         self._bin_edges = bin_edges
-        self._z = (self._bin_edges[:, 0]+self._bin_edges[:, 1])/2.
-        self._z_bins = np.append(self._bin_edges[:, 0], np.array([self._bin_edges[-1, 1]]))
+        self._z = (self._bin_edges[:, 0]+self._bin_edges[:, 1])/2.*c
+        self._z_bins = np.append(self._bin_edges[:, 0], np.array([self._bin_edges[-1, 1]]))*c
         self._n_slices = len(self._z)
         self._n_segments = n_segments
         self._n_bins_per_segment = len(bin_edges)/self._n_segments
@@ -342,7 +342,7 @@ class Bunch(SignalObject):
         self.length = length
         distribution = distribution
         z_bins = np.linspace(-1.*c*length/2., c*length/2., n_slices+1)
-        bin_edges = np.transpose(np.array([z_bins[:-1], z_bins[1:]]))
+        bin_edges = np.transpose(np.array([z_bins[:-1], z_bins[1:]]))/c
         z = (bin_edges[:, 0] + bin_edges[:, 1]) / 2.
 
         if distribution == 'KV':
@@ -511,7 +511,7 @@ class CircularPointBeam(SignalObject):
 
         z_bins = np.linspace(0,circumference,h_RF+1)
         bin_edges =np.transpose(np.array([z_bins[:-1],
-                                           z_bins[1:]]))
+                                           z_bins[1:]]))/c
         if isinstance(intensity, float):
             intensities = np.zeros(h_RF)
             for bunch_id in filling_scheme:
@@ -561,7 +561,7 @@ def binary_impulse(time_range, n_points = 100, amplitude = 1.):
     t = np.array([(i + j) / 2. for i, j in zip(t_bins, t_bins[1:])])
 
     z_bins = c * t_bins
-    bin_edges = np.transpose(np.array([z_bins[:-1], z_bins[1:]]))
+    bin_edges = np.transpose(np.array([z_bins[:-1], z_bins[1:]]))/c
 
     x = np.zeros(len(t))
     for i, val in enumerate(t):
@@ -595,7 +595,7 @@ def generate_signal(signal_generator, f, amplitude, n_periods, n_per_period, n_z
     x[signal_points] = amplitude * signal_generator(t[signal_points])
 
     z_bins = c * t_bins / f
-    bin_edges = np.transpose(np.array([z_bins[:-1], z_bins[1:]]))
+    bin_edges = np.transpose(np.array([z_bins[:-1], z_bins[1:]]))/c
 
 #    return SignalObject(bin_edges, 1., x=x, ref_point = 0.)
     return SignalObject(bin_edges, 1., x=x)

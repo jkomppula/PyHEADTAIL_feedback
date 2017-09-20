@@ -5,6 +5,7 @@ from core import get_processor_variables, process, Parameters
 from core import z_bins_to_bin_edges, append_bin_edges
 from processors.register import VectorSumCombiner, CosineSumCombiner
 from processors.register import HilbertCombiner, DummyCombiner
+from scipy.constants import c
 """
     This file contains objecst, which can be used as transverse feedback
     systems in the one turn map in PyHEADTAIL. The signal processing in the
@@ -79,8 +80,8 @@ def generate_parameters(signal_slice_sets, location=0., beta=1.):
     segment_ref_points = []
 
     for slice_set in signal_slice_sets:
-            edges = -1.*z_bins_to_bin_edges(slice_set.z_bins)
-            segment_ref_points.append(-1.*np.mean(slice_set.z_bins))
+            edges = -1.*z_bins_to_bin_edges(slice_set.z_bins)/c
+            segment_ref_points.append(-1.*np.mean(slice_set.z_bins)/c)
             if bin_edges is None:
                 bin_edges = np.copy(edges)
             else:

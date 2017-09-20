@@ -171,9 +171,9 @@ class AdditionFromFile(Addition):
         self._data = np.loadtxt(self._filename)
 
         if self._x_axis == 'time':
-            self._data[:, 0] = self._data[:, 0] * c
-        elif self._x_axis == 'position':
             pass
+        elif self._x_axis == 'position':
+            self._data[:, 0] = self._data[:, 0] / c
         else:
             raise ValueError('Unknown value in AdditionFromFile._x_axis')
 
