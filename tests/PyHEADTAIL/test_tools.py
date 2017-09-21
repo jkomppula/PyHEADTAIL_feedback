@@ -201,8 +201,6 @@ def compare_projections(bunches, labels, n_particles = 300):
     for i, bunch in enumerate(bunches):
         if plot_every_n is None:
             plot_every_n = int(np.ceil(len(bunch.z)/float(n_particles)))
-            print 'plot_every_n: '
-            print plot_every_n
         ax_z_x.plot(bunch.z[::plot_every_n], bunch.x[::plot_every_n] * 1000, '.', label=labels[i])
     ax_z_x.legend(loc='upper right')
     ax_z_x.set_xlabel('z [m]')
@@ -212,6 +210,35 @@ def compare_projections(bunches, labels, n_particles = 300):
     ax_z_y.legend(loc='upper right')
     ax_z_y.set_xlabel('z [m]')
     ax_z_y.set_ylabel('y [mm]')
+    plt.show()
+
+
+def particle_position_difference(ref_bunch,bunch):
+    diff_x = np.sum((ref_bunch.x - bunch.x)**2)/float(len(ref_bunch.x))
+    sum_x = np.sum((bunch.x)**2)/float(len(ref_bunch.x))
+    diff_y = np.sum((ref_bunch.y - bunch.y)**2)/float(len(ref_bunch.y))
+    sum_y = np.sum((bunch.y)**2)/float(len(ref_bunch.y))
+    
+    print('An average relative particle position difference in x-axis: ' + str(diff_x/sum_x))
+    print('An average relative particle position difference in y-axis: ' + str(diff_y/sum_y))
+
+
+def trace_difference(ref_tracker, tracker):
+    fig = plt.figure(figsize=(16, 4))
+    fig.suptitle('z-x and z-y projections of bunches', fontsize=14, fontweight='bold')
+    ax_x = fig.add_subplot(121)
+    ax_y = fig.add_subplot(122)
+    
+    ax_x.plot(tracker.turn, (tracker.mean_x - ref_tracker.mean_x) * 1000)    
+    ax_y.plot(tracker.turn, (tracker.mean_y - ref_tracker.mean_y) * 1000)
+    
+    ax_x.set_xlabel('Turn')
+    ax_x.set_ylabel('Difference [mm]')
+
+    ax_y.set_xlabel('Turn')
+    ax_y.set_ylabel('Difference [mm]')
+    plt.show()
+    
 
 
 
