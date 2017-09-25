@@ -89,7 +89,6 @@ class Register(object):
                     self._signal_register[self._n_iter_left], delay)
 
     def process(self, parameters, signal, *args, **kwargs):
-
         self._parameter_register.append(parameters)
         self._signal_register.append(signal)
 
@@ -261,17 +260,21 @@ class DummyCombiner(Combiner):
 
     def combine(self, registers, target_location, target_beta, additional_phase_advance, beta_conversion):
         combined_signal = None
+        
+        if len(registers[0]) > 0:
+        
+            for (parameters, signal, delay) in registers[0]:
+                combined_signal = signal
+    
+            if target_beta is not None:
+                beta_correction = 1. / np.sqrt(parameters['beta'] * target_beta)
+            else:
+                beta_correction = 1.
 
-        for (parameters, signal, delay) in registers[0]:
-            combined_signal = signal
-
-        if target_beta is not None:
-            beta_correction = 1. / np.sqrt(parameters['beta'] * target_beta)
+            return beta_correction*combined_signal
+    
         else:
-            beta_correction = 1.
-
-
-        return beta_correction*combined_signal
+            return combined_signal
 
 class HilbertCombiner(Combiner):
     """ A combiner, which utilizes a algorithm based on the Hilbert transform.
