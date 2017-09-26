@@ -289,7 +289,7 @@ def plot_debug_data(processors, source = 'input'):
 
     ax1 = fig.add_subplot(211)
     ax11 = ax1.twiny()
-    ax2 = fig.add_subplot(212)
+    ax2 = fig.add_subplot(212,sharex=ax1)
     ax22 = ax2.twiny()
 
     coeff = 1.
@@ -301,10 +301,10 @@ def plot_debug_data(processors, source = 'input'):
                 if processor.debug:
                     t, z, bins, signal = pick_signals(processor,'input')
                     label=processor.label
-                    ax1.plot(t*1e9,bins*coeff, label=label)
+                    ax1.plot(t*1e9,0.33*bins + coeff, label=label)
                     ax11.plot(z, np.zeros(len(z)))
                     ax11.cla()
-                    coeff *= 0.9
+                    coeff += 1.0
                     ax2.plot(t*1e9,signal*1e3)
                     ax22.plot(z, np.zeros(len(z)))
                     ax22.cla()
@@ -313,17 +313,18 @@ def plot_debug_data(processors, source = 'input'):
                 if processor.debug:
                     t, z, bins, signal = pick_signals(processor,'output')
                     label=processor.label
-                    ax1.plot(t*1e9,bins*coeff, label=label)
+                    ax1.plot(t*1e9,0.33*bins + coeff, label=label)
                     ax11.plot(z, np.zeros(len(z)))
                     ax11.cla()
-                    coeff *= 0.9
+                    coeff += 1.0
                     ax2.plot(t*1e9,signal*1e3)
                     ax22.plot(z, np.zeros(len(z)))
                     ax22.cla()
 
-    ax1.set_ylim(-1.1,1.1)
+    ax1.set_ylim(0,coeff)
     ax1.set_xticklabels(())
     ax1.legend(loc='upper right')
+    ax1.set_ylabel('Signal processor #')
     ax11.set_xlabel('Distance [m]')
 
     ax2.set_xlabel('Time [ns]')
