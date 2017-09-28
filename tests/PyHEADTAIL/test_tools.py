@@ -11,16 +11,16 @@ from PyHEADTAIL.trackers.transverse_tracking import TransverseMap
 from PyHEADTAIL.trackers.simple_long_tracking import LinearMap
 from PyHEADTAIL.particles.slicing import UniformBinSlicer
 
-
 class Machine(Synchrotron):
     """ Note that this is a toy machine for testing, which pameters are tuned for testing
         purposes.
     """
 
-    def __init__(self, n_segments = 1, Q_x=64.28, Q_y=59.31, Q_s=0.0020443):
+    def __init__(self, n_segments = 1, Q_x=64.28, Q_y=59.31):
 
         optics_mode='smooth'
-        longitudinal_mode='non-linear'
+#        longitudinal_mode='non-linear'
+        longitudinal_mode='linear'
 
         charge = e
         mass = m_p
@@ -34,7 +34,6 @@ class Machine(Synchrotron):
         V_RF = 16e6
         dphi_RF = 0
 
-#        n_segments = kwargs['n_segments']
         self.circumference = 26658.883
         s = None
         alpha_x = None
@@ -51,13 +50,9 @@ class Machine(Synchrotron):
         app_x = 0
         app_y = 0
         app_xy = 0
-        wrap_z=True
-
-#        name = None
-        self.sigma_z = 5* 0.081
-        self.epsn_x = 3.75e-6  # [m rad]
-        self.epsn_y = 3.75e-6  # [m rad]
-        self.intensity = 1.05e11
+        
+#        wrap_z=True
+        wrap_z=False
 
         super(Machine, self).__init__(
             optics_mode=optics_mode, circumference=self.circumference,
@@ -72,11 +67,13 @@ class Machine(Synchrotron):
             charge=charge, mass=mass, wrap_z=wrap_z)
 
 
-def generate_objects(machine,n_macroparticles, n_slices,n_sigma_z,
-    filling_scheme = None, matched=True):
+def generate_objects(machine,n_macroparticles, n_slices, n_sigma_z,
+                     intensity=1e11, sigma_z=0.1124,
+                     epsn_x=3.5e-6, epsn_y=3.5e-6,
+                     filling_scheme = None, matched=False):
 
     bunch = machine.generate_6D_Gaussian_bunch(
-    n_macroparticles, machine.intensity, machine.epsn_x, machine.epsn_y, sigma_z=machine.sigma_z,
+    n_macroparticles, intensity, epsn_x, epsn_y, sigma_z=sigma_z,
     filling_scheme=filling_scheme, matched=matched)
 
     slicer = UniformBinSlicer(n_slices=n_slices, n_sigma_z=n_sigma_z)
@@ -85,7 +82,7 @@ def generate_objects(machine,n_macroparticles, n_slices,n_sigma_z,
 
 
 def track(n_turns, bunch, total_map, bunch_dump):
-    for i in xrange(n_turns):
+    for i in range(n_turns):
         bunch_dump.dump()
 
         for m_ in total_map:
@@ -212,6 +209,33 @@ def compare_projections(bunches, labels, n_particles = 300):
     ax_z_y.set_ylabel('y [mm]')
     plt.show()
 
+def compare_beam_projections(beams, labels):
+    fig = plt.figure(figsize=(16, 4))
+    fig.suptitle('z-x and z-y projections of bunches', fontsize=14, fontweight='bold')
+    ax_z_x = fig.add_subplot(121)
+    ax_z_y = fig.add_subplot(122)
+
+    for j, beam in enumerate(beams):
+        
+        bunch_list = beam.split()
+        z_data = np.zeros(len(bunch_list))
+        x_data = np.zeros(len(bunch_list))
+        y_data = np.zeros(len(bunch_list))
+        
+        for i, bunch in enumerate(bunch_list):
+            z_data[i] = bunch.mean_z()
+            x_data[i] = bunch.mean_x()
+            y_data[i] = bunch.mean_y()
+            
+        ax_z_x.plot(z_data, x_data * 1000, '.', label=labels[j])
+        ax_z_y.plot(z_data, y_data * 1000, '.', label=labels[j])
+    ax_z_x.legend(loc='upper right')
+    ax_z_x.set_xlabel('z [m]')
+    ax_z_x.set_ylabel('x [mm]')
+    ax_z_y.legend(loc='upper right')
+    ax_z_y.set_xlabel('z [m]')
+    ax_z_y.set_ylabel('y [mm]')
+    plt.show()
 
 def particle_position_difference(ref_bunch,bunch):
     diff_x = np.sum((ref_bunch.x - bunch.x)**2)/float(len(ref_bunch.x))
