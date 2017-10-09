@@ -220,7 +220,7 @@ class Resampler(object):
                 temp_edges[i,0] = edges[0] + i * new_bin_width
                 temp_edges[i,1] = edges[0] + (i + 1) * new_bin_width
 
-            if new_edges == None:
+            if new_edges is None:
                 new_edges = temp_edges
             else:
                 new_edges = append_bin_edges(new_edges,temp_edges)
@@ -261,7 +261,7 @@ class Resampler(object):
                 temp_edges[0,0] = original_edges[first_edge,0]
                 temp_edges[0,1] = original_edges[last_edge,1]
 
-                if new_edges == None:
+                if new_edges is None:
                     new_edges = temp_edges
                 else:
                     new_edges = append_bin_edges(new_edges,temp_edges)

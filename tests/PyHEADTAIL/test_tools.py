@@ -1,16 +1,19 @@
 import numpy as np
 from scipy.constants import m_p, c, e, pi
+
+from mpl_toolkits.mplot3d import Axes3D
+from matplotlib.collections import PolyCollection
+import matplotlib as mpl
+from matplotlib.colors import colorConverter
 import matplotlib.pyplot as plt
 
 from PyHEADTAIL.machines.synchrotron import Synchrotron
-
-
 
 import PyHEADTAIL.particles.generators as generators
 from PyHEADTAIL.trackers.transverse_tracking import TransverseMap
 from PyHEADTAIL.trackers.simple_long_tracking import LinearMap
 from PyHEADTAIL.particles.slicing import UniformBinSlicer
-
+# plt.xkcd()
 class Machine(Synchrotron):
     """ Note that this is a toy machine for testing, which pameters are tuned for testing
         purposes.
@@ -70,7 +73,7 @@ class Machine(Synchrotron):
 def generate_objects(machine,n_macroparticles, n_slices, n_sigma_z,
                      intensity=1e11, sigma_z=0.1124,
                      epsn_x=3.5e-6, epsn_y=3.5e-6,
-                     filling_scheme = None, matched=False):
+                     filling_scheme = [0], matched=False):
 
     bunch = machine.generate_6D_Gaussian_bunch(
     n_macroparticles, intensity, epsn_x, epsn_y, sigma_z=sigma_z,
@@ -140,47 +143,187 @@ class BunchTracker(object):
         self.epsn_y = np.append(self.epsn_y,[self.bunch.epsn_y()])
         self.epsn_z = np.append(self.epsn_z,[self.bunch.epsn_z()])
 
+class BeamTracker(object):
+    def __init__(self,beam):
+        self.bunch_ids = None
+        self.counter = 0
 
-def compare_traces(trackers, labels):
+        self.beam = beam
+        self.turn = np.array([])
+
+        self.mean_x = np.array([])
+        self.mean_y = np.array([])
+        self.mean_z = np.array([])
+
+        self.mean_xp = np.array([])
+        self.mean_yp = np.array([])
+        self.mean_dp = np.array([])
+
+        self.sigma_x = np.array([])
+        self.sigma_y = np.array([])
+        self.sigma_z = np.array([])
+
+        self.sigma_xp = np.array([])
+        self.sigma_yp = np.array([])
+        self.sigma_dp = np.array([])
+
+        self.epsn_x = np.array([])
+        self.epsn_y = np.array([])
+        self.epsn_z = np.array([])
+
+    def dump(self):
+        self.turn=np.append(self.turn,[self.counter])
+        
+        bunch_list = self.beam.split()
+        
+        temp_mean_x = np.zeros(len(bunch_list))
+        temp_mean_y = np.zeros(len(bunch_list))
+        temp_mean_z = np.zeros(len(bunch_list))
+
+        temp_mean_xp = np.zeros(len(bunch_list))
+        temp_mean_yp = np.zeros(len(bunch_list))
+        temp_mean_dp = np.zeros(len(bunch_list))
+
+        temp_sigma_x = np.zeros(len(bunch_list))
+        temp_sigma_y = np.zeros(len(bunch_list))
+        temp_sigma_z = np.zeros(len(bunch_list))
+
+        temp_sigma_xp = np.zeros(len(bunch_list))
+        temp_sigma_yp = np.zeros(len(bunch_list))
+        temp_sigma_dp = np.zeros(len(bunch_list))
+
+        temp_epsn_x = np.zeros(len(bunch_list))
+        temp_epsn_y = np.zeros(len(bunch_list))
+        temp_epsn_z = np.zeros(len(bunch_list))
+        
+        if self.bunch_ids is None:
+            get_ids = True
+            self.bunch_ids = []
+        else:
+            get_ids = False
+        
+        for i, bunch in enumerate(bunch_list):
+            if get_ids:
+                self.bunch_ids.append(bunch.bunch_id[0])
+        
+            temp_mean_x[i] = bunch.mean_x()
+            temp_mean_y[i] = bunch.mean_y()
+            temp_mean_z[i] = bunch.mean_z()
+    
+            temp_mean_xp[i] = bunch.mean_xp()
+            temp_mean_yp[i] = bunch.mean_yp()
+            temp_mean_dp[i] = bunch.mean_dp()
+    
+            temp_sigma_x[i] = bunch.sigma_x()
+            temp_sigma_y[i] = bunch.sigma_y()
+            temp_sigma_z[i] = bunch.sigma_z()
+    
+            temp_sigma_xp[i] = bunch.sigma_xp()
+            temp_sigma_yp[i] = bunch.sigma_yp()
+            temp_sigma_dp[i] = bunch.sigma_dp()
+    
+            temp_epsn_x[i] = bunch.epsn_x()
+            temp_epsn_y[i] = bunch.epsn_y()
+            temp_epsn_z[i] = bunch.epsn_z()
+            
+        if self.counter == 0:
+            self.mean_x = [temp_mean_x]
+            self.mean_y = [temp_mean_y]
+            self.mean_z = [temp_mean_z]
+    
+            self.mean_xp = [temp_mean_xp]
+            self.mean_yp = [temp_mean_yp]
+            self.mean_dp = [temp_mean_dp]
+    
+            self.sigma_x = [temp_sigma_x]
+            self.sigma_y = [temp_sigma_y]
+            self.sigma_z = [temp_sigma_z]
+    
+            self.sigma_xp = [temp_sigma_xp]
+            self.sigma_yp = [temp_sigma_yp]
+            self.sigma_dp = [temp_sigma_dp]
+    
+            self.epsn_x = [temp_epsn_x]
+            self.epsn_y = [temp_epsn_y]
+            self.epsn_z = [temp_epsn_z]   
+            
+        else:
+            self.mean_x = np.concatenate((self.mean_x,[temp_mean_x]), axis=0)
+            self.mean_y = np.concatenate((self.mean_y,[temp_mean_y]), axis=0)
+            self.mean_z = np.concatenate((self.mean_z,[temp_mean_z]), axis=0)
+    
+            self.mean_xp = np.concatenate((self.mean_xp,[temp_mean_xp]), axis=0)
+            self.mean_yp = np.concatenate((self.mean_yp,[temp_mean_yp]), axis=0)
+            self.mean_dp = np.concatenate((self.mean_dp,[temp_mean_dp]), axis=0)
+    
+            self.sigma_x = np.concatenate((self.sigma_x,[temp_sigma_x]), axis=0)
+            self.sigma_y = np.concatenate((self.sigma_y,[temp_sigma_y]), axis=0)
+            self.sigma_z = np.concatenate((self.sigma_z,[temp_sigma_z]), axis=0)
+    
+            self.sigma_xp = np.concatenate((self.sigma_xp,[temp_sigma_xp]), axis=0)
+            self.sigma_yp = np.concatenate((self.sigma_yp,[temp_sigma_yp]), axis=0)
+            self.sigma_dp = np.concatenate((self.sigma_dp,[temp_sigma_dp]), axis=0)
+    
+            self.epsn_x = np.concatenate((self.epsn_x,[temp_epsn_x]), axis=0)
+            self.epsn_y = np.concatenate((self.epsn_y,[temp_epsn_y]), axis=0)
+            self.epsn_z = np.concatenate((self.epsn_z,[temp_epsn_z]), axis=0)
+        
+        self.counter += 1
+
+def compare_traces(trackers, labels, bunch_idx=None):
     fig = plt.figure(figsize=(16, 8))
     ax_x_mean = fig.add_subplot(231)
     ax_x_sigma = fig.add_subplot(232)
     ax_x_epsn = fig.add_subplot(233)
 
-    for i, tracker in enumerate(trackers):
-        ax_x_mean.plot(tracker.turn, tracker.mean_x * 1000, label=labels[i])
-    ax_x_mean.legend(loc='upper right')
-    ax_x_mean.set_ylabel('<x> [mm]')
-    ax_x_mean.ticklabel_format(useOffset=False)
-
-    for i, tracker in enumerate(trackers):
-        ax_x_sigma.plot(tracker.turn, tracker.sigma_x * 1000, label=labels[i])
-    ax_x_sigma.set_ylabel('sigma_x [mm]')
-    ax_x_sigma.ticklabel_format(useOffset=False)
-
-    for i, tracker in enumerate(trackers):
-        ax_x_epsn.plot(tracker.turn, tracker.epsn_x * 1e6, label=labels[i])
-    ax_x_epsn.set_ylabel('epsn_x [mm mrad]')
-    ax_x_epsn.set_xlabel('Turn')
-    ax_x_epsn.ticklabel_format(useOffset=False)
-
     ax_y_mean = fig.add_subplot(234)
     ax_y_sigma = fig.add_subplot(235)
     ax_y_epsn = fig.add_subplot(236)
 
-    for i, tracker in enumerate(trackers):
-        ax_y_mean.plot(tracker.turn, tracker.mean_y * 1000, label=labels[i])
+    if len(trackers[0].mean_x.shape) > 1:
+
+        if bunch_idx is None:
+            b_f = 0
+            b_t = len(trackers[0].mean_x[0,:])
+        else:
+            b_f = bunch_idx
+            b_t = bunch_idx + 1
+
+        for i, tracker in enumerate(trackers):
+            ax_x_mean.plot(tracker.turn, np.mean(tracker.mean_x[:,b_f:b_t], axis=1) * 1000, label=labels[i])
+            ax_x_sigma.plot(tracker.turn, np.mean(tracker.sigma_x[:,b_f:b_t], axis=1) * 1000, label=labels[i])
+            ax_x_epsn.plot(tracker.turn, np.mean(tracker.epsn_x[:,b_f:b_t], axis=1) * 1e6, label=labels[i])
+            ax_y_mean.plot(tracker.turn, np.mean(tracker.mean_y[:,b_f:b_t], axis=1) * 1000, label=labels[i])
+            ax_y_sigma.plot(tracker.turn, np.mean(tracker.sigma_y[:,b_f:b_t], axis=1) * 1000, label=labels[i])
+            ax_y_epsn.plot(tracker.turn, np.mean(tracker.epsn_y[:,b_f:b_t], axis=1) * 1e6, label=labels[i])
+            
+    else:
+        for i, tracker in enumerate(trackers):
+            ax_x_mean.plot(tracker.turn, tracker.mean_x * 1000, label=labels[i])
+            ax_x_sigma.plot(tracker.turn, tracker.sigma_x * 1000, label=labels[i])
+            ax_x_epsn.plot(tracker.turn, tracker.epsn_x * 1e6, label=labels[i])
+            ax_y_mean.plot(tracker.turn, tracker.mean_y * 1000, label=labels[i])
+            ax_y_sigma.plot(tracker.turn, tracker.sigma_y * 1000, label=labels[i])
+            ax_y_epsn.plot(tracker.turn, tracker.epsn_y * 1e6, label=labels[i])
+        
+    ax_x_mean.legend(loc='upper right')
+    ax_x_mean.set_ylabel('<x> [mm]')
+    ax_x_mean.ticklabel_format(useOffset=False)
+
+    ax_x_sigma.set_ylabel('sigma_x [mm]')
+    ax_x_sigma.ticklabel_format(useOffset=False)
+
+    ax_x_epsn.set_ylabel('epsn_x [mm mrad]')
+    ax_x_epsn.set_xlabel('Turn')
+    ax_x_epsn.ticklabel_format(useOffset=False)
+
     ax_y_mean.legend(loc='upper right')
     ax_y_mean.set_ylabel('<y> [mm]')
     ax_y_mean.ticklabel_format(useOffset=False)
 
-    for i, tracker in enumerate(trackers):
-        ax_y_sigma.plot(tracker.turn, tracker.sigma_y * 1000, label=labels[i])
     ax_y_sigma.set_ylabel('sigma_y [mm]')
     ax_y_sigma.ticklabel_format(useOffset=False)
 
-    for i, tracker in enumerate(trackers):
-        ax_y_epsn.plot(tracker.turn, tracker.epsn_y * 1e6, label=labels[i])
     ax_y_epsn.set_ylabel('epsn_y  [mm mrad]')
     ax_y_epsn.set_xlabel('Turn')
     ax_y_epsn.ticklabel_format(useOffset=False)
@@ -286,16 +429,16 @@ def plot_debug_data(processors, source = 'input'):
             raw_signal = processor.output_signal
         else:
             raise ValueError('Unknown value for the data source')
-        z = np.zeros(len(raw_signal)*4)
+        t = np.zeros(len(raw_signal)*4)
         bins = np.zeros(len(raw_signal)*4)
         signal = np.zeros(len(raw_signal)*4)
         value = 1.
 
         for i, edges in enumerate(bin_edges):
-            z[4*i] = edges[0]
-            z[4*i+1] = edges[0]
-            z[4*i+2] = edges[1]
-            z[4*i+3] = edges[1]
+            t[4*i] = edges[0]
+            t[4*i+1] = edges[0]
+            t[4*i+2] = edges[1]
+            t[4*i+3] = edges[1]
             bins[4*i] = 0.
             bins[4*i+1] = value
             bins[4*i+2] = value
@@ -306,7 +449,7 @@ def plot_debug_data(processors, source = 'input'):
             signal[4*i+3] = 0.
             value *= -1
 
-        t = z/c
+        z = t * c
         return (t, z, bins, signal)
 
     fig = plt.figure(figsize=(8, 6))
@@ -345,7 +488,7 @@ def plot_debug_data(processors, source = 'input'):
                     ax22.plot(z, np.zeros(len(z)))
                     ax22.cla()
 
-    ax1.set_ylim(0,coeff)
+    ax1.set_ylim(coeff,0)
     ax1.set_xticklabels(())
     ax1.legend(loc='upper right')
     ax1.set_ylabel('Signal processor #')
@@ -357,3 +500,129 @@ def plot_debug_data(processors, source = 'input'):
 
     plt.show()
     return fig, ax1, ax2
+
+
+def plot3Dtraces(tracker, labels, show_holes=True, bunches=None,
+                 first_turn=0):
+    
+
+    def make_holes(data_z,data_x):
+        bunch_spacing = data_z[0]-data_z[1]
+        plot_x = None
+        plot_z = None
+        
+        i_from = 0
+        for i in range(len(data_z)-1):
+            if (-data_z[i+1]+data_z[i]) > 1.5 * bunch_spacing:
+                i_to = i+1
+                if plot_x is None:
+                    plot_x = data_x[i_from:i_to]
+                    plot_z = data_z[i_from:i_to]
+                else:
+                    plot_x = np.append(plot_x,data_x[i_from:i_to])
+                    plot_z = np.append(plot_z,data_z[i_from:i_to])
+                plot_x = np.append(plot_x,[0])
+                plot_x = np.append(plot_x,[0])
+                plot_z = np.append(plot_z,[data_z[i]])
+                plot_z = np.append(plot_z,[data_z[i+1]])
+                    
+                i_from = i+1
+                
+        i_to = None
+        if plot_x is None:
+            plot_x = data_x[i_from:i_to]
+            plot_z = data_z[i_from:i_to]
+        else:
+            plot_x = np.append(plot_x,data_x[i_from:i_to])
+            plot_z = np.append(plot_z,data_z[i_from:i_to])
+        plot_x = np.append(plot_x,[0])
+        plot_z = np.append(plot_z,[data_z[-1]])
+        
+        return plot_z, plot_x
+                    
+    def pick_max_values(turns, data, first_turn):
+        
+        from scipy.optimize import curve_fit
+        def func(x, a, b, c, d):
+            return a*np.exp(-b*x)
+        
+        n_values_per_window = 4.
+        
+        t_segments = np.array_split(turns[first_turn:],int(np.ceil(len(turns[first_turn:])/n_values_per_window)))
+        d_segments = np.array_split(data[first_turn:],int(np.ceil(len(np.abs(data[first_turn:]))/n_values_per_window)))
+       
+        max_turns = np.zeros(len(t_segments))
+        max_data = np.zeros(len(d_segments))
+        
+        for i, (t,d) in enumerate(zip(t_segments,d_segments)):
+            if len(d) > n_values_per_window-1:
+                idx = np.argmax(d)
+                max_turns[i] = t[idx]
+                max_data[i] = d[idx]
+         
+        max_turns =  max_turns[max_data > 0.]
+        max_data =  max_data[max_data > 0.]
+        
+            
+        popt = np.polyfit(max_turns, np.log(max_data),1)
+    
+        return turns, np.exp(popt[1])*np.exp(popt[0]*turns), -1./popt[0], max_turns, max_data
+    
+    data_x = tracker.mean_x
+#    data_z = tracker.mean_z
+    data_z = np.array(tracker.bunch_ids)
+    turns = np.linspace(1,len(data_x[:,0]),len(data_x[:,0]))
+    fig = plt.figure(figsize=(16, 5))
+    ax = fig.add_subplot(121, projection='3d')
+    ax_damping = fig.add_subplot(122)
+#    ax_raw = fig.add_subplot(133)
+#    ax = fig.gca(projection='3d')
+    cc = lambda arg: colorConverter.to_rgba(arg, alpha=0.6)
+
+#    xs = np.arange(5, 10, 0.4)
+    verts = []
+    for i in range(len(turns)):
+        
+        xs, ys = make_holes(data_z,np.abs(data_x[i,:]))
+        
+#        ys = np.append(np.abs(data_x[i,:]),[0])
+##        ys = np.append(data_x[i,:],[0])
+#        xs = np.append(data_z[i,:],[data_z[i,-1]])
+        verts.append(list(zip(xs, ys)))
+    
+    poly = PolyCollection(verts, facecolors = [cc('w')]*len(turns), linewidths=1, edgecolor="black")
+    poly.set_alpha(0.7)
+    ax.add_collection3d(poly, zs=turns, zdir='y')
+    
+    ax.set_xlabel('Bucket #')
+    ax.set_xlim3d(np.min(data_z),np.max(data_z))
+    ax.set_ylabel('Turn')
+    ax.set_ylim3d(np.max(turns)+1,0)
+    ax.set_zlabel('|mean_x|')
+    ax.set_zlim3d(0, 10e-3)
+    
+    if bunches is not None:
+        colormap = mpl.cm.Set1.colors
+        if type(bunches) is int:
+            bunches = [bunches]
+            
+        for j,i in enumerate(bunches):
+            t, d, t_d, rt, rd = pick_max_values(turns, data_x[:,i], first_turn)
+            ax_damping.plot(turns,data_x[:,i], color= colormap[j], label = r'Bucket #{:03d}, $\tau_d=${:.2f} turns'.format(tracker.bunch_ids[i],t_d))
+            ax_damping.plot(t,d,'--', color= colormap[j])
+            ax.plot(data_z[i]*np.ones(len(t)), t, d,'--', lw=1.5, color= colormap[j])
+#        else:
+#            t, d, t_d, rt, rd = pick_max_values(turns, data_x[:,bunches], first_turn)
+#            print 'Dampint time: ' + str(t_d) + ' turns'
+#            ax_damping.plot(turns,data_x[:,bunches], color= colormap[0], label = 'bucket #' + str(bunches))
+#            ax_damping.plot(t,d,'--', color= colormap[0], label = 'bucket #' + str(bunches))
+#            ax_raw.semilogy(rt, rd, label = 'bucket #' + str(bunches))
+#            ax_raw.semilogy(t, d, label = 'bucket #' + str(bunches))
+                
+        ax_damping.set_xlabel('Turn')
+        ax_damping.set_ylabel('mean_x')
+        ax_damping.legend(loc='upper right')
+        
+    
+    plt.show()
+    
