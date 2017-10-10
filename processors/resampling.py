@@ -642,6 +642,22 @@ class DAC(object):
 
         return output_parameters, output_signal
 
+class Upsampler(Resampler):
+    def __init__(self, multiplier, data_conversion='value', **kwargs):
+        """
+        Multiplies sampling rate by a given number
+        
+        Parameters
+        ----------
+        multiplier : int
+            A number of new samples per old sample
+        data_conversion : str
+            Date conversion method
+        """
+        super(self.__class__, self).__init__(('upsampling', multiplier),
+                  data_conversion=data_conversion, **kwargs)
+        self.label='Upsampler'
+
 class BackToOriginalBins(Resampler):
     def __init__(self, data_conversion='interpolation', target_binset = 0, **kwargs):
         """
