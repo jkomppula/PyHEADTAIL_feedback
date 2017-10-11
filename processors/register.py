@@ -6,11 +6,10 @@ from scipy.constants import pi
 
 from ..core import Parameters, default_macros
 
-"""
-    @author Jani Komppula
-    @date 16/08/2017
-    @copyright CERN
+"""Signal processors based on registers and combiners.
 
+@author Jani Komppula
+@date: 11/10/2017
 """
 
 class Register(object):

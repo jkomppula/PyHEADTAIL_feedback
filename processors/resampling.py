@@ -1,16 +1,15 @@
 import numpy as np
-from scipy.constants import c, pi
 import copy
 from scipy import interpolate
-from ..core import Parameters, bin_edges_to_z_bins, z_bins_to_bin_edges, append_bin_edges, bin_mids
-from ..core import default_macros
 from scipy.sparse import csr_matrix
 
-"""
-    @author Jani Komppula
-    @date 29/06/2017
-    @copyright CERN
+from ..core import Parameters, bin_edges_to_z_bins, z_bins_to_bin_edges
+from ..core import append_bin_edges, bin_mids, default_macros
 
+"""Signal processors for resampling a signal.
+
+@author Jani Komppula
+@date: 11/10/2017
 """
 
 class Resampler(object):
@@ -66,8 +65,9 @@ class Resampler(object):
                     calculates an average value of the overlaping bins
                 'value'
                     returns a value of the overlapping bin
-                ('kernel', kernel)
-                    uses a kernel for the sampling
+                ('upsampler_kernel', list)
+                    uses a kernel to map an old value to a corresponding
+                    section of upsampled bins
         n_extras : int
             A number of extra samples added before the first segment and after
             the last segment
@@ -671,8 +671,9 @@ class Upsampler(Resampler):
         ----------
         multiplier : int
             A number of new samples per old sample
-        data_conversion : str
-            Date conversion method
+        kernel : list
+            A list of number, which is used as a kernel (map) to determine
+            values to the upsampled bins
         """
         if kernel is None:
             data_conversion = 'value'

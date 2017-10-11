@@ -3,6 +3,14 @@ import numpy as np
 from scipy.constants import c, pi
 from ..core import default_macros
 
+""" This file contains dimensionless impulse responses function for different
+analog filters, which can be used in different signal processor implementations
+(e.g. based on convolution and linear transformation).
+
+@author Jani Komppula
+@date: 11/10/2017
+"""
+
 class Addition(object):
     __metaclass__ = ABCMeta
     """ An abstract class which adds an array to the input signal. The addend array is produced by taking

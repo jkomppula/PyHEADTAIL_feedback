@@ -13,8 +13,7 @@ from scipy.constants import c
     processors describing the system to the objects.
 
     @author Jani Komppula
-    @date 16/08/2017
-    @copyright CERN
+    @date 11/10/2017
 """
 
 

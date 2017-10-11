@@ -8,7 +8,11 @@ from cython_hacks import cython_matrix_product
 from ..core import default_macros
 import abstract_filter_responses
 
-# TODO: clean code here!
+"""Signal processors based on linear transformation.
+
+@author Jani Komppula
+@date: 11/10/2017
+"""
 
 class LinearTransform(object):
     __metaclass__ = ABCMeta

@@ -9,6 +9,12 @@ import scipy.integrate as integrate
 from scipy.interpolate import UnivariateSpline
 import abstract_filter_responses
 
+"""Signal processors based on convolution operation.
+
+@author Jani Komppula
+@date: 11/10/2017
+"""
+
 class Convolution(object):
     __metaclass__ = ABCMeta
 
