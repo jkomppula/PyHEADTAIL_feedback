@@ -1,10 +1,9 @@
 import numpy as np
 from abc import ABCMeta, abstractmethod
 
-from ..core import Parameters, Signal
-from ..core import bin_widths, bin_mids, bin_edges_to_z_bins, z_bins_to_bin_edges
-from ..core import default_macros
-from scipy.constants import c, pi
+from ..core import bin_widths, bin_mids, bin_edges_to_z_bins
+from ..core import default_macros, Parameters
+from scipy.constants import pi
 import scipy.integrate as integrate
 from scipy.interpolate import UnivariateSpline
 import abstract_filter_responses

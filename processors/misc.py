@@ -1,4 +1,3 @@
-import copy
 import numpy as np
 from ..core import default_macros
 

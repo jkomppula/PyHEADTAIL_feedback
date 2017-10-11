@@ -2,7 +2,8 @@ from abc import ABCMeta, abstractmethod
 import numpy as np
 from scipy.constants import c, pi
 from ..core import default_macros
-"""Signal processors based on convolution operation.
+
+"""Signal processors based on multiplication operation.
 
 @author Jani Komppula
 @date: 11/10/2017
