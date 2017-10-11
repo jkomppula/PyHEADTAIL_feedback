@@ -53,19 +53,21 @@ class Resampler(object):
             reference points in the units of bins.
         data_conversion : string
             A method how the data of the input signal are converted to the output
-            binset. The output signal can be converted by:
+            binset. The output signal can be converted by using:
                 'interpolation'
-                    interpolating from the input data.
+                    interpolates from the input data.
                 'sum'
-                    calculating a bin value sum over the over lapping bins
+                    calculates a bin value sum over the over lapping bins
                 'integral'
-                    integrating the input signal over an output bin
+                    integrates the input signal over an output bin
                 'average'
-                    calculating a bin width weighted average of the overlaping bins
+                    calculates a bin width weighted average of the overlaping bins
                 'average_bin_value'
-                    caclulating an average value of the overlaping bins
+                    calculates an average value of the overlaping bins
                 'value'
-                    returning a value of the overlapping bin
+                    returns a value of the overlapping bin
+                ('kernel', kernel)
+                    uses a kernel for the sampling
         n_extras : int
             A number of extra samples added before the first segment and after
             the last segment
@@ -328,6 +330,20 @@ class Resampler(object):
 
         return convert_signal
 
+    def _init_upsampler_kernel_conversion(self, parameters, signal):
+        kernel = self._data_conversion[1]
+        big_matrix = np.zeros((len(self._output_signal), len(signal)))
+        for j, input_edges in enumerate(parameters['bin_edges']):
+            for k in range(len(kernel)):
+                i = j*len(kernel) + k
+                big_matrix[i, j] = kernel[k]
+        sparse_matrix = csr_matrix(big_matrix)
+
+        def convert_signal(input_signal):
+            return sparse_matrix.dot(input_signal)
+
+        return convert_signal
+
     def _init_integral_conversion(self, parameters, signal):
         def CDF(x, ref_edges):
             if x <= ref_edges[0]:
@@ -442,10 +458,9 @@ class Resampler(object):
                 self._init_downsampling(parameters, signal)
             else:
                 raise ValueError('Unknown sampling method')
-
         else:
             raise ValueError('Unknown sampling method')
-
+        
         if self._data_conversion == 'interpolation':
             self._convert_signal = self._init_interp_conversion(parameters, signal)
         elif self._data_conversion == 'sum':
@@ -458,6 +473,11 @@ class Resampler(object):
             self._convert_signal = self._init_avg_bin_conversion(parameters, signal)
         elif self._data_conversion == 'value':
             self._convert_signal = self._init_value_conversion(parameters, signal)
+        elif isinstance(self._method, tuple):
+            if self._data_conversion[0] == 'upsampler_kernel':
+                self._convert_signal = self._init_upsampler_kernel_conversion(parameters, signal)
+            else:
+                raise ValueError('Unknown data conversion method')
         else:
             raise ValueError('Unknown data conversion method')
 
@@ -643,7 +663,7 @@ class DAC(object):
         return output_parameters, output_signal
 
 class Upsampler(Resampler):
-    def __init__(self, multiplier, data_conversion='value', **kwargs):
+    def __init__(self, multiplier, kernel=None, **kwargs):
         """
         Multiplies sampling rate by a given number
         
@@ -654,6 +674,15 @@ class Upsampler(Resampler):
         data_conversion : str
             Date conversion method
         """
+        if kernel is None:
+            data_conversion = 'value'
+        else:
+            if multiplier != len(kernel):
+                raise ValueError('Kernel length must match the multiplier ')
+            
+            data_conversion = ('upsampler_kernel',kernel)
+            
+        
         super(self.__class__, self).__init__(('upsampling', multiplier),
                   data_conversion=data_conversion, **kwargs)
         self.label='Upsampler'

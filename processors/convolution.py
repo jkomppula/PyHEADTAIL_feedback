@@ -8,7 +8,6 @@ from scipy.constants import c, pi
 import scipy.integrate as integrate
 from scipy.interpolate import UnivariateSpline
 import abstract_filter_responses
-# TODO: - 2nd order cutoff by using gaussian filter
 
 class Convolution(object):
     __metaclass__ = ABCMeta
