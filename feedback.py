@@ -20,40 +20,65 @@ from scipy.constants import c
 class IdealBunchFeedback(object):
     """ The simplest possible feedback. It corrects a gain fraction of a mean xp/yp value of the bunch.
     """
-    def __init__(self,gain):
+    def __init__(self,gain, multi_bunch=False):
         if isinstance(gain, collections.Container):
             self._gain_x = gain[0]
             self._gain_y = gain[1]
         else:
             self._gain_x = gain
             self._gain_y = gain
+            
+        self.multi_bunch = multi_bunch
 
     def track(self,bunch):
-        bunch.xp -= self._gain_x *bunch.mean_xp()
-        bunch.yp -= self._gain_y*bunch.mean_yp()
+        
+        if self.multi_bunch:
+            bunch_list = bunch.split_to_views()
+            
+            for b in bunch_list:
+                b.xp -= self._gain_x *b.mean_xp()
+                b.yp -= self._gain_y*b.mean_yp()
+        else:
+            bunch.xp -= self._gain_x *bunch.mean_xp()
+            bunch.yp -= self._gain_y*bunch.mean_yp()
 
 
 class IdealSliceFeedback(object):
     """Corrects a gain fraction of a mean xp/yp value of each slice in the bunch."""
-    def __init__(self,gain,slicer):
+    def __init__(self,gain,slicer, multi_bunch=False):
         if isinstance(gain, collections.Container):
             self._gain_x = gain[0]
             self._gain_y = gain[1]
         else:
             self._gain_x = gain
             self._gain_y = gain
+            
+        self.multi_bunch = multi_bunch
 
         self._slicer = slicer
 
     def track(self,bunch):
-        slice_set = bunch.get_slices(self._slicer, statistics = ['mean_xp', 'mean_yp'])
-
-        # Reads a particle index and a slice index for each macroparticle
-        p_idx = slice_set.particles_within_cuts
-        s_idx = slice_set.slice_index_of_particle.take(p_idx)
-
-        bunch.xp[p_idx] -= self._gain_x * slice_set.mean_xp[s_idx]
-        bunch.yp[p_idx] -= self._gain_y * slice_set.mean_yp[s_idx]
+        
+        if self.multi_bunch:
+            bunch_list = bunch.split_to_views()
+            
+            for b in bunch_list:
+                slice_set = b.get_slices(self._slicer, statistics = ['mean_xp', 'mean_yp'])
+                p_idx = slice_set.particles_within_cuts
+                s_idx = slice_set.slice_index_of_particle.take(p_idx)
+        
+                b.xp[p_idx] -= self._gain_x * slice_set.mean_xp[s_idx]
+                b.yp[p_idx] -= self._gain_y * slice_set.mean_yp[s_idx]
+        
+        else:
+            slice_set = bunch.get_slices(self._slicer, statistics = ['mean_xp', 'mean_yp'])
+    
+            # Reads a particle index and a slice index for each macroparticle
+            p_idx = slice_set.particles_within_cuts
+            s_idx = slice_set.slice_index_of_particle.take(p_idx)
+    
+            bunch.xp[p_idx] -= self._gain_x * slice_set.mean_xp[s_idx]
+            bunch.yp[p_idx] -= self._gain_y * slice_set.mean_yp[s_idx]
 
 
 def get_local_slice_sets(bunch, slicer, required_variables):
