@@ -436,7 +436,7 @@ class Wake(object):
             raise ValueError('Unknown calculation method')
 
         self._kick_impulses = []
-        edges = beam.bin_edges
+        edges = beam.bin_edges*c
         turn_length = (edges[-1,1] - edges[0,0])
         normalized_z = (beam.z - beam.z[0])
 
