@@ -80,7 +80,9 @@ def generate_objects(machine,n_macroparticles, n_slices, n_sigma_z,
     n_macroparticles, intensity, epsn_x, epsn_y, sigma_z=sigma_z,
     filling_scheme=filling_scheme, matched=matched)
 
-    slicer = UniformBinSlicer(n_slices=n_slices, n_sigma_z=n_sigma_z)
+    slicer = UniformBinSlicer(n_slices=n_slices, n_sigma_z=n_sigma_z,
+                              circumference=machine.circumference,
+                              h_bunch=machine.h_bunch)
 
     return bunch, slicer, machine.transverse_map, machine.longitudinal_map
 
