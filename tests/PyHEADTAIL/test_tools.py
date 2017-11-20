@@ -641,9 +641,11 @@ def plot3Dtraces(tracker, labels, show_holes=True, bunches=None,
     ax.set_zlim3d(0, 10e-3)
     
     if bunches is not None:
-        colormap = mpl.cm.Set1.colors
         if type(bunches) is int:
             bunches = [bunches]
+
+        n_lines = len(bunches)
+        colormap = plt.cm.jet(np.linspace(0,1,n_lines))
             
         for j,i in enumerate(bunches):
             t, d, t_d, rt, rd = pick_max_values(turns, data_x[:,i], first_turn)
