@@ -187,14 +187,20 @@ def read_signal(signal_x, signal_y, signal_slice_sets, axis, mpi,
         else:
             raise ValueError('Unknown axis')
     
-    np.copyto(signal_x, signal_x[::-1])
-    np.copyto(signal_y, signal_y[::-1])
+    if signal_x is not None:
+        np.copyto(signal_x, signal_x[::-1])
+    
+    if signal_y is not None:
+        np.copyto(signal_y, signal_y[::-1])
 
 def kick_bunches(local_slice_sets, bunch_list, local_bunch_indexes,
                  signal_x, signal_y, axis):
 
-    np.copyto(signal_x, signal_x[::-1])
-    np.copyto(signal_y, signal_y[::-1])
+    if signal_x is not None:
+        np.copyto(signal_x, signal_x[::-1])
+    
+    if signal_y is not None:
+        np.copyto(signal_y, signal_y[::-1])
     
     n_slices_per_bunch = local_slice_sets[0].n_slices
 
