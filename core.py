@@ -397,12 +397,18 @@ def default_macros(obj, label=None, **kwargs):
 
     func_list = func_list + debug_macro(obj, label=label, **kwargs)
     func_list = func_list + label_macro(obj, label=label, **kwargs)
+    func_list = func_list + init_vatiables_macro(obj, **kwargs)
 
     return func_list
 
 
 def label_macro(obj, label=None, **kwargs):
     setattr(obj, 'label', label)
+    return []
+
+
+def init_vatiables_macro(obj, **kwargs):
+    setattr(obj, 'time_scale', 0)
     return []
 
 

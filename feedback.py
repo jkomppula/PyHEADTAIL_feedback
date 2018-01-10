@@ -141,95 +141,139 @@ def generate_parameters(signal_slice_sets, location=0., beta=1.,
 
     return parameters
 
-def read_signal(signal_x, signal_y, signal_slice_sets, axis, mpi,
-                phase_x, phase_y, beta_x, beta_y):
+
+def valid_bunches(local_slice_sets, all_slice_sets, local_bunch_indexes,
+                  processors):
+    time_scale = 0.
+    
+    for processor in processors:
+        if processor.time_scale > time_scale:
+            time_scale = processor.time_scale
+    local_set_edges = np.zeros((len(local_slice_sets), 2))
+    
+    included_sets = []
+    set_is_included = np.zeros(len(all_slice_sets), dtype=int)
+    set_counter = np.zeros(len(all_slice_sets), dtype=int)
+    
+    for i, slice_set in enumerate(local_slice_sets):
+        local_set_edges[i,0] = np.min(slice_set.z_bins)/c
+        local_set_edges[i,1] = np.max(slice_set.z_bins)/c
+        
+    
+    local_min = np.min(local_set_edges)
+    local_max = np.max(local_set_edges)
+    
+    counter = 0
+    for i, slice_set in enumerate(all_slice_sets):
+        set_min = np.min(slice_set.z_bins)/c
+        set_max = np.max(slice_set.z_bins)/c
+        
+        if (set_max > (local_min - time_scale)) and (set_min < (local_max + time_scale)):
+            included_sets.append(i)
+            set_is_included[i] = 1
+            set_counter[i] = counter
+            counter += 1
+            
+    local_sets = []
+    for idx in local_bunch_indexes:
+        if set_is_included[idx] != 1:
+            raise ValueError('All local bunches are not included!')
+        else:
+            local_sets.append(set_counter[idx])
+                
+        
+    return included_sets, local_sets
+        
+        
+    
+def read_signal(signal, axis, plane,  all_slice_sets, included_sets, mpi,
+                betatron_phase, beta_value):
     # TODO: change the mpi code to support n_slices
     if mpi:
-        n_slices_per_bunch = signal_slice_sets[0]._n_slices
+        n_slices_per_bunch = all_slice_sets[0]._n_slices
     else:
-        n_slices_per_bunch = signal_slice_sets[0].n_slices
+        n_slices_per_bunch = all_slice_sets[0].n_slices
 
-    total_length = len(signal_slice_sets) * n_slices_per_bunch
+    total_length = len(included_sets) * n_slices_per_bunch
 
-    if (signal_x is None) or (len(signal_x) != total_length):
+    if (signal is None) or (len(signal) != total_length):
         raise ValueError('Wrong signal length')
 
-    if (signal_y is None) or (len(signal_x) != total_length):
-        raise ValueError('Wrong signal length')
-
-    for idx, slice_set in enumerate(signal_slice_sets):
+    for idx, slice_set_idx in enumerate(included_sets):
+        slice_set = all_slice_sets[slice_set_idx]
         idx_from = idx * n_slices_per_bunch
         idx_to = (idx + 1) * n_slices_per_bunch
 
-        if axis == 'divergence':
-            if phase_x is None:
-                np.copyto(signal_x[idx_from:idx_to], slice_set.mean_xp)
-            else:
-                np.copyto(signal_x[idx_from:idx_to], (-np.sin(phase_x)*slice_set.mean_x/beta_x +
-                                  np.cos(phase_x)*slice_set.mean_xp))
-            if phase_y is None:
-                np.copyto(signal_y[idx_from:idx_to], slice_set.mean_yp)
-            else:
-                np.copyto(signal_y[idx_from:idx_to], (-np.sin(phase_y)*slice_set.mean_y/beta_y +
-                                  np.cos(phase_y)*slice_set.mean_yp))
+        
+        if plane == 'x':
+            if axis == 'displacement':
+                x_values = np.copy(slice_set.mean_x)
+            elif axis == 'divergence' or betatron_phase is None:
+                xp_values = np.copy(slice_set.mean_xp)
+        elif plane == 'y':
+            if axis == 'displacement':
+                x_values = np.copy(slice_set.mean_y)
+            elif axis == 'divergence' or betatron_phase is None:
+                xp_values = np.copy(slice_set.mean_yp)
+        else:
+            raise ValueError('Unknown plane')
 
+        if axis == 'divergence': 
+            if betatron_phase is None:
+                np.copyto(signal[idx_from:idx_to], xp_values)
+            else:
+                np.copyto(signal[idx_from:idx_to], (-np.sin(betatron_phase)*x_values/beta_value +
+                                  np.cos(betatron_phase)*xp_values))
         elif axis == 'displacement':
-            if phase_x is None:
-                np.copyto(signal_x[idx_from:idx_to], slice_set.mean_x)
+            if betatron_phase is None:
+                np.copyto(signal[idx_from:idx_to], x_values)
             else:
-                np.copyto(signal_x[idx_from:idx_to], (np.cos(phase_x)*slice_set.mean_x +
-                                  beta_x*np.sin(phase_x)*slice_set.mean_xp))
-            if phase_y is None:
-                np.copyto(signal_y[idx_from:idx_to], slice_set.mean_y)
-            else:
-                np.copyto(signal_y[idx_from:idx_to], (np.cos(phase_y)*slice_set.mean_y +
-                                  beta_y*np.sin(phase_y)*slice_set.mean_yp))
+                np.copyto(signal[idx_from:idx_to], (np.cos(betatron_phase)*x_values +
+                                  beta_value*np.sin(betatron_phase)*xp_values))
         else:
             raise ValueError('Unknown axis')
     
-    if signal_x is not None:
-        np.copyto(signal_x, signal_x[::-1])
+    if signal is not None:
+        np.copyto(signal, signal[::-1])
+
     
-    if signal_y is not None:
-        np.copyto(signal_y, signal_y[::-1])
+def kick_bunches(signal, axis, plane, local_slice_sets, bunch_list, local_sets):
 
-def kick_bunches(local_slice_sets, bunch_list, local_bunch_indexes,
-                 signal_x, signal_y, axis):
-
-    if signal_x is not None:
-        np.copyto(signal_x, signal_x[::-1])
+    if signal is not None:
+        np.copyto(signal, signal[::-1])
     
-    if signal_y is not None:
-        np.copyto(signal_y, signal_y[::-1])
+        n_slices_per_bunch = local_slice_sets[0].n_slices
     
-    n_slices_per_bunch = local_slice_sets[0].n_slices
-
-    for slice_set, bunch_idx, bunch in zip(local_slice_sets,
-                                           local_bunch_indexes, bunch_list):
-
-        idx_from = bunch_idx * n_slices_per_bunch
-        idx_to = (bunch_idx + 1) * n_slices_per_bunch
-
-        p_idx = slice_set.particles_within_cuts
-        s_idx = slice_set.slice_index_of_particle.take(p_idx)
-
-        if axis == 'divergence':
-            if signal_x is not None:
-                correction_x = np.array(signal_x[idx_from:idx_to], copy=False)
-                bunch.xp[p_idx] -= correction_x[s_idx]
-            if signal_y is not None:
-                correction_y = np.array(signal_y[idx_from:idx_to], copy=False)
-                bunch.yp[p_idx] -= correction_y[s_idx]
-
-        elif axis == 'displacement':
-            if signal_x is not None:
-                correction_x = np.array(signal_x[idx_from:idx_to], copy=False)
-                bunch.x[p_idx] -= correction_x[s_idx]
-            if signal_y is not None:
-                correction_y = np.array(signal_y[idx_from:idx_to], copy=False)
-                bunch.y[p_idx] -= correction_y[s_idx]
-        else:
-            raise ValueError('Unknown axis')
+        for slice_set, bunch_idx, bunch in zip(local_slice_sets,
+                                               local_sets, bunch_list):
+    
+            idx_from = bunch_idx * n_slices_per_bunch
+            idx_to = (bunch_idx + 1) * n_slices_per_bunch
+    
+            p_idx = slice_set.particles_within_cuts
+            s_idx = slice_set.slice_index_of_particle.take(p_idx)
+    
+            if axis == 'divergence':
+                if plane == 'x':
+                    correction_x = np.array(signal[idx_from:idx_to], copy=False)
+                    bunch.xp[p_idx] -= correction_x[s_idx]
+                elif plane == 'y':
+                    correction_y = np.array(signal[idx_from:idx_to], copy=False)
+                    bunch.yp[p_idx] -= correction_y[s_idx]
+                else:
+                    raise ValueError('Unknown plane')
+    
+            elif axis == 'displacement':
+                if plane == 'x':
+                    correction_x = np.array(signal[idx_from:idx_to], copy=False)
+                    bunch.x[p_idx] -= correction_x[s_idx]
+                elif plane == 'y':
+                    correction_y = np.array(signal[idx_from:idx_to], copy=False)
+                    bunch.y[p_idx] -= correction_y[s_idx]
+                else:
+                    raise ValueError('Unknown plane')
+            else:
+                raise ValueError('Unknown axis')
 
 
 
@@ -330,6 +374,12 @@ class OneboxFeedback(object):
         # TODO: Normally n_macroparticles_per_slice is removed from
         #       the statistical variables. Check if it is not necessary.
 
+        self._included_set_idxs_x = None
+        self._local_set_idxs_x = None
+        
+        self._included_set_idxs_y = None
+        self._local_set_idxs_y = None
+
         self._parameters_x = None
         self._parameters_y = None
         self._signal_x = None
@@ -359,18 +409,26 @@ class OneboxFeedback(object):
             n_segments = self._parameters_x['n_segments']
             n_bins_per_segment = self._parameters_x['n_bins_per_segment']
             self._signal_x = np.zeros(n_segments * n_bins_per_segment)
+            self._included_set_idxs_x, self._local_set_idxs_x = valid_bunches(bunch_slice_sets, signal_slice_sets,
+                                                                              self._local_bunch_indexes, self._processors_x)
+            
 
         if (self._parameters_y is None) or (self._signal_y is None):
             self._parameters_y = generate_parameters(signal_slice_sets)
             n_segments = self._parameters_y['n_segments']
             n_bins_per_segment = self._parameters_y['n_bins_per_segment']
             self._signal_y = np.zeros(n_segments * n_bins_per_segment)
+            self._included_set_idxs_y, self._local_set_idxs_y = valid_bunches(bunch_slice_sets, signal_slice_sets,
+                                                                              self._local_bunch_indexes, self._processors_y)
 
+        read_signal(self._signal_x, self._pickup_axis, 'x',  signal_slice_sets,
+                    self._included_set_idxs_x, self._mpi, self._phase_x,
+                    self._beta_x)
 
-        read_signal(self._signal_x, self._signal_y, signal_slice_sets,
-                    self._pickup_axis,self._mpi, self._phase_x, self._phase_y,
-                    self._beta_x, self._beta_y)
-
+        read_signal(self._signal_y, self._pickup_axis, 'y',  signal_slice_sets,
+                    self._included_set_idxs_y, self._mpi, self._phase_y,
+                    self._beta_y)
+        
         kick_parameters_x, kick_signal_x = process(self._parameters_x,
                                                    self._signal_x,
                                                    self._processors_x,
@@ -396,12 +454,10 @@ class OneboxFeedback(object):
             elif self._pickup_axis == 'divergence' and self._kicker_axis == 'displacement':
                 kick_signal_y = kick_signal_y * self._beta_y
 
-
-#        print 'signal_x: ' + str(kick_signal_x)
-#        print 'self._gain_x: ' + str(self._gain_x)
-
-        kick_bunches(bunch_slice_sets, bunch_list, self._local_bunch_indexes,
-                 kick_signal_x, kick_signal_y, self._kicker_axis)
+        kick_bunches(kick_signal_x, self._kicker_axis, 'x', bunch_slice_sets,
+                     bunch_list, self._local_set_idxs_x)
+        kick_bunches(kick_signal_y, self._kicker_axis, 'y', bunch_slice_sets,
+                     bunch_list, self._local_set_idxs_y)
 
         if self._mpi:
             self._mpi_gatherer.rebunch(bunch)
@@ -467,6 +523,12 @@ class PickUp(object):
         # TODO: Normally n_macroparticles_per_slice is removed from
         #       the statistical variables. Check if it is not necessary.
 
+        self._included_set_idxs_x = None
+        self._local_set_idxs_x = None
+        
+        self._included_set_idxs_y = None
+        self._local_set_idxs_y = None
+
         self._location_x = location_x
         self._beta_x = beta_x
         self._location_y = location_y
@@ -505,6 +567,8 @@ class PickUp(object):
             n_segments = self._parameters_x['n_segments']
             n_bins_per_segment = self._parameters_x['n_bins_per_segment']
             self._signal_x = np.zeros(n_segments * n_bins_per_segment)
+            self._included_set_idxs_x, self._local_set_idxs_x = valid_bunches(bunch_slice_sets, signal_slice_sets,
+                                                                              self._local_bunch_indexes, self._processors_x)
 
         if (self._parameters_y is None) or (self._signal_y is None):
             self._parameters_y = generate_parameters(signal_slice_sets,
@@ -513,10 +577,16 @@ class PickUp(object):
             n_segments = self._parameters_y['n_segments']
             n_bins_per_segment = self._parameters_y['n_bins_per_segment']
             self._signal_y = np.zeros(n_segments * n_bins_per_segment)
+            self._included_set_idxs_y, self._local_set_idxs_y = valid_bunches(bunch_slice_sets, signal_slice_sets,
+                                                                              self._local_bunch_indexes, self._processors_y)
 
-        read_signal(self._signal_x, self._signal_y, signal_slice_sets,
-                    'displacement', self._mpi, self._phase_x, self._phase_y,
-                    self._beta_x, self._beta_y)
+        read_signal(self._signal_x, 'displacement', 'x',  signal_slice_sets,
+                    self._included_set_idxs_x, self._mpi, self._phase_x,
+                    self._beta_x)
+
+        read_signal(self._signal_y, 'displacement', 'y',  signal_slice_sets,
+                    self._included_set_idxs_y, self._mpi, self._phase_y,
+                    self._beta_y)
 
         if self._signal_x is not None:
             end_parameters_x, end_signal_x = process(self._parameters_x,
@@ -592,6 +662,12 @@ class Kicker(object):
         self._processors_x = processors_x
         self._processors_y = processors_y
 
+        self._included_set_idxs_x = None
+        self._local_set_idxs_x = None
+        
+        self._included_set_idxs_y = None
+        self._local_set_idxs_y = None
+
         self._parameters_x = None
         self._parameters_y = None
         self._signal_x = None
@@ -656,12 +732,19 @@ class Kicker(object):
             = get_mpi_slice_sets(bunch, self._mpi_gatherer)
             if self._local_bunch_indexes is None:
                 self._local_bunch_indexes = self._mpi_gatherer.local_bunch_indexes
-
         else:
             signal_slice_sets, bunch_slice_sets, bunch_list \
             = get_local_slice_sets(bunch, self._slicer, self._required_variables)
             if self._local_bunch_indexes is None:
                 self._local_bunch_indexes = [0]
+
+        if self._included_set_idxs_x is None:
+                self._included_set_idxs_x, self._local_set_idxs_x = valid_bunches(bunch_slice_sets, signal_slice_sets,
+                                                                              self._local_bunch_indexes, self._processors_x)
+        
+        if self._included_set_idxs_y is None:
+                self._included_set_idxs_y, self._local_set_idxs_y = valid_bunches(bunch_slice_sets, signal_slice_sets,
+                                                                              self._local_bunch_indexes, self._processors_y)
 
         parameters_x, signal_x = self._combiner_x.process()
         parameters_y, signal_y = self._combiner_y.process()
@@ -678,8 +761,10 @@ class Kicker(object):
                                              slice_sets=signal_slice_sets)
             signal_y = signal_y * self._gain_y
 
-        kick_bunches(bunch_slice_sets, bunch_list, self._local_bunch_indexes,
-                     signal_x, signal_y, 'divergence')
+        kick_bunches(signal_x, 'divergence', 'x', bunch_slice_sets,
+                     bunch_list, self._local_set_idxs_x)
+        kick_bunches(signal_y, 'divergence', 'y', bunch_slice_sets,
+                     bunch_list, self._local_set_idxs_y)
 
         if self._mpi:
             self._mpi_gatherer.rebunch(bunch)
