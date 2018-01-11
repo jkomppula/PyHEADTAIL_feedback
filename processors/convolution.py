@@ -373,7 +373,7 @@ class ConvolutionFilter(Convolution):
 
             # calculates the impulse value for the bin by integrating the impulse
             # response over the normalized bin
-            if (self._impulse_response(integral_from) == 0) and (self._impulse_response(integral_to) == 0)and ((self._impulse_response(integral_from)+self._impulse_response(integral_to))/2. == 0):
+            if (self._impulse_response(integral_from) == 0) and (self._impulse_response(integral_to) == 0) and (self._impulse_response((integral_from+integral_to)/2.) == 0):
                 # gives zero value if impulse response values are zero on the edges and middle of the bin
                 # (optimization for the FCC simulations)
                 impulse[i] = 0.
