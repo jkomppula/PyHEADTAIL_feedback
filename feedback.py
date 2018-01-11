@@ -81,6 +81,15 @@ class IdealSliceFeedback(object):
             bunch.yp[p_idx] -= self._gain_y * slice_set.mean_yp[s_idx]
 
 
+
+#class FeedbackOneTurnMapObject(object):
+#    def __init__self(self, gain, slicer, processors_x, processors_y,
+#                 pickup_axis='divergence', kicker_axis=None, mpi=False,
+#                 phase_x=None, phase_y=None, beta_x=1., beta_y=1., **kwargs):
+#        
+#        pass
+#    
+
 def get_local_slice_sets(bunch, slicer, required_variables):
     signal_slice_sets = [bunch.get_slices(slicer, statistics=required_variables)]
     bunch_slice_sets = signal_slice_sets
