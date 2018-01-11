@@ -98,7 +98,7 @@ def get_mpi_slice_sets(superbunch, mpi_gatherer):
     return signal_slice_sets, bunch_slice_sets, bunch_list
 
 
-def generate_parameters(signal_slice_sets, location=0., beta=1.,
+def generate_parameters(signal_slice_sets, inluded_slice_set_idxs, location=0., beta=1.,
                         circumference=None, h_bunch=None):
 
     bin_edges = None
@@ -111,7 +111,8 @@ def generate_parameters(signal_slice_sets, location=0., beta=1.,
         circumference=None
         h_bunch=None
         
-    for slice_set in signal_slice_sets:
+    for slice_set_idx in inluded_slice_set_idxs:
+            slice_set = signal_slice_sets[slice_set_idx]
             z_bins = np.copy(slice_set.z_bins)
             if circumference is not None:
                 z_bins -= slice_set.bucket_id*circumference/float(h_bunch)
@@ -127,13 +128,13 @@ def generate_parameters(signal_slice_sets, location=0., beta=1.,
     bin_edges = np.fliplr(bin_edges)
     segment_ref_points = segment_ref_points[::-1]
 
-    n_bins_per_segment = len(bin_edges)/len(signal_slice_sets)
+    n_bins_per_segment = len(bin_edges)/len(inluded_slice_set_idxs)
     segment_ref_points = np.array(segment_ref_points)
 
     parameters = Parameters()
     parameters['class'] = 0
     parameters['bin_edges'] = bin_edges
-    parameters['n_segments'] = len(signal_slice_sets)
+    parameters['n_segments'] = len(inluded_slice_set_idxs)
     parameters['n_bins_per_segment'] = n_bins_per_segment
     parameters['segment_ref_points'] = segment_ref_points
     parameters['location'] = location
@@ -144,6 +145,9 @@ def generate_parameters(signal_slice_sets, location=0., beta=1.,
 
 def valid_bunches(local_slice_sets, all_slice_sets, local_bunch_indexes,
                   processors):
+    circumference = all_slice_sets[0].circumference
+    h_bunch = all_slice_sets[0].h_bunch
+    
     time_scale = 0.
     
     for processor in processors:
@@ -156,8 +160,8 @@ def valid_bunches(local_slice_sets, all_slice_sets, local_bunch_indexes,
     set_counter = np.zeros(len(all_slice_sets), dtype=int)
     
     for i, slice_set in enumerate(local_slice_sets):
-        local_set_edges[i,0] = np.min(slice_set.z_bins)/c
-        local_set_edges[i,1] = np.max(slice_set.z_bins)/c
+        local_set_edges[i,0] = np.min(slice_set.z_bins-slice_set.bucket_id*circumference/float(h_bunch))/c
+        local_set_edges[i,1] = np.max(slice_set.z_bins-slice_set.bucket_id*circumference/float(h_bunch))/c
         
     
     local_min = np.min(local_set_edges)
@@ -165,14 +169,17 @@ def valid_bunches(local_slice_sets, all_slice_sets, local_bunch_indexes,
     
     counter = 0
     for i, slice_set in enumerate(all_slice_sets):
-        set_min = np.min(slice_set.z_bins)/c
-        set_max = np.max(slice_set.z_bins)/c
-        
+        set_min = np.min(slice_set.z_bins-slice_set.bucket_id*circumference/float(h_bunch))/c
+        set_max = np.max(slice_set.z_bins-slice_set.bucket_id*circumference/float(h_bunch))/c
+#        print 'set_min ' + str(set_min) + ' and (local_min - time_scale)' + str((local_min - time_scale))
         if (set_max > (local_min - time_scale)) and (set_min < (local_max + time_scale)):
             included_sets.append(i)
             set_is_included[i] = 1
             set_counter[i] = counter
             counter += 1
+        else:
+            pass
+#            print('skip!!!')
             
     local_sets = []
     for idx in local_bunch_indexes:
@@ -181,7 +188,8 @@ def valid_bunches(local_slice_sets, all_slice_sets, local_bunch_indexes,
         else:
             local_sets.append(set_counter[idx])
                 
-        
+    
+    print('MY VALID BUNCHES ARE: ' + str(included_sets))
     return included_sets, local_sets
         
         
@@ -197,6 +205,8 @@ def read_signal(signal, axis, plane,  all_slice_sets, included_sets, mpi,
     total_length = len(included_sets) * n_slices_per_bunch
 
     if (signal is None) or (len(signal) != total_length):
+        print 'len(signal): ' + str(len(signal))
+        print 'total_length: ' + str(total_length)
         raise ValueError('Wrong signal length')
 
     for idx, slice_set_idx in enumerate(included_sets):
@@ -208,12 +218,12 @@ def read_signal(signal, axis, plane,  all_slice_sets, included_sets, mpi,
         if plane == 'x':
             if axis == 'displacement':
                 x_values = np.copy(slice_set.mean_x)
-            elif axis == 'divergence' or betatron_phase is None:
+            if (axis == 'divergence') or (betatron_phase is not None):
                 xp_values = np.copy(slice_set.mean_xp)
         elif plane == 'y':
             if axis == 'displacement':
                 x_values = np.copy(slice_set.mean_y)
-            elif axis == 'divergence' or betatron_phase is None:
+            if (axis == 'divergence') or (betatron_phase is not None):
                 xp_values = np.copy(slice_set.mean_yp)
         else:
             raise ValueError('Unknown plane')
@@ -405,21 +415,22 @@ class OneboxFeedback(object):
                 self._local_bunch_indexes = [0]
 
         if (self._parameters_x is None) or (self._signal_x is None):
-            self._parameters_x = generate_parameters(signal_slice_sets)
+            self._included_set_idxs_x, self._local_set_idxs_x = valid_bunches(bunch_slice_sets, signal_slice_sets,
+                                                                              self._local_bunch_indexes, self._processors_x)
+            self._parameters_x = generate_parameters(signal_slice_sets,self._included_set_idxs_x)
             n_segments = self._parameters_x['n_segments']
             n_bins_per_segment = self._parameters_x['n_bins_per_segment']
             self._signal_x = np.zeros(n_segments * n_bins_per_segment)
-            self._included_set_idxs_x, self._local_set_idxs_x = valid_bunches(bunch_slice_sets, signal_slice_sets,
-                                                                              self._local_bunch_indexes, self._processors_x)
             
 
         if (self._parameters_y is None) or (self._signal_y is None):
-            self._parameters_y = generate_parameters(signal_slice_sets)
+            self._included_set_idxs_y, self._local_set_idxs_y = valid_bunches(bunch_slice_sets, signal_slice_sets,
+                                                                              self._local_bunch_indexes, self._processors_y)
+            self._parameters_y = generate_parameters(signal_slice_sets,self._included_set_idxs_y)
             n_segments = self._parameters_y['n_segments']
             n_bins_per_segment = self._parameters_y['n_bins_per_segment']
             self._signal_y = np.zeros(n_segments * n_bins_per_segment)
-            self._included_set_idxs_y, self._local_set_idxs_y = valid_bunches(bunch_slice_sets, signal_slice_sets,
-                                                                              self._local_bunch_indexes, self._processors_y)
+
 
         read_signal(self._signal_x, self._pickup_axis, 'x',  signal_slice_sets,
                     self._included_set_idxs_x, self._mpi, self._phase_x,
@@ -429,10 +440,13 @@ class OneboxFeedback(object):
                     self._included_set_idxs_y, self._mpi, self._phase_y,
                     self._beta_y)
         
+        processor_slice_sets = []
+        for idx in self._included_set_idxs_x:
+            processor_slice_sets.append(signal_slice_sets[idx])
         kick_parameters_x, kick_signal_x = process(self._parameters_x,
                                                    self._signal_x,
                                                    self._processors_x,
-                                                   slice_sets=signal_slice_sets)
+                                                   slice_sets=processor_slice_sets)
 
         if kick_signal_x is not None:
             kick_signal_x = kick_signal_x * self._gain_x
@@ -442,10 +456,13 @@ class OneboxFeedback(object):
             elif self._pickup_axis == 'divergence' and self._kicker_axis == 'displacement':
                 kick_signal_x = kick_signal_x * self._beta_x
 
+        processor_slice_sets = []
+        for idx in self._included_set_idxs_y:
+            processor_slice_sets.append(signal_slice_sets[idx])
         kick_parameters_y, kick_signal_y = process(self._parameters_y,
                                                    self._signal_y,
                                                    self._processors_y,
-                                                   slice_sets=signal_slice_sets)
+                                                   slice_sets=processor_slice_sets)
         if kick_signal_x is not None:
             kick_signal_y = kick_signal_y * self._gain_y
 
@@ -561,24 +578,26 @@ class PickUp(object):
 
 
         if (self._parameters_x is None) or (self._signal_x is None):
+            self._included_set_idxs_x, self._local_set_idxs_x = valid_bunches(bunch_slice_sets, signal_slice_sets,
+                                                                              self._local_bunch_indexes, self._processors_x)
             self._parameters_x = generate_parameters(signal_slice_sets,
+                                                     self._included_set_idxs_x,
                                                      self._location_x,
                                                      self._beta_x)
             n_segments = self._parameters_x['n_segments']
             n_bins_per_segment = self._parameters_x['n_bins_per_segment']
             self._signal_x = np.zeros(n_segments * n_bins_per_segment)
-            self._included_set_idxs_x, self._local_set_idxs_x = valid_bunches(bunch_slice_sets, signal_slice_sets,
-                                                                              self._local_bunch_indexes, self._processors_x)
 
         if (self._parameters_y is None) or (self._signal_y is None):
+            self._included_set_idxs_y, self._local_set_idxs_y = valid_bunches(bunch_slice_sets, signal_slice_sets,
+                                                                              self._local_bunch_indexes, self._processors_y)
             self._parameters_y = generate_parameters(signal_slice_sets,
+                                                     self._included_set_idxs_y,
                                                      self._location_y,
                                                      self._beta_y)
             n_segments = self._parameters_y['n_segments']
             n_bins_per_segment = self._parameters_y['n_bins_per_segment']
             self._signal_y = np.zeros(n_segments * n_bins_per_segment)
-            self._included_set_idxs_y, self._local_set_idxs_y = valid_bunches(bunch_slice_sets, signal_slice_sets,
-                                                                              self._local_bunch_indexes, self._processors_y)
 
         read_signal(self._signal_x, 'displacement', 'x',  signal_slice_sets,
                     self._included_set_idxs_x, self._mpi, self._phase_x,
@@ -589,16 +608,22 @@ class PickUp(object):
                     self._beta_y)
 
         if self._signal_x is not None:
+            processor_slice_sets = []
+            for idx in self._included_set_idxs_x:
+                processor_slice_sets.append(signal_slice_sets[idx])
             end_parameters_x, end_signal_x = process(self._parameters_x,
                                                        self._signal_x,
                                                        self._processors_x,
-                                                       slice_sets=signal_slice_sets)
+                                                       slice_sets=processor_slice_sets)
 
         if self._signal_y is not None:
+            processor_slice_sets = []
+            for idx in self._included_set_idxs_y:
+                processor_slice_sets.append(signal_slice_sets[idx])
             end_parameters_y, end_signal_y = process(self._parameters_y,
                                                        self._signal_y,
                                                        self._processors_y,
-                                                       slice_sets=signal_slice_sets)
+                                                       slice_sets=processor_slice_sets)
 
 
 class Kicker(object):
@@ -750,15 +775,21 @@ class Kicker(object):
         parameters_y, signal_y = self._combiner_y.process()
 
         if signal_x is not None:
+            processor_slice_sets = []
+            for idx in self._included_set_idxs_x:
+                processor_slice_sets.append(signal_slice_sets[idx])
             parameters_x, signal_x = process(parameters_x, signal_x,
                                              self._processors_x,
-                                             slice_sets=signal_slice_sets)
+                                             slice_sets=processor_slice_sets)
             signal_x = signal_x * self._gain_x
 
         if signal_y is not None:
+            processor_slice_sets = []
+            for idx in self._included_set_idxs_y:
+                processor_slice_sets.append(signal_slice_sets[idx])
             parameters_y, signal_y = process(parameters_y, signal_y,
                                              self._processors_y,
-                                             slice_sets=signal_slice_sets)
+                                             slice_sets=processor_slice_sets)
             signal_y = signal_y * self._gain_y
 
         kick_bunches(signal_x, 'divergence', 'x', bunch_slice_sets,
