@@ -579,7 +579,7 @@ class Gaussian(ConvolutionFilter):
 
         super(self.__class__, self).__init__( scaling, normalization=normalization, **kwargs)
         self.label = 'Gaussian lowpass filter'
-        self.time_scale = max_impulse_length/scaling
+        self.time_scale = 1*max_impulse_length/scaling
 
 
 class Sinc(ConvolutionFilter):

@@ -294,7 +294,6 @@ class GenericOneTurnMapObject(object):
                 local_sets.append(set_counter[idx])
                     
         
-        print('MY VALID BUNCHES ARE: ' + str(included_sets))
         return included_sets, local_sets
     
     
@@ -316,12 +315,12 @@ class GenericOneTurnMapObject(object):
     
             
             if plane == 'x':
-                if self._pickup_axis == 'displacement':
+                if self._pickup_axis == 'displacement' or (betatron_phase is not None):
                     x_values = np.copy(slice_set.mean_x)
                 if (self._pickup_axis == 'divergence') or (betatron_phase is not None):
                     xp_values = np.copy(slice_set.mean_xp)
             elif plane == 'y':
-                if self._pickup_axis == 'displacement':
+                if self._pickup_axis == 'displacement' or (betatron_phase is not None):
                     x_values = np.copy(slice_set.mean_y)
                 if (self._pickup_axis == 'divergence') or (betatron_phase is not None):
                     xp_values = np.copy(slice_set.mean_yp)
@@ -356,7 +355,6 @@ class GenericOneTurnMapObject(object):
         
             for slice_set, bunch_idx, bunch in zip(local_slice_sets,
                                                    local_sets, bunch_list):
-        
                 idx_from = bunch_idx * n_slices_per_bunch
                 idx_to = (bunch_idx + 1) * n_slices_per_bunch
         
