@@ -1,5 +1,5 @@
 temp/
-cython_functions.html
+cython_hacks.html
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -9,6 +9,7 @@ __pycache__/
 # C extensions
 *.so
 *.c
+.spyderworkspace
 
 # Distribution / packaging
 .Python
@@ -81,6 +82,7 @@ celerybeat-schedule
 
 # dotenv
 .env
+cython_functions.html
 
 # virtualenv
 venv/
@@ -122,3 +124,8 @@ settings.py
 ;;directories to ignore
 .idea/
 .spyproject/
+<<<<<<< HEAD
+=======
+.spyderproject
+.spyderworkspace
+>>>>>>> v0.2
