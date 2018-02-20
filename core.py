@@ -1,7 +1,7 @@
 import numpy as np
 import types
 import copy
-version = '0.2_b3.5'
+version = '0.2'
 
 """
 @author Jani Komppula
