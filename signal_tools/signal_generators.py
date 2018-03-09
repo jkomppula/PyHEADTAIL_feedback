@@ -181,6 +181,14 @@ class SignalObject(object):
     def mean_y(self):
         return np.mean(self.y)
 
+    @property
+    def beta_x(self):
+        return self._beta_x
+
+    @property
+    def beta_y(self):
+        return self._beta_y
+
 
 #    def __getattr__(self,attr):
 #        if (attr in ['x_amp','y_amp','xp_amp','yp_amp']):
