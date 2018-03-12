@@ -452,12 +452,19 @@ class CircularWake(object):
         edges = beam.bin_edges*c
         turn_length = (edges[-1,1] - edges[0,0])
         normalized_z = (beam.z - beam.z[0])
+        
+        circumference = beam.circumference
+        if beam.Q_x is None:
+            raise ValueError('Q_x must be given to the beam object')
+        angle = 2.*np.pi*(beam.Q_x%1.)*normalized_z/circumference
+        self.sin = -np.sin(angle)
+        self.cos =np.cos(angle)
 
         self._beam_map = beam.charge_map
 
         for i in xrange(self._n_turns):
 
-            self._previous_kicks.append(np.zeros(len(normalized_z)))
+            self._previous_kicks.append(np.zeros(len(normalized_z),dtype=complex))
             z_values = normalized_z + float(i)*turn_length
 
             # wake function values are interpolated from the input data
@@ -476,7 +483,7 @@ class CircularWake(object):
                     temp_impulse[0] = value[0]
 
 
-            self._kick_impulses.append(impulse_modificator(temp_impulse))
+            self._kick_impulses.append((impulse_modificator(self.cos*temp_impulse), impulse_modificator(self.sin*temp_impulse)))
 
     def operate(self, beam, **kwargs):
         if not hasattr(self, '_kick_impulses'):
@@ -488,7 +495,7 @@ class CircularWake(object):
 
         # kicks for all turns are calculated
         for i, impulse_response in enumerate(self._kick_impulses):
-            kick = self._convolve(source,impulse_response)
+            kick = self._convolve(source,impulse_response[0])+1j*self._convolve(source,impulse_response[1])
 
             # the kicks are acculumated by adding data to values from previously tracked turns.
             # The index i+1 is used bacause, the last kick appending the list pops out
@@ -499,238 +506,136 @@ class CircularWake(object):
                 self._previous_kicks.append(kick)
 
         # kick is applied
-        beam.xp[self._beam_map] = beam.xp[self._beam_map] + self._wake_factor(beam)*self._previous_kicks[0][self._beam_map]
+        beam.xp[self._beam_map] = beam.xp[self._beam_map] + self._wake_factor(beam)*np.real(self._previous_kicks[0][self._beam_map])
+        beam.x[self._beam_map] = beam.x[self._beam_map] + self._wake_factor(beam)*np.imag(self._previous_kicks[0][self._beam_map])*beam.beta_x
 
-
-class CircularWakesFromFile(CircularWake):
-    """ Wake from a wake file
+class CircularComplexWake(object):
+    """ Version which demonstrates complex fft convolution the circular convolution wakes
+     
     """
-    def __init__(self, filename, time_column, wake_column, n_turns_wake, **kwargs):
+    def __init__(self,wake_function, n_turns_wake, method='fft', first_bin=None, **kwargs):
         """
         Parameters
         ----------
-        filename : float
-            Wake filename
-        time_column : int
-            An index to the column including time stamps for the wake data (in the units of [ns])
-        wake_column : float
-            An index to the column including the wake data (in the units of [V/pC/mm])
-        n_turns_wake: int
+        wake_function : function
+            A function which takes z [m] values of the bins as a input parameter and returns
+            the wake functions values in the units of [V/C/m]
+        n_turns_wake : int
             A length of the wake function in the units of accelerator turns
+        method : str
+            Convolution method (affects only performance):
+            'numpy': circular convultion calculated by using the linear np.convolution
+            'cython': pure circular convolution programmed in Cython
+            'fft': pure circular convolution by using np.ifft(np.fft(source)*np.fft(wake))
+            'fftconvolve': circular convultion calculated by using the linear SciPy fftconvolve
         """
-        wakedata = np.loadtxt(filename)
-        data_t = wakedata[:, time_column]
-        data_x = wakedata[:, wake_column]
-        convert_to_V_per_Cm = -1e15
 
-        def wake_function(z):
-            t = z/c
-            return np.interp(t, data_t*1e-9, data_x*convert_to_V_per_Cm)
+        self._wake_function = wake_function
+        self._n_turns = n_turns_wake
 
-        super(self.__class__, self).__init__(wake_function, n_turns_wake, **kwargs)
+        self._z_values = None
 
+        self._previous_kicks = deque(maxlen=n_turns_wake)
 
-class CircularResistiveWallWake(CircularWake):
-    """ Circular resistive wall wake from an analytical formula.
-    """
-    def __init__(self, b, sigma, L, n_turns_wake, **kwargs):
-        """
-        Parameters
-        ----------
-        b : float
-            A radius of the pipe [m]
-        sigma : float
-            An electrical conductivity of the wall [Ohm^-1 m^-1]
-        L : float
-            A length of the pipe [m]
-        n_turns_wake: int
-            A length of the wake function in the units of accelerator turns
-        """
-        def wake_function(z):
-            if z[0] == 0.:
-                z[0] = 1e-15
-            Z_0 = 119.9169832 * np.pi
-            return -2./(np.pi*b**3)*np.sqrt((4.*np.pi*c)/(Z_0*c*sigma))*L/np.sqrt(z)*(Z_0*c)/(4.*np.pi)
-
-        super(self.__class__, self).__init__(wake_function, n_turns_wake, **kwargs)
-
-class CircularResonatorWake(CircularWake):
-    """ Circular resistive wall wake from an analytical formula.
-    """
-    def __init__(self, R, f_r, Q, n_turns_wake, **kwargs):
-        """
-        Parameters
-        ----------
-        R : float
-            Shunt resistance
-        f_r : float
-            frequency
-        Q : float
-            Q factor
-        n_turns_wake: int
-            A length of the wake function in the units of accelerator turns
-        """
-        def wake_function(z):
-            omega_r = 2.*np.pi*f_r
-            omega_r_bar = omega_r*np.sqrt(1.-1./(4.*Q**2.))
-            alpha = omega_r/(2.*Q)
-            t = z/c
-            
-            return -1.*(omega_r**2*R)/(Q*omega_r_bar)*np.exp(-1.*alpha*t)*np.sin(omega_r_bar*t)
-
-        super(self.__class__, self).__init__(wake_function, n_turns_wake, **kwargs)
-
-#class RotatingWake(object):
-#    """ A tracer which applies dipole wake kicks to the beam.
-#    """
-#    def __init__(self,wake_function, n_turns_wake, method='numpy', first_bin=None, **kwargs):
-#        """
-#        Parameters
-#        ----------
-#        wake_function : function
-#            A function which takes z [m] values of the bins as a input parameter and returns
-#            the wake functions values in the units of [V/C/m]
-#        n_turns_wake : int
-#            A length of the wake function in the units of accelerator turns
-#        method : str
-#            Convolution method (affects only performance):
-#            'numpy': circular convultion calculated by using the linear np.convolution
-#            'cython': pure circular convolution programmed in Cython
-#            'fft': pure circular convolution by using np.ifft(np.fft(source)*np.fft(wake))
-#            'fftconvolve': circular convultion calculated by using the linear SciPy fftconvolve
-#        """
-#
-#        self._wake_function = wake_function
-#
-#        self._n_turns = n_turns_wake
-#
-#        self._z_values = None
-#
-#        self._previous_kicks = deque(maxlen=n_turns_wake)
-#
-#        self._method = method
-#        self._first_bin = first_bin
-#        
-#        self.rotation_done = True
-#        self.value_buffer = None
-#
-#    @property
-#    def done(self):
-#        return False
-#
-#    def _init(self, beam):
-#        self._kick_impulses = []
-#        turn_length = beam.circumference
-#        normalized_z = (beam.z - beam.z[0])
-##        print('normalized_z: ' + str(normalized_z))
-#
-#        self._beam_map = beam.charge_map
-#        wake_z = np.array([])
-#
-#
-#
-#        for i in xrange(self._n_turns):
-#            wake_z = np.concatenate((wake_z, normalized_z + float(i)*turn_length))
-#
-#        self.wake_values = self._wake_function(wake_z) 
-##        print('wake_z: ' + str(wake_z))           
-#
-#        if self._first_bin is None:
-#            self.wake_values[0] = 0.
-#        else:
-#            value = self._wake_function(np.array([self._first_bin*c]))
-#            self.wake_values[0] = value[0]
-#
-#    def _wake_factor(self, beam):
-#        """Universal scaling factor for the strength of a wake field
-#        kick from PyHEADTAIL.
-#        """
-#        wake_factor = (-(beam.charge)**2 / (beam.mass * beam.gamma * (beam.beta * c)**2))
-#        return wake_factor
-#
-#    
-#    def _rotate(self, beam, x, xp):
-#        accQ_x = 62.31
-#        angle = 2.*np.pi*accQ_x
-#        s = np.sin(angle)
-#        c = np.cos(angle)
-#        new_x = c * x + beam.beta_x * s * xp
-#        new_xp = (-1. / beam.beta_x) * s * x + c * xp
-#
-#        return new_x, new_xp
-#
-#    def operate(self, beam, **kwargs):
-#        if not hasattr(self, '_kick_impulses'):
-#            self._init(beam)
-#        
-#        if self.value_buffer is None:
-#                self.value_buffer = np.zeros(len(self.wake_values))
-##        print 'I am doing my job!!!!'        
-#        for i in range(len(beam.x)):
-#            
-#            new_x, new_xp = self._rotate(beam, beam.x[i],beam.xp[i])
-#            
-#            beam.x[i] = new_x
-#            beam.xp[i] = new_xp
-#            
-#            np.copyto(self.value_buffer[:-1], self.value_buffer[1:])
-#            self.value_buffer[-1] = self._wake_factor(beam)*(beam.intensity/float(len(beam.x)))*beam.x[i]
-#            beam.xp[i] += np.sum(self.value_buffer*self.wake_values[::-1])
-#
-#
-#class RotatingWakesFromFile(RotatingWake):
-#    """ Wake from a wake file
-#    """
-#    def __init__(self, filename, time_column, wake_column, n_turns_wake, **kwargs):
-#        """
-#        Parameters
-#        ----------
-#        filename : float
-#            Wake filename
-#        time_column : int
-#            An index to the column including time stamps for the wake data (in the units of [ns])
-#        wake_column : float
-#            An index to the column including the wake data (in the units of [V/pC/mm])
-#        n_turns_wake: int
-#            A length of the wake function in the units of accelerator turns
-#        """
-#        wakedata = np.loadtxt(filename)
-#        data_t = wakedata[:, time_column]
-#        data_x = wakedata[:, wake_column]
-#        convert_to_V_per_Cm = -1e15
-#
-#        def wake_function(z):
-#            t = z/c
-#            return np.interp(t, data_t*1e-9, data_x*convert_to_V_per_Cm)
-#
-#        super(self.__class__, self).__init__(wake_function, n_turns_wake, **kwargs)
-#
-#
-#class RotatingResistiveWallWake(RotatingWake):
-#    """ Circular resistive wall wake from an analytical formula.
-#    """
-#    def __init__(self, b, sigma, L, n_turns_wake, **kwargs):
-#        """
-#        Parameters
-#        ----------
-#        b : float
-#            A radius of the pipe [m]
-#        sigma : float
-#            An electrical conductivity of the wall [Ohm^-1 m^-1]
-#        L : float
-#            A length of the pipe [m]
-#        n_turns_wake: int
-#            A length of the wake function in the units of accelerator turns
-#        """
-#        def wake_function(z):
-#            if z[0] == 0.:
-#                z[0] = 1e-15
-#            Z_0 = 119.9169832 * np.pi
-#            return -2./(np.pi*b**3)*np.sqrt((4.*np.pi*c)/(Z_0*c*sigma))*L/np.sqrt(z)*(Z_0*c)/(4.*np.pi)
-#
-#        super(self.__class__, self).__init__(wake_function, n_turns_wake, **kwargs)
+        self._method = method
+        self._first_bin = first_bin
         
+        self.rotation_done = False
+
+    @property
+    def done(self):
+        return False
+
+    def _wake_factor(self, beam):
+        """Universal scaling factor for the strength of a wake field
+        kick from PyHEADTAIL.
+        """
+        wake_factor = (-(beam.charge)**2 / (beam.mass * beam.gamma * (beam.beta * c)**2))
+        return wake_factor
+
+    def _convolve_fft(self, source, impulse_response):
+            raw_kick = np.fft.ifft(np.fft.fft(source) * impulse_response)
+            return raw_kick
+
+    def _init(self, beam):
+        if self._method == 'fft':
+            self._convolve = self._convolve_fft
+            self._prepare_source = lambda source: source
+            impulse_modificator = lambda impulse: np.fft.fft(impulse)
+        else:
+            raise ValueError('Unknown calculation method')
+
+        self._kick_impulses = []
+        edges = beam.bin_edges*c
+        turn_length = (edges[-1,1] - edges[0,0])
+        normalized_z = (beam.z - beam.z[0])
         
+        circumference = beam.circumference
+        if beam.Q_x is None:
+            raise ValueError('Q_x must be given to the beam object')
+        angle = 2.*np.pi*(beam.Q_x%1.)*normalized_z/circumference
+        #print angle/(2.*np.pi)
+        self.sin = -np.sin(angle)
+        self.cos =np.cos(angle)
+        
+#        self.sin = np.cos(angle)
+#        self.cos = -np.sin(angle)
+        
+#        self.sin = self.sin[::-1]
+#        self.cos = self.cos[::-1]
+
+        self._beam_map = beam.charge_map
+
+        for i in xrange(self._n_turns):
+
+            self._previous_kicks.append(np.zeros(len(normalized_z),dtype=complex))
+            z_values = normalized_z + float(i)*turn_length
+
+            # wake function values are interpolated from the input data
+            temp_impulse = self._wake_function(z_values)
+#            temp_impulse = np.interp(z_values, self._t, self._x)
+
+            # The bunch does not kick itself, because it is assumed that the beam is below the
+            # TMCI threshold. It would also difficult to determine the value for the first bin,
+            # because the wake function is very time sensitive at the beging, and kick might be
+            # non-constant over the first bunch
+            if i == 0:
+                if self._first_bin is None:
+                    temp_impulse[0] = 0.
+                else:
+                    value = self._wake_function(np.array([self._first_bin*c]))
+                    temp_impulse[0] = value[0]
+
+
+            self._kick_impulses.append(impulse_modificator(self.cos*temp_impulse+1j*self.sin*temp_impulse))
+
+    def operate(self, beam, **kwargs):
+        if not hasattr(self, '_kick_impulses'):
+            self._init(beam)
+
+        # wake source, which is charge weighted displacement. The raw data is prepared (lengthened)
+        # for the convolution method in the prepare function
+        source = beam.x*beam.intensity_distribution + 1j*np.zeros(len(beam.x))
+
+        # kicks for all turns are calculated
+        for i, impulse_respons in enumerate(self._kick_impulses):
+            kick = self._convolve(source,impulse_respons)
+
+            # the kicks are acculumated by adding data to values from previously tracked turns.
+            # The index i+1 is used bacause, the last kick appending the list pops out
+            # the first value
+            if i < (self._n_turns-1):
+                self._previous_kicks[i+1] += kick
+            else:
+                self._previous_kicks.append(kick)
+
+        # kick is applied
+        kick = self._previous_kicks[0]
+        
+        beam.xp[self._beam_map] = beam.xp[self._beam_map] + self._wake_factor(beam)*kick.real[self._beam_map]
+        beam.x[self._beam_map] = beam.x[self._beam_map] + self._wake_factor(beam)*kick.imag[self._beam_map]*beam.beta_x
+
+
 class LinearWake(object):
     """ A tracer which applies dipole wake kicks to the beam.
     """
@@ -823,13 +728,12 @@ class LinearWake(object):
         self.wake_buffer[:-1] = self.wake_buffer[:-1] + signal.fftconvolve(self.wake_values,self._wake_factor(beam)*beam.x*beam.intensity_distribution,'full')
         temp_correction = self.wake_buffer[:len(beam.x)]
         beam.xp[self._beam_map] = beam.xp[self._beam_map] + temp_correction[self._beam_map]
+        
+        
 
-
-class LinearWakesFromFile(LinearWake):
+def WakeSourceFromFile(filename, time_column, wake_column):
     """ Wake from a wake file
-    """
-    def __init__(self, filename, time_column, wake_column, n_turns_wake, **kwargs):
-        """
+    
         Parameters
         ----------
         filename : float
@@ -840,24 +744,22 @@ class LinearWakesFromFile(LinearWake):
             An index to the column including the wake data (in the units of [V/pC/mm])
         n_turns_wake: int
             A length of the wake function in the units of accelerator turns
-        """
-        wakedata = np.loadtxt(filename)
-        data_t = wakedata[:, time_column]
-        data_x = wakedata[:, wake_column]
-        convert_to_V_per_Cm = -1e15
-
-        def wake_function(z):
-            t = z/c
-            return np.interp(t, data_t*1e-9, data_x*convert_to_V_per_Cm)
-
-        super(self.__class__, self).__init__(wake_function, n_turns_wake, **kwargs)
-
-
-class LinearResistiveWallWake(LinearWake):
-    """ Circular resistive wall wake from an analytical formula.
     """
-    def __init__(self, b, sigma, L, n_turns_wake, **kwargs):
-        """
+    wakedata = np.loadtxt(filename)
+    data_t = wakedata[:, time_column]
+    data_x = wakedata[:, wake_column]
+    convert_to_V_per_Cm = -1e15
+
+    def wake_function(z):
+        t = z/c
+        return np.interp(t, data_t*1e-9, data_x*convert_to_V_per_Cm)
+
+    return wake_function
+
+
+def ResistiveWallWakeSource(b, sigma, L):
+    """ Circular resistive wall wake from an analytical formula.
+
         Parameters
         ----------
         b : float
@@ -868,21 +770,18 @@ class LinearResistiveWallWake(LinearWake):
             A length of the pipe [m]
         n_turns_wake: int
             A length of the wake function in the units of accelerator turns
-        """
-        def wake_function(z):
-            if z[0] == 0.:
-                z[0] = 1e-15
-            Z_0 = 119.9169832 * np.pi
-            return -2./(np.pi*b**3)*np.sqrt((4.*np.pi*c)/(Z_0*c*sigma))*L/np.sqrt(z)*(Z_0*c)/(4.*np.pi)
-
-        super(self.__class__, self).__init__(wake_function, n_turns_wake, **kwargs)
-        
-        
-class LinearResonatorWake(CircularWake):
-    """ Circular resistive wall wake from an analytical formula.
     """
-    def __init__(self, R, f_r, Q, n_turns_wake, **kwargs):
-        """
+    def wake_function(z):
+        if z[0] == 0.:
+            z[0] = 1e-15
+        Z_0 = 119.9169832 * np.pi
+        return -2./(np.pi*b**3)*np.sqrt((4.*np.pi*c)/(Z_0*c*sigma))*L/np.sqrt(z)*(Z_0*c)/(4.*np.pi)
+
+    return wake_function
+
+def ResonatorWakeSource(R, f_r, Q):
+    """ Circular resistive wall wake from an analytical formula.
+
         Parameters
         ----------
         R : float
@@ -893,13 +792,13 @@ class LinearResonatorWake(CircularWake):
             Q factor
         n_turns_wake: int
             A length of the wake function in the units of accelerator turns
-        """
-        def wake_function(z):
-            omega_r = 2.*np.pi*f_r
-            omega_r_bar = omega_r*np.sqrt(1.-1./(4.*Q**2.))
-            alpha = omega_r/(2.*Q)
-            t = z/c
-            
-            return -1.*(omega_r**2*R)/(Q*omega_r_bar)*np.exp(-1.*alpha*t)*np.sin(omega_r_bar*t)
+    """
+    def wake_function(z):
+        omega_r = 2.*np.pi*f_r
+        omega_r_bar = omega_r*np.sqrt(1.-1./(4.*Q**2.))
+        alpha = omega_r/(2.*Q)
+        t = z/c
+        
+        return -1.*(omega_r**2*R)/(Q*omega_r_bar)*np.exp(-1.*alpha*t)*np.sin(omega_r_bar*t)
 
-        super(self.__class__, self).__init__(wake_function, n_turns_wake, **kwargs)
+    return wake_function
