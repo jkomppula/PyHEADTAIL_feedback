@@ -35,9 +35,7 @@ def track_beam(beam, trackers, n_turns, Q_x, Q_y=None):
         angle_y = None
 
     done = False
-
     for i in xrange(n_turns):
-
         
         rotation_done = False
         # passes the beam through the trackers
@@ -47,6 +45,7 @@ def track_beam(beam, trackers, n_turns, Q_x, Q_y=None):
             rotation_done += tracker.rotation_done
             
         if rotation_done == 0:
+#            print 'I am rotating!!!'
             # Rotates beam in betatron phase
             beam.rotate(angle_x, 'x')
             if angle_y is not None:
@@ -278,8 +277,14 @@ class AvgValueTracer(AbstractTracer):
             self.data_tables[i][self._n_turns_stored, 1] = getattr(beam, var)
 
     def save_to_file(self, file_prefix):
-        for var, data in zip(self.variables, self.data_tables):
-            data.tofile(file_prefix + var + '.dat')
+        output_data = np.zeros((self._n_turns_tracked, len(self.variables)+1))
+        
+        for i, data in enumerate(self.data_tables):
+            if i == 0:
+                np.copyto(output_data[:,0],data[:self._n_turns_tracked,0])
+            np.copyto(output_data[:,i+1],data[:self._n_turns_tracked,1])
+            
+        output_data.tofile(file_prefix + '_avg_data.dat')
 
 
 class Tracer(AbstractTracer):
@@ -317,9 +322,14 @@ class Tracer(AbstractTracer):
                 np.copyto(self.data_tables[i][self._n_turns_stored, 1:], getattr(beam, var))
 
     def save_to_file(self, file_prefix):
-        self.z.tofile(file_prefix + '_z.dat')
-        for var, data in zip(self.variables, self.data_tables):
-            data.tofile(file_prefix + '_' + var + '.dat')
+        output_data = np.zeros((self._n_turns*len(self.variables)+1, len(self.z)+1))
+        np.copyto(output_data[0,1:],self.z)
+        
+        for i in range(self._n_turns):
+            for j in range(len(self.variables)):
+                np.copyto(output_data[i*len(self.variables)+j+1,:],self.data_tables[j][i,:])
+            
+        output_data.tofile(file_prefix + '_turn_by_turn.dat')
 
 
 class Damper(object):
@@ -363,6 +373,45 @@ class Damper(object):
     @property
     def done(self):
         return False
+
+class DCSuppressor(object):
+    def __init__(self, n_turns=1000, source='bunch'):
+        self._n_turns = float(n_turns)
+        self._source = source
+        
+        self._dc_correction_x = None
+        self._dc_correction_y = None
+        
+        self.rotation_done = False
+        
+        self._beam_map = None
+
+    @property
+    def done(self):
+        return False
+        
+    def operate(self, beam, **kwargs):
+        if self._dc_correction_x is None:
+            self._beam_map = beam.charge_map
+            self._dc_correction_x = np.zeros(len(beam.x))
+            self._dc_correction_y = np.zeros(len(beam.y))
+            self._temp_ones = np.ones(len(beam.x))
+        else:
+            self._dc_correction_x = (1.-1./self._n_turns)*self._dc_correction_x
+            self._dc_correction_y = (1.-1./self._n_turns)*self._dc_correction_y
+        
+        if self._source == 'bunch':
+            self._dc_correction_x = self._dc_correction_x + 1./self._n_turns * beam.x
+            self._dc_correction_y = self._dc_correction_y + 1./self._n_turns * beam.y
+        elif self._source == 'mean':
+            self._dc_correction_x = self._dc_correction_x + 1./self._n_turns * self._temp_ones * np.mean(beam.x[self._beam_map])
+            self._dc_correction_y = self._dc_correction_y + 1./self._n_turns * self._temp_ones * np.mean(beam.y[self._beam_map])
+        else:
+            raise ValueError('Unknown correction source!')
+        
+        beam.x[self._beam_map] = beam.x[self._beam_map] - self._dc_correction_x[self._beam_map]
+        beam.y[self._beam_map] = beam.y[self._beam_map] - self._dc_correction_y[self._beam_map]
+
 
 class CircularWake(object):
     """ A tracer which applies dipole wake kicks to the beam.
@@ -575,6 +624,7 @@ class CircularComplexWake(object):
             raise ValueError('Q_x must be given to the beam object')
         angle = 2.*np.pi*(beam.Q_x%1.)*normalized_z/circumference
         #print angle/(2.*np.pi)
+        
         self.sin = -np.sin(angle)
         self.cos =np.cos(angle)
         
@@ -607,7 +657,7 @@ class CircularComplexWake(object):
                     temp_impulse[0] = value[0]
 
 
-            self._kick_impulses.append(impulse_modificator(self.cos*temp_impulse+1j*self.sin*temp_impulse))
+            self._kick_impulses.append(impulse_modificator(np.exp(-1j*angle)*temp_impulse))
 
     def operate(self, beam, **kwargs):
         if not hasattr(self, '_kick_impulses'):
