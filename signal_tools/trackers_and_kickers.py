@@ -59,6 +59,29 @@ def track_beam(beam, trackers, n_turns, Q_x, Q_y=None):
             if i < (n_turns - 2):
                 break
 
+class BeamRotator(object):
+
+    def __init__(self, fraction , Q_x, Q_y=None):
+        
+        self.Q_x = Q_x
+        self.Q_y = Q_y
+        
+        self.angle_x = Q_x * 2. * np.pi / float(fraction)
+        if Q_y is not None:
+            self.angle_y = Q_y * 2. * np.pi / float(fraction)
+        else:
+            self.angle_y = None
+    
+        self.rotation_done = True
+        
+    @property
+    def done(self):
+        return False
+    
+    def operate(self, beam, **kwargs):
+        beam.rotate(self.angle_x, 'x')
+        if self.angle_y is not None:
+            beam.rotate(self.angle_y, 'y')
 
 class Kicker(object):
     """ A tracker, which kicks beam after a given number of turns.
@@ -369,6 +392,45 @@ class Damper(object):
             beam.correction(kick_signal_x, var=self.kick_variable)
         else:
             print 'No signal!!!'
+
+    @property
+    def done(self):
+        return False
+
+class IdealDamper(object):
+    """ A tracer which damps beam oscillations as a trasverse damper.
+    """
+    def __init__(self, gain, kick_variable = 'x'):
+        """
+        Parameters
+        ----------
+        gain : float
+            Pass band gain of the damper, i.e. 2/damping_time
+        processors : list
+            A list of signal processors
+        pickup_variable : str
+            A beam property, which is readed as a pickup signal
+        kick_variable : str
+            A beam property, which is kicked
+        """
+        self.gain = gain
+        self.kick_variable = kick_variable
+        
+        self.rotation_done = False
+
+    def operate(self, beam, **kwargs):
+
+        if self.kick_variable == 'x':
+            beam.x = (1.-self.gain)*beam.x
+        elif self.kick_variable == 'xp':
+            beam.xp = (1.-self.gain)*beam.xp
+        elif self.kick_variable == 'y':
+            beam.y = (1.-self.gain)*beam.y
+        elif self.kick_variable == 'yp':
+            beam.yp = (1.-self.gain)*beam.yp
+        else:
+            raise ValueError('Unknown plane')
+            
 
     @property
     def done(self):
@@ -689,7 +751,8 @@ class CircularComplexWake(object):
 class LinearWake(object):
     """ A tracer which applies dipole wake kicks to the beam.
     """
-    def __init__(self,wake_function, n_turns_wake, method='numpy', first_bin=None, **kwargs):
+    def __init__(self,wake_function, n_turns_wake, method='numpy', first_bin=None, 
+                 wake_fraction=1., **kwargs):
         """
         Parameters
         ----------
@@ -704,6 +767,10 @@ class LinearWake(object):
             'cython': pure circular convolution programmed in Cython
             'fft': pure circular convolution by using np.ifft(np.fft(source)*np.fft(wake))
             'fftconvolve': circular convultion calculated by using the linear SciPy fftconvolve
+        wake_fraction : float
+            A fraction of a single kick impedance model applied in this object.
+            This option is for fast growth rates, when wakes are applied in multiple
+            locations per turn.
         """
 
         self._wake_function = wake_function
@@ -713,6 +780,8 @@ class LinearWake(object):
         self._z_values = None
 
         self._previous_kicks = deque(maxlen=n_turns_wake)
+        
+        self._wake_fraction = float(wake_fraction)
 
         self._method = method
         self._first_bin = first_bin
@@ -738,7 +807,7 @@ class LinearWake(object):
         for i in xrange(self._n_turns):
             wake_z = np.concatenate((wake_z, normalized_z + float(i)*turn_length))
 
-        self.wake_values = self._wake_function(wake_z) 
+        self.wake_values = self._wake_function(wake_z)/self._wake_fraction
 #        print('wake_z: ' + str(wake_z))           
 
         if self._first_bin is None:
