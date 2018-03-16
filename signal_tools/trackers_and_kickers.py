@@ -83,6 +83,21 @@ class BeamRotator(object):
         if self.angle_y is not None:
             beam.rotate(self.angle_y, 'y')
 
+class Noise(object):
+
+    def __init__(self, amplitude):
+        
+        self.amplitude = amplitude
+    
+        self.rotation_done = False
+        
+    @property
+    def done(self):
+        return False
+    
+    def operate(self, beam, **kwargs):
+        beam.x = beam.x + np.random.randn(len(beam.x))*self.amplitude
+
 class Kicker(object):
     """ A tracker, which kicks beam after a given number of turns.
     """
