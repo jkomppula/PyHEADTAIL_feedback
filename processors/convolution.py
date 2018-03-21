@@ -6,7 +6,7 @@ from ..core import default_macros, Parameters
 from scipy.constants import pi
 import scipy.integrate as integrate
 from scipy.interpolate import UnivariateSpline
-import abstract_filter_responses
+from . import abstract_filter_responses
 
 """Signal processors based on convolution operation.
 

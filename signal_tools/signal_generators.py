@@ -226,7 +226,7 @@ class SignalObject(object):
             elif var == 'yp':
                 return -np.sin(phase)*self.y/self.beta_y + np.cos(phase)*self.yp
             else:
-                print 'Unknown variable'
+                print('Unknown variable')
 
 
     def signal(self, var = 'x', phase_shift = None):
@@ -556,8 +556,8 @@ class SimpleCircularPointBeam(CircularPointBeam):
         filling_scheme = np.arange(0, n_bunches)
         h_RF = n_bunches
         circumference = h_RF * bunch_spacing*c
-        print circumference
-        print kwargs
+        print(circumference)
+        print(kwargs)
         super(SimpleCircularPointBeam, self).__init__(filling_scheme, circumference, h_RF,
              intensity, circular_overlapping, **kwargs)
 

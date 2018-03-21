@@ -2,7 +2,7 @@ import numpy as np
 from ..core import process
 from collections import deque
 from scipy.constants import c
-from cython_hacks import cython_circular_convolution
+from .cython_hacks import cython_circular_convolution
 from scipy import signal
 from abc import ABCMeta, abstractmethod
 
@@ -35,7 +35,7 @@ def track_beam(beam, trackers, n_turns, Q_x, Q_y=None):
         angle_y = None
 
     done = False
-    for i in xrange(n_turns):
+    for i in range(n_turns):
         
         rotation_done = False
         # passes the beam through the trackers
@@ -350,7 +350,7 @@ class Tracer(AbstractTracer):
     def _init_data_tables(self, beam):
         self.data_tables = []
         self.z = np.copy(beam.z)
-        for i in xrange(len(self.variables)):
+        for i in range(len(self.variables)):
             self.data_tables.append(np.zeros((self._n_turns, len(beam.z)+1)))
             setattr(self, self.variables[i], np.array(self.data_tables[-1], copy=False))
 
@@ -406,7 +406,7 @@ class Damper(object):
             kick_signal_x = kick_signal_x*self.gain
             beam.correction(kick_signal_x, var=self.kick_variable)
         else:
-            print 'No signal!!!'
+            print('No signal!!!')
 
     @property
     def done(self):
