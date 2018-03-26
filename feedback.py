@@ -1,6 +1,6 @@
 import numpy as np
 import collections
-from PyHEADTAIL.mpi import mpi_data
+from mpi import mpi_data
 from core import get_processor_variables, process, Parameters
 from core import z_bins_to_bin_edges, append_bin_edges
 from processors.register import VectorSumCombiner, CosineSumCombiner
