@@ -204,8 +204,8 @@ class GenericOneTurnMapObject(object):
             local_slice_sets = all_slice_sets
             bunch_list = [superbunch]
             self._local_sets = [0]
-            signal_slice_sets_x = all_slice_sets
-            signal_slice_sets_y = all_slice_sets
+            signal_slice_sets_x = [all_slice_sets]
+            signal_slice_sets_y = [all_slice_sets]
         
         return bunch_list, local_slice_sets, signal_slice_sets_x, signal_slice_sets_y
             
