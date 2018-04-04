@@ -173,37 +173,39 @@ class GenericOneTurnMapObject(object):
             local_slice_sets = self._mpi_gatherer.slice_set_list
             bunch_list = self._mpi_gatherer.bunch_list
             self._local_sets = self._mpi_gatherer.local_bunch_indexes
+            
+            if self._signal_sets_x is None:
+                indexes = self._parse_relevant_bunches(local_slice_sets,
+                                                       all_slice_sets,
+                                                       self._processors_x)
+                self._signal_sets_x = indexes[0]
+                self._loc_signal_sets_x = indexes[1]
+                
+                if self._processors_y is not None:
+                    indexes = self._parse_relevant_bunches(local_slice_sets,
+                                                           all_slice_sets,
+                                                           self._processors_y)
+                    self._signal_sets_y = indexes[0]
+                    self._loc_signal_sets_y = indexes[1]
+                
+            signal_slice_sets_x = []
+            for idx in self._signal_sets_x:
+                signal_slice_sets_x.append(all_slice_sets[idx])
+            
+            if self._processors_y is not None:
+                signal_slice_sets_y = []
+                for idx in self._signal_sets_y:
+                    signal_slice_sets_y.append(all_slice_sets[idx])
+            else:
+                signal_slice_sets_y = None
         else:
             all_slice_sets = [superbunch.get_slices(self._slicer,
                                                     statistics=self._required_variables)]
             local_slice_sets = all_slice_sets
             bunch_list = [superbunch]
             self._local_sets = [0]
-            
-        if self._signal_sets_x is None:
-            indexes = self._parse_relevant_bunches(local_slice_sets,
-                                                   all_slice_sets,
-                                                   self._processors_x)
-            self._signal_sets_x = indexes[0]
-            self._loc_signal_sets_x = indexes[1]
-            
-            if self._processors_y is not None:
-                indexes = self._parse_relevant_bunches(local_slice_sets,
-                                                       all_slice_sets,
-                                                       self._processors_y)
-                self._signal_sets_y = indexes[0]
-                self._loc_signal_sets_y = indexes[1]
-            
-        signal_slice_sets_x = []
-        for idx in self._signal_sets_x:
-            signal_slice_sets_x.append(all_slice_sets[idx])
-        
-        if self._processors_y is not None:
-            signal_slice_sets_y = []
-            for idx in self._signal_sets_y:
-                signal_slice_sets_y.append(all_slice_sets[idx])
-        else:
-            signal_slice_sets_y = None
+            signal_slice_sets_x = all_slice_sets
+            signal_slice_sets_y = all_slice_sets
         
         return bunch_list, local_slice_sets, signal_slice_sets_x, signal_slice_sets_y
             
