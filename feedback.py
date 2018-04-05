@@ -206,7 +206,6 @@ class GenericOneTurnMapObject(object):
             self._local_sets = [0]
             signal_slice_sets_x = all_slice_sets
             signal_slice_sets_y = all_slice_sets
-        
         return bunch_list, local_slice_sets, signal_slice_sets_x, signal_slice_sets_y
             
     def _generate_parameters(self, signal_slice_sets, location=0., beta=1.):
@@ -354,7 +353,11 @@ class GenericOneTurnMapObject(object):
             np.copyto(signal, signal[::-1])
         
             n_slices_per_bunch = local_slice_sets[0].n_slices
-        
+            
+            print 'local_slice_sets: ' + str(local_slice_sets)
+            print 'local_sets: ' + str(local_sets)
+            print 'bunch_list: ' + str(bunch_list)
+            
             for slice_set, bunch_idx, bunch in zip(local_slice_sets,
                                                    local_sets, bunch_list):
                 idx_from = bunch_idx * n_slices_per_bunch
