@@ -204,6 +204,10 @@ class GenericOneTurnMapObject(object):
             local_slice_sets = all_slice_sets
             bunch_list = [superbunch]
             self._local_sets = [0]
+            self._signal_sets_x = [0]
+            self._loc_signal_sets_x = [0]
+            self._signal_sets_y = [0]
+            self._loc_signal_sets_y = [0]
             signal_slice_sets_x = all_slice_sets
             signal_slice_sets_y = all_slice_sets
         return bunch_list, local_slice_sets, signal_slice_sets_x, signal_slice_sets_y
@@ -353,10 +357,6 @@ class GenericOneTurnMapObject(object):
             np.copyto(signal, signal[::-1])
         
             n_slices_per_bunch = local_slice_sets[0].n_slices
-            
-            print 'local_slice_sets: ' + str(local_slice_sets)
-            print 'local_sets: ' + str(local_sets)
-            print 'bunch_list: ' + str(bunch_list)
             
             for slice_set, bunch_idx, bunch in zip(local_slice_sets,
                                                    local_sets, bunch_list):
