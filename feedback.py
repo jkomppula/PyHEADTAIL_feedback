@@ -1,6 +1,6 @@
 import numpy as np
 import collections
-from PyHEADTAIL.mpi import mpi_data
+from mpi import mpi_data
 from core import get_processor_variables, process, Parameters
 from core import z_bins_to_bin_edges, append_bin_edges
 from processors.register import VectorSumCombiner, CosineSumCombiner
@@ -173,38 +173,43 @@ class GenericOneTurnMapObject(object):
             local_slice_sets = self._mpi_gatherer.slice_set_list
             bunch_list = self._mpi_gatherer.bunch_list
             self._local_sets = self._mpi_gatherer.local_bunch_indexes
+            
+            if self._signal_sets_x is None:
+                indexes = self._parse_relevant_bunches(local_slice_sets,
+                                                       all_slice_sets,
+                                                       self._processors_x)
+                self._signal_sets_x = indexes[0]
+                self._loc_signal_sets_x = indexes[1]
+                
+                if self._processors_y is not None:
+                    indexes = self._parse_relevant_bunches(local_slice_sets,
+                                                           all_slice_sets,
+                                                           self._processors_y)
+                    self._signal_sets_y = indexes[0]
+                    self._loc_signal_sets_y = indexes[1]
+                
+            signal_slice_sets_x = []
+            for idx in self._signal_sets_x:
+                signal_slice_sets_x.append(all_slice_sets[idx])
+            
+            if self._processors_y is not None:
+                signal_slice_sets_y = []
+                for idx in self._signal_sets_y:
+                    signal_slice_sets_y.append(all_slice_sets[idx])
+            else:
+                signal_slice_sets_y = None
         else:
             all_slice_sets = [superbunch.get_slices(self._slicer,
                                                     statistics=self._required_variables)]
             local_slice_sets = all_slice_sets
             bunch_list = [superbunch]
             self._local_sets = [0]
-            
-        if self._signal_sets_x is None:
-            indexes = self._parse_relevant_bunches(local_slice_sets,
-                                                   all_slice_sets,
-                                                   self._processors_x)
-            self._signal_sets_x = indexes[0]
-            self._loc_signal_sets_x = indexes[1]
-            
-            if self._processors_y is not None:
-                indexes = self._parse_relevant_bunches(local_slice_sets,
-                                                       all_slice_sets,
-                                                       self._processors_y)
-                self._signal_sets_y = indexes[0]
-                self._loc_signal_sets_y = indexes[1]
-            
-        signal_slice_sets_x = []
-        for idx in self._signal_sets_x:
-            signal_slice_sets_x.append(all_slice_sets[idx])
-        
-        if self._processors_y is not None:
-            signal_slice_sets_y = []
-            for idx in self._signal_sets_y:
-                signal_slice_sets_y.append(all_slice_sets[idx])
-        else:
-            signal_slice_sets_y = None
-        
+            self._signal_sets_x = [0]
+            self._loc_signal_sets_x = [0]
+            self._signal_sets_y = [0]
+            self._loc_signal_sets_y = [0]
+            signal_slice_sets_x = all_slice_sets
+            signal_slice_sets_y = all_slice_sets
         return bunch_list, local_slice_sets, signal_slice_sets_x, signal_slice_sets_y
             
     def _generate_parameters(self, signal_slice_sets, location=0., beta=1.):
@@ -352,7 +357,7 @@ class GenericOneTurnMapObject(object):
             np.copyto(signal, signal[::-1])
         
             n_slices_per_bunch = local_slice_sets[0].n_slices
-        
+            
             for slice_set, bunch_idx, bunch in zip(local_slice_sets,
                                                    local_sets, bunch_list):
                 idx_from = bunch_idx * n_slices_per_bunch
