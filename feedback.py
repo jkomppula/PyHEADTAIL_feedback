@@ -1,5 +1,6 @@
 import numpy as np
 import collections
+import copy
 from PyHEADTAIL.mpi import mpi_data
 from core import get_processor_variables, process, Parameters
 from core import z_bins_to_bin_edges, append_bin_edges
@@ -148,26 +149,27 @@ class GenericOneTurnMapObject(object):
 
     def _init_signals(self, bunch_list, signal_slice_sets_x, signal_slice_sets_y):
         
-        self._parameters_x = self._generate_parameters(signal_slice_sets_x,
-                                                        self._location_x,
-                                                        self._beta_x)
+#        self._parameters_x = self._generate_parameters(signal_slice_sets_x,
+#                                                        self._location_x,
+#                                                        self._beta_x)
         
-        n_segments = self._parameters_x['n_segments']
-        n_bins_per_segment = self._parameters_x['n_bins_per_segment']
+        n_segments = len(signal_slice_sets_x)
+        n_bins_per_segment = len(signal_slice_sets_x[0].z_bins) - 1
         self._signal_x = np.zeros(n_segments * n_bins_per_segment)
         
         
         if self._processors_y is not None:
-            self._parameters_y = self._generate_parameters(signal_slice_sets_y,
-                                                            self._location_y,
-                                                            self._beta_y)
+#            self._parameters_y = self._generate_parameters(signal_slice_sets_y,
+#                                                            self._location_y,
+#                                                            self._beta_y)
         
-            n_segments = self._parameters_y['n_segments']
-            n_bins_per_segment = self._parameters_y['n_bins_per_segment']
+            n_segments = len(signal_slice_sets_y)
+            n_bins_per_segment = len(signal_slice_sets_y[0].z_bins) - 1
             self._signal_y = np.zeros(n_segments * n_bins_per_segment)
+            
 
     def _get_slice_sets(self, superbunch):
-        if self._mpi:
+        if self._mpi == True:
             self._mpi_gatherer.gather(superbunch)
             all_slice_sets = self._mpi_gatherer.bunch_by_bunch_data
             local_slice_sets = self._mpi_gatherer.slice_set_list
@@ -212,51 +214,190 @@ class GenericOneTurnMapObject(object):
             signal_slice_sets_y = all_slice_sets
         return bunch_list, local_slice_sets, signal_slice_sets_x, signal_slice_sets_y
             
-    def _generate_parameters(self, signal_slice_sets, location=0., beta=1.):
     
-        bin_edges = None
-        segment_ref_points = []
+    def _read_parameters(self, signal_slice_sets, location=0., beta=1.):
+        
+        if self._mpi == True:
+            
+            if self._parameters_x is None:
+                parameter_list = []
+                
+                for slice_set in signal_slice_sets:
+                    parameter_list.append(self._generate_bunch_parameters(slice_set))
+                    
+                parameters = Parameters()
+                parameters['class'] = parameters['class']
+                parameters['n_segments'] = len(parameter_list)
+                parameters['n_bins_per_segment'] = parameter_list[0]['n_bins_per_segment']
+                parameters['location'] = parameter_list[0]['location']
+                parameters['beta'] = parameter_list[0]['beta']
+                    
+                bin_edges = None
+                segment_ref_points = None
+                
+                for p in reversed(parameter_list):
+                    if segment_ref_points is None:
+                        segment_ref_points = [p['segment_ref_points'][0]]
+                    else:
+                        segment_ref_points.append(p['segment_ref_points'][0])
+                    
+                    if bin_edges is None:
+                        bin_edges = np.copy(p['bin_edges'])
+                    else:
+                        bin_edges = append_bin_edges(bin_edges, p['bin_edges'])
+            
+                parameters['segment_ref_points'] = segment_ref_points   
+                parameters['bin_edges'] = bin_edges
+            
+                self._parameters_x = copy.deepcopy(parameters)
+                self._parameters_x['location'] = self._location_x
+                self._parameters_x['beta'] = self._beta_x
+                
+                if self._processors_y is not None:    
+                    self._parameters_y = copy.deepcopy(parameters)
+                    self._parameters_y['location'] = self._location_y
+                    self._parameters_y['beta'] = self._beta_y
+            
+            return self._parameters_x, self._parameters_y
+                    
+                
+        elif self._mpi == 'serial':
+            if self._parameters_x is None:
+                self._bucket_id_list = []
+                self._parameters_x = []
+                if self._processors_y is not None:
+                    self._parameters_y = []
+   
+            bucket_id = signal_slice_sets[0].bucket_id
+            
+            if bucket_id not in self._bucket_id_list:
+                print "I'm adding new parameters for the bucket " + str(bucket_id)
+                self._bucket_id_list.append(bucket_id)
+                parameters = self._generate_bunch_parameters(signal_slice_sets[0])
+            
+                parameters_x = copy.deepcopy(parameters)
+                parameters_x['location'] = self._location_x
+                parameters_x['beta'] = self._beta_x
+                
+                self._parameters_x.append(parameters_x)
+                
+                if self._processors_y is not None:    
+                    parameters_y = copy.deepcopy(parameters)
+                    parameters_y['location'] = self._location_y
+                    parameters_y['beta'] = self._beta_y
+                
+                    self._parameters_y.append(parameters_y)
+                else:
+                    self._parameters_y.append(None)
+            
+            parameter_idx = self._bucket_id_list.index(bucket_id)
+            
+            return self._parameters_x[parameter_idx], self._parameters_y[parameter_idx]
+                
+        
+        else:
+            if self._parameters_x is None:
+                parameters = self._generate_bunch_parameters(signal_slice_sets[0])
+            
+                self._parameters_x = copy.deepcopy(parameters)
+                self._parameters_x['location'] = self._location_x
+                self._parameters_x['beta'] = self._beta_x
+                
+                if self._processors_y is not None:    
+                    self._parameters_y = copy.deepcopy(parameters)
+                    self._parameters_y['location'] = self._location_y
+                    self._parameters_y['beta'] = self._beta_y
+            
+            return self._parameters_x, self._parameters_y
     
-        if hasattr(signal_slice_sets[0], 'h_bunch') and hasattr(signal_slice_sets[0], 'circumference'):
-            circumference = signal_slice_sets[0].circumference
-            h_bunch = signal_slice_sets[0].h_bunch
+    
+    def _generate_bunch_parameters(self, slice_set):
+    
+        if hasattr(slice_set, 'h_bunch') and hasattr(slice_set, 'circumference'):
+            circumference = slice_set.circumference
+            h_bunch = slice_set.h_bunch
         else:
             circumference=None
             h_bunch=None
             
-        for slice_set in signal_slice_sets:
-                z_bins = np.copy(slice_set.z_bins)
-                if circumference is not None:
-                    z_bins -= slice_set.bucket_id*circumference/float(h_bunch)
+        segment_ref_points = []
+        z_bins = np.copy(slice_set.z_bins)
+        if circumference is not None:
+            z_bins -= slice_set.bucket_id*circumference/float(h_bunch)
             
-                edges = -1.*z_bins_to_bin_edges(z_bins)/c
-                segment_ref_points.append(-1.*np.mean(z_bins)/c)
-                if bin_edges is None:
-                    bin_edges = np.copy(edges)
-                else:
-                    bin_edges = append_bin_edges(bin_edges, edges)
+        bin_edges = -1.*z_bins_to_bin_edges(z_bins)/c
+        segment_ref_points.append(-1.*np.mean(z_bins)/c)
+
+
     
         bin_edges = bin_edges[::-1]
         bin_edges = np.fliplr(bin_edges)
         segment_ref_points = segment_ref_points[::-1]
     
-        n_bins_per_segment = len(bin_edges)/len(signal_slice_sets)
+        n_bins_per_segment = len(bin_edges)
         segment_ref_points = np.array(segment_ref_points)
     
         parameters = Parameters()
         parameters['class'] = 0
         parameters['bin_edges'] = bin_edges
-        parameters['n_segments'] = len(signal_slice_sets)
+        parameters['n_segments'] = 1
         parameters['n_bins_per_segment'] = n_bins_per_segment
         parameters['segment_ref_points'] = segment_ref_points
-        parameters['location'] = location
-        parameters['beta'] = beta
+        parameters['location'] = 0.
+        parameters['beta'] = 1.
     
-        if hasattr(signal_slice_sets[0], 'h_bunch') and hasattr(signal_slice_sets[0], 'circumference'):
-            accelerator_parameters = (signal_slice_sets[0].h_bunch, signal_slice_sets[0].circumference)
+        if hasattr(slice_set, 'h_bunch') and hasattr(slice_set, 'circumference'):
+            accelerator_parameters = (slice_set.h_bunch, slice_set.circumference)
             parameters['accelerator_parameters'] = accelerator_parameters
-    
+        
         return parameters
+        
+    
+#    def _generate_parameters(self, signal_slice_sets, location=0., beta=1.):
+#    
+#        bin_edges = None
+#        segment_ref_points = []
+#    
+#        if hasattr(signal_slice_sets[0], 'h_bunch') and hasattr(signal_slice_sets[0], 'circumference'):
+#            circumference = signal_slice_sets[0].circumference
+#            h_bunch = signal_slice_sets[0].h_bunch
+#        else:
+#            circumference=None
+#            h_bunch=None
+#            
+#        for slice_set in signal_slice_sets:
+#                z_bins = np.copy(slice_set.z_bins)
+#                if circumference is not None:
+#                    z_bins -= slice_set.bucket_id*circumference/float(h_bunch)
+#            
+#                edges = -1.*z_bins_to_bin_edges(z_bins)/c
+#                segment_ref_points.append(-1.*np.mean(z_bins)/c)
+#                if bin_edges is None:
+#                    bin_edges = np.copy(edges)
+#                else:
+#                    bin_edges = append_bin_edges(bin_edges, edges)
+#    
+#        bin_edges = bin_edges[::-1]
+#        bin_edges = np.fliplr(bin_edges)
+#        segment_ref_points = segment_ref_points[::-1]
+#    
+#        n_bins_per_segment = len(bin_edges)/len(signal_slice_sets)
+#        segment_ref_points = np.array(segment_ref_points)
+#    
+#        parameters = Parameters()
+#        parameters['class'] = 0
+#        parameters['bin_edges'] = bin_edges
+#        parameters['n_segments'] = len(signal_slice_sets)
+#        parameters['n_bins_per_segment'] = n_bins_per_segment
+#        parameters['segment_ref_points'] = segment_ref_points
+#        parameters['location'] = location
+#        parameters['beta'] = beta
+#    
+#        if hasattr(signal_slice_sets[0], 'h_bunch') and hasattr(signal_slice_sets[0], 'circumference'):
+#            accelerator_parameters = (signal_slice_sets[0].h_bunch, signal_slice_sets[0].circumference)
+#            parameters['accelerator_parameters'] = accelerator_parameters
+#    
+#        return parameters
     
     def _parse_relevant_bunches(self, local_slice_sets, all_slice_sets, processors):
         circumference = all_slice_sets[0].circumference
@@ -308,7 +449,7 @@ class GenericOneTurnMapObject(object):
     
     def _read_signal(self, signal, signal_slice_sets, plane, betatron_phase,
                     beta_value):     
-        if self._mpi:
+        if self._mpi == True:
             n_slices_per_bunch = signal_slice_sets[0]._n_slices
         else:
             n_slices_per_bunch = signal_slice_sets[0].n_slices
@@ -456,7 +597,9 @@ class OneboxFeedback(GenericOneTurnMapObject):
         self._read_signal(self._signal_x, signal_slice_sets_x, 'x',
                            self._phase_x, self._beta_x)   
         
-        kick_parameters_x, kick_signal_x = process(self._parameters_x,
+        parameters_x, parameters_y = self._read_parameters(signal_slice_sets_x)
+        
+        kick_parameters_x, kick_signal_x = process(parameters_x,
                                                    self._signal_x,
                                                    self._processors_x,
                                                    slice_sets=signal_slice_sets_x)
@@ -477,7 +620,7 @@ class OneboxFeedback(GenericOneTurnMapObject):
             self._read_signal(self._signal_y, signal_slice_sets_y, 'y',
                                self._phase_y, self._beta_y)   
             
-            kick_parameters_y, kick_signal_y = process(self._parameters_y,
+            kick_parameters_y, kick_signal_y = process(parameters_y,
                                                        self._signal_y,
                                                        self._processors_y,
                                                        slice_sets=signal_slice_sets_y)
@@ -550,9 +693,11 @@ class PickUp(GenericOneTurnMapObject):
             self._init_signals(bunch_list, signal_slice_sets_x, signal_slice_sets_y)
 
         self._read_signal(self._signal_x, signal_slice_sets_x, 'x',
-                           self._phase_x, self._beta_x)   
+                           self._phase_x, self._beta_x)
         
-        end_parameters_x, end_signal_x = process(self._parameters_x,
+        parameters_x, parameters_y = self._read_parameters(signal_slice_sets_x)   
+        
+        end_parameters_x, end_signal_x = process(parameters_x,
                                                    self._signal_x,
                                                    self._processors_x,
                                                    slice_sets=signal_slice_sets_x)
@@ -562,7 +707,7 @@ class PickUp(GenericOneTurnMapObject):
             self._read_signal(self._signal_y, signal_slice_sets_y, 'y',
                                self._phase_y, self._beta_y)   
             
-            end_parameters_y, end_signal_y = process(self._parameters_y,
+            end_parameters_y, end_signal_y = process(parameters_y,
                                                        self._signal_y,
                                                        self._processors_y,
                                                        slice_sets=signal_slice_sets_y)

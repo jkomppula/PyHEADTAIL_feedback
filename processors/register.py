@@ -180,15 +180,14 @@ class SerialRegister(object):
         self._signal_buffer = np.zeros(self._n_segments*self._n_bins_per_segment)
 
     def process(self, parameters, signal, *args, **kwargs):
-        self._parameter_register.append(parameters)
         if self._signal_buffer is None:
            self._init_register(parameters, signal)
             
         if (self._signal_counter > 0) and (self._signal_counter%self._n_segments == 0):
-            print 'I am adding a value: ' + str(self._signal_counter)
             if self._output_parameters is None:
                 self._output_parameters = self._generate_parameters()
             self._move_buffer_to_register()
+        self._parameter_register.append(parameters)
         
         seg_idx = self._signal_counter%self._n_segments
         self._signal_counter += 1
@@ -209,11 +208,11 @@ class SerialRegister(object):
         original_parameters = self._parameter_register[0]
         
         parameters = Parameters()
-        parameters['class'] = parameters['class']
+        parameters['class'] = original_parameters['class']
         parameters['n_segments'] = self._n_segments
-        parameters['n_bins_per_segment'] = self._parameter_register[0]['n_bins_per_segment']
-        parameters['location'] = self._parameter_register[0]['location']
-        parameters['beta'] = self._parameter_register[0]['beta']
+        parameters['n_bins_per_segment'] = original_parameters['n_bins_per_segment']
+        parameters['location'] = original_parameters['location']
+        parameters['beta'] = original_parameters['beta']
             
         bin_edges = None
         segment_ref_points = None
@@ -237,7 +236,7 @@ class SerialRegister(object):
         
         parameters['segment_ref_points'] = segment_ref_points   
         parameters['bin_edges'] = bin_edges
-        parameters['previous_parameters'].append(self._parameter_register[0])
+        parameters['previous_parameters'].append(copy.deepcopy(self._parameter_register[0]))
         return parameters
     
 class UncorrectedDelay(object):
