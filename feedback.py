@@ -217,7 +217,7 @@ class GenericOneTurnMapObject(object):
         bin_edges = None
         segment_ref_points = []
     
-        if len(signal_slice_sets) > 1:
+        if hasattr(signal_slice_sets[0], 'h_bunch') and hasattr(signal_slice_sets[0], 'circumference'):
             circumference = signal_slice_sets[0].circumference
             h_bunch = signal_slice_sets[0].h_bunch
         else:
@@ -251,6 +251,10 @@ class GenericOneTurnMapObject(object):
         parameters['segment_ref_points'] = segment_ref_points
         parameters['location'] = location
         parameters['beta'] = beta
+    
+        if hasattr(signal_slice_sets[0], 'h_bunch') and hasattr(signal_slice_sets[0], 'circumference'):
+            accelerator_parameters = (signal_slice_sets[0].h_bunch, signal_slice_sets[0].circumference)
+            parameters['accelerator_parameters'] = accelerator_parameters
     
         return parameters
     

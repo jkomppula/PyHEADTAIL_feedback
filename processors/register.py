@@ -4,7 +4,7 @@ from abc import ABCMeta, abstractmethod
 import numpy as np
 from scipy.constants import pi
 
-from ..core import Parameters, default_macros
+from ..core import Parameters, default_macros, append_bin_edges, Parameters
 
 """Signal processors based on registers and combiners.
 
@@ -83,17 +83,163 @@ class Register(object):
             delay = -1. * (len(self._signal_register) - self._n_iter_left) \
                             * self._phase_advance_per_turn
             self._n_iter_left -= 1
-
             return (self._parameter_register[self._n_iter_left],
                     self._signal_register[self._n_iter_left], delay)
 
     def process(self, parameters, signal, *args, **kwargs):
         self._parameter_register.append(parameters)
-        self._signal_register.append(signal)
-
+        self._signal_register.append(np.copy(signal))
+        
         return parameters, signal
 
+class SerialRegister(object):
+    """
+    Stores signals from the individually tracked buches to the register and 
+    generetaes a signal, which contains values from one turn. 
+    
+    The object is iterable, i.e. iteration returns the stored signals after 
+    the given delay.
+    """
+    def __init__(self, n_values, tune, delay=0, n_bunches=1, **kwargs):
+        """
+        Parameters
+        ----------
+        n_values : number
+          A maximum number of signals stored and returned (in addition to
+          the delay)
+        tune : number
+          A real number value of a betatron tune
+        delay : number
+          A number of turns the signal kept in the register before returning it
 
+        """
+
+        self._n_values = n_values
+        self._delay = delay
+        self._effective_delay = self._delay - 1
+        self._phase_advance_per_turn = 2. * np.pi * tune
+        
+        self._n_segments = n_bunches
+        self._n_bins_per_segment = None
+        self._signal_buffer = None
+        self._signal_counter = None
+
+        self._n_iter_left = 0
+        self._signal_register = deque(maxlen=(n_values + delay-1))
+        self._parameter_register = deque(maxlen=self._n_segments)
+        self._output_parameters = None
+        
+        self.extensions = ['register']
+        self._macros = [] + default_macros(self, 'Register', **kwargs)
+
+    @property
+    def parameters(self):
+        return self._output_parameters
+
+    @property
+    def phase_advance_per_turn(self):
+        return self._phase_advance_per_turn
+
+    @property
+    def delay(self):
+        return self._delay
+
+    @property
+    def maxlen(self):
+        return self._n_values
+
+    def __len__(self):
+        """
+        Returns a number of signals in the register after the delay.
+        """
+        return max((len(self._signal_register) - self._effective_delay), 0)
+
+    def __iter__(self):
+        """
+        Calculates how many iterations are required
+        """
+        self._n_iter_left = len(self)
+
+        return self
+
+    def next(self):
+        if self._n_iter_left < 1:
+            raise StopIteration
+
+        else:
+            delay = -1. * (len(self._signal_register) - self._n_iter_left - 1) \
+                            * self._phase_advance_per_turn
+            self._n_iter_left -= 1
+
+            return (self._output_parameters,
+                    self._signal_register[self._n_iter_left], delay)
+            
+    def _init_register(self, parameters, signal):
+        self._signal_counter = 0
+        self._n_bins_per_segment = parameters['n_bins_per_segment']
+        self._signal_buffer = np.zeros(self._n_segments*self._n_bins_per_segment)
+
+    def process(self, parameters, signal, *args, **kwargs):
+        self._parameter_register.append(parameters)
+        if self._signal_buffer is None:
+           self._init_register(parameters, signal)
+            
+        if (self._signal_counter > 0) and (self._signal_counter%self._n_segments == 0):
+            print 'I am adding a value: ' + str(self._signal_counter)
+            if self._output_parameters is None:
+                self._output_parameters = self._generate_parameters()
+            self._move_buffer_to_register()
+        
+        seg_idx = self._signal_counter%self._n_segments
+        self._signal_counter += 1
+        i_from = (self._n_segments - seg_idx - 1) * self._n_bins_per_segment
+        i_to = (self._n_segments - seg_idx) * self._n_bins_per_segment
+        
+        np.copyto(self._signal_buffer[i_from:i_to], signal)
+        
+#        self._signal_register.append(signal)
+
+        return parameters, signal
+    
+    def _move_buffer_to_register(self):
+        self._signal_register.append(np.copy(self._signal_buffer))
+    
+    
+    def _generate_parameters(self):
+        original_parameters = self._parameter_register[0]
+        
+        parameters = Parameters()
+        parameters['class'] = parameters['class']
+        parameters['n_segments'] = self._n_segments
+        parameters['n_bins_per_segment'] = self._parameter_register[0]['n_bins_per_segment']
+        parameters['location'] = self._parameter_register[0]['location']
+        parameters['beta'] = self._parameter_register[0]['beta']
+            
+        bin_edges = None
+        segment_ref_points = None
+        
+        for p in reversed(self._parameter_register):
+                if segment_ref_points is None:
+                    segment_ref_points = [p['segment_ref_points'][0]]
+                else:
+                    segment_ref_points.append(p['segment_ref_points'][0])
+                
+                if bin_edges is None:
+                    bin_edges = np.copy(p['bin_edges'])
+                else:
+                    bin_edges = append_bin_edges(bin_edges, p['bin_edges'])
+    
+        
+    
+#        bin_edges = bin_edges[::-1]
+#        bin_edges = np.fliplr(bin_edges)
+#        segment_ref_points = segment_ref_points[::-1]
+        
+        parameters['segment_ref_points'] = segment_ref_points   
+        parameters['bin_edges'] = bin_edges
+        parameters['previous_parameters'].append(self._parameter_register[0])
+        return parameters
+    
 class UncorrectedDelay(object):
     """ Delays the signal in the units of turns without any betatron pahse
     advance correction

@@ -114,7 +114,7 @@ the signal processors:
 
 def Parameters(signal_class=0, bin_edges=np.array([]), n_segments=0,
                n_bins_per_segment=0, segment_ref_points=np.array([]),
-               previous_parameters = [], location=0, beta=1.):
+               previous_parameters = [], master_segment=0, location=0, beta=1.):
     """
     Returns a prototype for signal parameters.
 
@@ -136,6 +136,10 @@ def Parameters(signal_class=0, bin_edges=np.array([]), n_segments=0,
     previous_parameters : array
         A list of Parameter objects, which tracks how the samping is changed
         during the signal processing
+    master_segment: int or list
+        An index of the primary segment. Can be used to indentify relevant
+        segments for further signal processing or as a reference point to the
+        bin coordinates, for example.
     location : float
         A location of the signal in betatron phase.
     beta : float
@@ -148,6 +152,7 @@ def Parameters(signal_class=0, bin_edges=np.array([]), n_segments=0,
             'n_bins_per_segment': n_bins_per_segment,
             'segment_ref_points': segment_ref_points,
             'previous_parameters': previous_parameters,
+            'master_segment': master_segment,
             'location': location,
             'beta': beta
             }
@@ -156,7 +161,7 @@ def Parameters(signal_class=0, bin_edges=np.array([]), n_segments=0,
 """
 In prinicple, the framework can also be extended to work
 in other domains (e.g. f, s or z, symbolic calculations or even influences
-from functional programmin), if the definition of signal is extended and
+from functional programming), if the definition of signal is extended and
 specific processors for the signal conversion between the different domains are
 programmed.
 
