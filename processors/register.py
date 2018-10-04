@@ -178,8 +178,9 @@ class Combiner(object):
 
         if self._combined_parameters is None:
             self._combined_parameters = copy.copy(self._registers[0].parameters)
-            self._combined_parameters['location'] = self._target_location
-            self._combined_parameters['beta'] = self._target_beta
+            if self._combined_parameters is not None:
+                self._combined_parameters['location'] = self._target_location
+                self._combined_parameters['beta'] = self._target_beta
 
         return self._combined_parameters, output_signal
 
@@ -567,8 +568,8 @@ class FIRCombiner(Combiner):
 
     def combine(self, registers, target_location, target_beta,
                 additional_phase_advance, beta_conversion):
+        
         combined_signal = None
-
         for register in registers:
             if len(register) >= len(self._coefficients):
                 for i, (parameters, signal, delay) in enumerate(register):
@@ -576,6 +577,17 @@ class FIRCombiner(Combiner):
                         combined_signal = np.zeros(len(signal))
                     if i < len(self._coefficients):
                         combined_signal += self._coefficients[i] * signal
+
+        if combined_signal is not None:
+                        
+            if target_beta is not None:
+                if beta_conversion == '90_deg':
+                    beta_correction = 1./np.sqrt(parameters['beta']*target_beta)
+                elif beta_conversion == '0_deg':
+                    beta_correction = np.sqrt(target_beta/beta_1)
+            else:
+                beta_correction = 1.
+            combined_signal = combined_signal*beta_correction
 
         return combined_signal
 

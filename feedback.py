@@ -1,5 +1,6 @@
 import numpy as np
 import collections
+from inspect import isclass
 from mpi import mpi_data
 from core import get_processor_variables, process, Parameters
 from core import z_bins_to_bin_edges, append_bin_edges
@@ -655,11 +656,17 @@ class Kicker(GenericOneTurnMapObject):
                                                      beta_conversion = '90_deg')
             else:
                 raise ValueError('Unknown combiner type')
-        else:
+        elif isclass(combiner):
             self._combiner_x = combiner(registers_x, location_x, beta_x,
                                         beta_conversion = '90_deg')
             self._combiner_y = combiner(registers_y, location_y, beta_y,
                                         beta_conversion = '90_deg')
+        elif isinstance(combiner, tuple):
+            self._combiner_x = combiner[0]
+            self._combiner_y = combiner[1]
+        else:
+            raise ValueError('Unclear combiner input type')
+            
         
         super(self.__class__, self).__init__(gain, slicer, processors_x,
              processors_y=processors_y, pickup_axis='divergence',
