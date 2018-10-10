@@ -584,7 +584,7 @@ class FIRCombiner(Combiner):
                 if beta_conversion == '90_deg':
                     beta_correction = 1./np.sqrt(parameters['beta']*target_beta)
                 elif beta_conversion == '0_deg':
-                    beta_correction = np.sqrt(target_beta/beta_1)
+                    beta_correction = np.sqrt(target_beta/parameters['beta'])
             else:
                 beta_correction = 1.
             combined_signal = combined_signal*beta_correction
