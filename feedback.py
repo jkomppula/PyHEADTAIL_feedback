@@ -147,11 +147,11 @@ class GenericOneTurnMapObject(object):
         
 
     def _init_signals(self, bunch_list, signal_slice_sets_x, signal_slice_sets_y):
+        beta_beam = bunch_list[0].beta
         
         self._parameters_x = self._generate_parameters(signal_slice_sets_x,
                                                         self._location_x,
-                                                        self._beta_x)
-        
+                                                        self._beta_x, beta_beam)
         n_segments = self._parameters_x['n_segments']
         n_bins_per_segment = self._parameters_x['n_bins_per_segment']
         self._signal_x = np.zeros(n_segments * n_bins_per_segment)
@@ -160,7 +160,7 @@ class GenericOneTurnMapObject(object):
         if self._processors_y is not None:
             self._parameters_y = self._generate_parameters(signal_slice_sets_y,
                                                             self._location_y,
-                                                            self._beta_y)
+                                                            self._beta_y, beta_beam)
         
             n_segments = self._parameters_y['n_segments']
             n_bins_per_segment = self._parameters_y['n_bins_per_segment']
@@ -180,17 +180,19 @@ class GenericOneTurnMapObject(object):
             bunch_list = [superbunch]
             self._local_sets = [0]
             
+        beta_beam = superbunch.beta    
+        
         if self._signal_sets_x is None:
             indexes = self._parse_relevant_bunches(local_slice_sets,
                                                    all_slice_sets,
-                                                   self._processors_x)
+                                                   self._processors_x, beta_beam)
             self._signal_sets_x = indexes[0]
             self._loc_signal_sets_x = indexes[1]
             
             if self._processors_y is not None:
                 indexes = self._parse_relevant_bunches(local_slice_sets,
                                                        all_slice_sets,
-                                                       self._processors_y)
+                                                       self._processors_y, beta_beam)
                 self._signal_sets_y = indexes[0]
                 self._loc_signal_sets_y = indexes[1]
             
@@ -207,8 +209,8 @@ class GenericOneTurnMapObject(object):
         
         return bunch_list, local_slice_sets, signal_slice_sets_x, signal_slice_sets_y
             
-    def _generate_parameters(self, signal_slice_sets, location=0., beta=1.):
-    
+    def _generate_parameters(self, signal_slice_sets, location, beta, beta_beam):
+        
         bin_edges = None
         segment_ref_points = []
     
@@ -224,8 +226,8 @@ class GenericOneTurnMapObject(object):
                 if circumference is not None:
                     z_bins -= slice_set.bucket_id*circumference/float(h_bunch)
             
-                edges = -1.*z_bins_to_bin_edges(z_bins)/c
-                segment_ref_points.append(-1.*np.mean(z_bins)/c)
+                edges = -1.*z_bins_to_bin_edges(z_bins)/(c*beta_beam)
+                segment_ref_points.append(-1.*np.mean(z_bins)/(c*beta_beam))
                 if bin_edges is None:
                     bin_edges = np.copy(edges)
                 else:
@@ -249,7 +251,7 @@ class GenericOneTurnMapObject(object):
     
         return parameters
     
-    def _parse_relevant_bunches(self, local_slice_sets, all_slice_sets, processors):
+    def _parse_relevant_bunches(self, local_slice_sets, all_slice_sets, processors, beta_beam):
         circumference = all_slice_sets[0].circumference
         h_bunch = all_slice_sets[0].h_bunch
         
@@ -265,8 +267,8 @@ class GenericOneTurnMapObject(object):
         set_counter = np.zeros(len(all_slice_sets), dtype=int)
         
         for i, slice_set in enumerate(local_slice_sets):
-            local_set_edges[i,0] = np.min(slice_set.z_bins-slice_set.bucket_id*circumference/float(h_bunch))/c
-            local_set_edges[i,1] = np.max(slice_set.z_bins-slice_set.bucket_id*circumference/float(h_bunch))/c
+            local_set_edges[i,0] = np.min(slice_set.z_bins-slice_set.bucket_id*circumference/float(h_bunch))/(c*beta_beam)
+            local_set_edges[i,1] = np.max(slice_set.z_bins-slice_set.bucket_id*circumference/float(h_bunch))/(c*beta_beam)
             
         
         local_min = np.min(local_set_edges)
@@ -274,8 +276,8 @@ class GenericOneTurnMapObject(object):
         
         counter = 0
         for i, slice_set in enumerate(all_slice_sets):
-            set_min = np.min(slice_set.z_bins-slice_set.bucket_id*circumference/float(h_bunch))/c
-            set_max = np.max(slice_set.z_bins-slice_set.bucket_id*circumference/float(h_bunch))/c
+            set_min = np.min(slice_set.z_bins-slice_set.bucket_id*circumference/float(h_bunch))/(c*beta_beam)
+            set_max = np.max(slice_set.z_bins-slice_set.bucket_id*circumference/float(h_bunch))/(c*beta_beam)
     #        print 'set_min ' + str(set_min) + ' and (local_min - time_scale)' + str((local_min - time_scale))
             if (set_max > (local_min - time_scale)) and (set_min < (local_max + time_scale)):
                 included_sets.append(i)
