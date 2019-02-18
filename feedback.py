@@ -6,6 +6,7 @@ from core import z_bins_to_bin_edges, append_bin_edges
 from processors.register import VectorSumCombiner, CosineSumCombiner
 from processors.register import HilbertCombiner, DummyCombiner
 from scipy.constants import c
+from inspect import isclass
 """
     This file contains objecst, which can be used as transverse feedback
     systems in the one turn map in PyHEADTAIL. The signal processing in the
@@ -116,14 +117,14 @@ class GenericOneTurnMapObject(object):
         self._loc_signal_sets_x = None
         self._loc_signal_sets_y = None
         self._required_variables = []
-        
-        if (self._pickup_axis == 'divergence') or (phase_x is not None):
-            self._required_variables.append('mean_xp')
-        if (self._pickup_axis == 'displacement') or (phase_x is not None):
-            self._required_variables.append('mean_x')
-
-        self._required_variables = get_processor_variables(self._processors_x,
-                                                     self._required_variables)
+        if self._processors_x is not None:        
+            if (self._pickup_axis == 'divergence') or (phase_x is not None):
+                self._required_variables.append('mean_xp')
+            if (self._pickup_axis == 'displacement') or (phase_x is not None):
+                self._required_variables.append('mean_x')
+    
+            self._required_variables = get_processor_variables(self._processors_x,
+                                                         self._required_variables)
         if self._processors_y is not None:
             if (self._pickup_axis == 'divergence') or (phase_y is not None):
                 self._required_variables.append('mean_yp')
@@ -149,12 +150,14 @@ class GenericOneTurnMapObject(object):
     def _init_signals(self, bunch_list, signal_slice_sets_x, signal_slice_sets_y):
         beta_beam = bunch_list[0].beta
         
-        self._parameters_x = self._generate_parameters(signal_slice_sets_x,
-                                                        self._location_x,
-                                                        self._beta_x, beta_beam)
-        n_segments = self._parameters_x['n_segments']
-        n_bins_per_segment = self._parameters_x['n_bins_per_segment']
-        self._signal_x = np.zeros(n_segments * n_bins_per_segment)
+        
+        if self._processors_x is not None:
+            self._parameters_x = self._generate_parameters(signal_slice_sets_x,
+                                                            self._location_x,
+                                                            self._beta_x, beta_beam)
+            n_segments = self._parameters_x['n_segments']
+            n_bins_per_segment = self._parameters_x['n_bins_per_segment']
+            self._signal_x = np.zeros(n_segments * n_bins_per_segment)
         
         
         if self._processors_y is not None:
@@ -182,12 +185,13 @@ class GenericOneTurnMapObject(object):
             
         beta_beam = superbunch.beta    
         
-        if self._signal_sets_x is None:
-            indexes = self._parse_relevant_bunches(local_slice_sets,
-                                                   all_slice_sets,
-                                                   self._processors_x, beta_beam)
-            self._signal_sets_x = indexes[0]
-            self._loc_signal_sets_x = indexes[1]
+        if (self._signal_sets_x is None) and (self._signal_sets_y is None):
+            if self._processors_x is not None:
+                indexes = self._parse_relevant_bunches(local_slice_sets,
+                                                       all_slice_sets,
+                                                       self._processors_x, beta_beam)
+                self._signal_sets_x = indexes[0]
+                self._loc_signal_sets_x = indexes[1]
             
             if self._processors_y is not None:
                 indexes = self._parse_relevant_bunches(local_slice_sets,
@@ -195,10 +199,13 @@ class GenericOneTurnMapObject(object):
                                                        self._processors_y, beta_beam)
                 self._signal_sets_y = indexes[0]
                 self._loc_signal_sets_y = indexes[1]
-            
-        signal_slice_sets_x = []
-        for idx in self._signal_sets_x:
-            signal_slice_sets_x.append(all_slice_sets[idx])
+        
+        if self._processors_x is not None:  
+            signal_slice_sets_x = []
+            for idx in self._signal_sets_x:
+                signal_slice_sets_x.append(all_slice_sets[idx])
+        else:
+            signal_slice_sets_x = None
         
         if self._processors_y is not None:
             signal_slice_sets_y = []
@@ -210,7 +217,6 @@ class GenericOneTurnMapObject(object):
         return bunch_list, local_slice_sets, signal_slice_sets_x, signal_slice_sets_y
             
     def _generate_parameters(self, signal_slice_sets, location, beta, beta_beam):
-        
         bin_edges = None
         segment_ref_points = []
     
@@ -269,6 +275,7 @@ class GenericOneTurnMapObject(object):
         for i, slice_set in enumerate(local_slice_sets):
             local_set_edges[i,0] = np.min(slice_set.z_bins-slice_set.bucket_id*circumference/float(h_bunch))/(c*beta_beam)
             local_set_edges[i,1] = np.max(slice_set.z_bins-slice_set.bucket_id*circumference/float(h_bunch))/(c*beta_beam)
+
             
         
         local_min = np.min(local_set_edges)
@@ -443,27 +450,29 @@ class OneboxFeedback(GenericOneTurnMapObject):
         
         bunch_list, local_slice_sets, signal_slice_sets_x, signal_slice_sets_y = self._get_slice_sets(bunch)
         
-        if self._signal_x is None:
+        if (self._signal_x is None) and (self._signal_y is None):
             self._init_signals(bunch_list, signal_slice_sets_x, signal_slice_sets_y)
 
-        self._read_signal(self._signal_x, signal_slice_sets_x, 'x',
-                           self._phase_x, self._beta_x)   
-        
-        kick_parameters_x, kick_signal_x = process(self._parameters_x,
-                                                   self._signal_x,
-                                                   self._processors_x,
-                                                   slice_sets=signal_slice_sets_x)
-        
-        if kick_signal_x is not None:
-            kick_signal_x = kick_signal_x * self._gain_x
 
-            if self._pickup_axis == 'displacement' and self._kicker_axis == 'divergence':
-                kick_signal_x = kick_signal_x / self._beta_x
-            elif self._pickup_axis == 'divergence' and self._kicker_axis == 'displacement':
-                kick_signal_x = kick_signal_x * self._beta_x
-                
-        self._kick_bunches(kick_signal_x, 'x', local_slice_sets, bunch_list,
-                            self._loc_signal_sets_x)
+        if self._processors_x is not None:
+            self._read_signal(self._signal_x, signal_slice_sets_x, 'x',
+                               self._phase_x, self._beta_x)   
+            
+            kick_parameters_x, kick_signal_x = process(self._parameters_x,
+                                                       self._signal_x,
+                                                       self._processors_x,
+                                                       slice_sets=signal_slice_sets_x)
+            
+            if kick_signal_x is not None:
+                kick_signal_x = kick_signal_x * self._gain_x
+    
+                if self._pickup_axis == 'displacement' and self._kicker_axis == 'divergence':
+                    kick_signal_x = kick_signal_x / self._beta_x
+                elif self._pickup_axis == 'divergence' and self._kicker_axis == 'displacement':
+                    kick_signal_x = kick_signal_x * self._beta_x
+                    
+            self._kick_bunches(kick_signal_x, 'x', local_slice_sets, bunch_list,
+                                self._loc_signal_sets_x)
         
         if self._processors_y is not None:
 
@@ -538,19 +547,25 @@ class PickUp(GenericOneTurnMapObject):
     def track(self, bunch):
         
         bunch_list, local_slice_sets, signal_slice_sets_x, signal_slice_sets_y = self._get_slice_sets(bunch)
-        
-        if self._signal_x is None:
+        if (self._signal_x is None) and (self._signal_y is None):
             self._init_signals(bunch_list, signal_slice_sets_x, signal_slice_sets_y)
-
-        self._read_signal(self._signal_x, signal_slice_sets_x, 'x',
-                           self._phase_x, self._beta_x)   
         
-        end_parameters_x, end_signal_x = process(self._parameters_x,
-                                                   self._signal_x,
-                                                   self._processors_x,
-                                                   slice_sets=signal_slice_sets_x)
+        
+        if self._processors_x is not None:    
+    
+    
+        
+            self._read_signal(self._signal_x, signal_slice_sets_x, 'x',
+                               self._phase_x, self._beta_x)   
+            
+            end_parameters_x, end_signal_x = process(self._parameters_x,
+                                                       self._signal_x,
+                                                       self._processors_x,
+                                                       slice_sets=signal_slice_sets_x)
         
         if self._processors_y is not None:
+            if self._signal_y is None:
+                self._init_signals(bunch_list, signal_slice_sets_x, signal_slice_sets_y)
 
             self._read_signal(self._signal_y, signal_slice_sets_y, 'y',
                                self._phase_y, self._beta_y)   
@@ -644,11 +659,16 @@ class Kicker(GenericOneTurnMapObject):
                                                      beta_conversion = '90_deg')
             else:
                 raise ValueError('Unknown combiner type')
-        else:
+        elif isclass(combiner):
             self._combiner_x = combiner(registers_x, location_x, beta_x,
                                         beta_conversion = '90_deg')
             self._combiner_y = combiner(registers_y, location_y, beta_y,
                                         beta_conversion = '90_deg')
+        elif isinstance(combiner, tuple):
+            self._combiner_x = combiner[0]
+            self._combiner_y = combiner[1]
+        else:
+            raise ValueError('Unclear combiner input type')
         
         super(self.__class__, self).__init__(gain, slicer, processors_x,
              processors_y=processors_y, pickup_axis='divergence',
@@ -659,19 +679,20 @@ class Kicker(GenericOneTurnMapObject):
         
         bunch_list, local_slice_sets, signal_slice_sets_x, signal_slice_sets_y = self._get_slice_sets(bunch)
         
-        if self._signal_x is None:
+        if (self._signal_x is None) and (self._signal_y is None):
             self._init_signals(bunch_list, signal_slice_sets_x, signal_slice_sets_y)
-
-        parameters_x, signal_x = self._combiner_x.process()   
-        parameters_x, signal_x = process(parameters_x,
-                                                   signal_x,
-                                                   self._processors_x,
-                                                   slice_sets=signal_slice_sets_x)
-        if signal_x is not None:
-
-            signal_x = signal_x * self._gain_x
-            self._kick_bunches(signal_x, 'x', local_slice_sets,
-                                bunch_list, self._loc_signal_sets_x)
+            
+        if self._processors_x is not None:
+            parameters_x, signal_x = self._combiner_x.process()   
+            parameters_x, signal_x = process(parameters_x,
+                                                       signal_x,
+                                                       self._processors_x,
+                                                       slice_sets=signal_slice_sets_x)
+            if signal_x is not None:
+    
+                signal_x = signal_x * self._gain_x
+                self._kick_bunches(signal_x, 'x', local_slice_sets,
+                                    bunch_list, self._loc_signal_sets_x)
         
         if self._processors_y is not None:
             self._parameters_y, self._signal_y = self._combiner_y.process() 
