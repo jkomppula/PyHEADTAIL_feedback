@@ -157,7 +157,7 @@ def run(job_id, accQ_y, accQ_x, phase_filter_x, phase_filter_y, damping_time,
     
     alpha = 5.034**-2
     
-    p0 = 300e6 * e / c
+    p0 = 300e9 * e / c
     Q_s = 0.02
     circumference = 160.
     s = None
@@ -469,5 +469,5 @@ ax2.legend(loc='top left', bbox_to_anchor=(1, 1.0))
 plt.tight_layout()
 fig.subplots_adjust(top=0.90)
 
-fig.savefig('tune_acceptance_vs_ramp__filter.png', format='png', dpi=300)
+#fig.savefig('tune_acceptance_vs_ramp__filter.png', format='png', dpi=300)
 plt.show()

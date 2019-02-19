@@ -695,6 +695,7 @@ class Kicker(GenericOneTurnMapObject):
                                     bunch_list, self._loc_signal_sets_x)
         
         if self._processors_y is not None:
+#            print('Kick y, gain: ' + str(self._gain_y))
             self._parameters_y, self._signal_y = self._combiner_y.process() 
             kick_parameters_y, kick_signal_y = process(self._parameters_y,
                                                        self._signal_y,
