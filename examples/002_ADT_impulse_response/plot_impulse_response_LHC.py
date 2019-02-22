@@ -1,81 +1,103 @@
 from __future__ import division
 import sys, os
-BIN = os.path.expanduser("../../../../")
+BIN = os.path.expanduser("../../../")
 sys.path.append(BIN)
 import sys
-import copy
 import datetime
 import numpy as np
-from scipy.constants import c, e
+from scipy.constants import c
 import matplotlib.pyplot as plt
-from PyHEADTAIL_feedback.signal_tools.signal_generators import SimpleBeam, CircularPointBeam
-from PyHEADTAIL_feedback.signal_tools.trackers_and_kickers import track_beam, LinearWake, Damper, WakeSourceFromFile, ResistiveWallWakeSource
-from PyHEADTAIL_feedback.signal_tools.trackers_and_kickers import Tracer, AvgValueTracer, DCSuppressor, Noise
-from PyHEADTAIL_feedback.processors.convolution import PhaseLinearizedLowpass, Gaussian, Sinc, Lowpass
+from PyHEADTAIL_feedback.signal_tools.signal_generators import CircularPointBeam
 from PyHEADTAIL_feedback.processors.register import TurnFIRFilter
 from PyHEADTAIL_feedback.processors.convolution import Lowpass,  FIRFilter
 from PyHEADTAIL_feedback.processors.resampling import DAC, HarmonicADC, BackToOriginalBins, Upsampler
 from PyHEADTAIL_feedback.processors.resampling import Quantizer
-from PyHEADTAIL_feedback.processors.addition import NoiseGenerator
-#from PyHEADTAIL_feedback.core import process
 from PyHEADTAIL_feedback.core import bin_mids, process
 from MD4063_filter_functions import calculate_coefficients_3_tap, calculate_hilbert_notch_coefficients
 
 class DamperImpulseResponse(object):
     """ A tracer which damps beam oscillations as a trasverse damper.
     """
-    def __init__(self, turns, gain, processors, pickup_variable = 'x', kick_variable = 'x'):
+    def __init__(self, processors, circumference, h_bunch, beta_beam, impulse_length, wait_before=10):
         """
         Parameters
         ----------
-        gain : float
-            Pass band gain of the damper, i.e. 2/damping_time
         processors : list
             A list of signal processors
-        pickup_variable : str
-            A beam property, which is readed as a pickup signal
-        kick_variable : str
-            A beam property, which is kicked
+        circumference : float
+            Accelerator circumference in meters
+        h_bunch: int 
+            harmonic bunch or sampling number of the accelerator    
+        beta_beam: float
+            relativistic beta of the beam
+        impulse_length : int
+            Maximum length of the impulse response in turns
+        wait_before : int
+            Number of turns waited before the impulse is sent to system. This is
+            required by some signal processors, which do not return signal before
+            their internal buffer is filled
         """
-        self.gain = gain
-        self.processors = processors
-        self.pickup_variable = pickup_variable
-        self.kick_variable = kick_variable
-        self.turns = turns
         
-        self.rotation_done = False
+        self.processors = processors
+        self.circumference = circumference
+        self.h_bunch = h_bunch
+        self.beta_beam = beta_beam
+        self.impulse_length = impulse_length
+        self.wait_before = wait_before
+        
+        
+        # this tools uses a point like beam object as a signal generator
+        filling_scheme = np.arange(self.h_bunch)
+        self.beam = CircularPointBeam(filling_scheme, circumference, self.h_bunch, 1.,
+                             circular_overlapping=0, n_segments = 1, beta_x = 1.)
+        
+        self.impulse_bin = int(self.h_bunch/2)
+        self.beam.x[self.impulse_bin] =+ 1.
 
 
 
-    def get_impulse_response(self, beam, **kwargs):
+    def get_impulse_response(self, **kwargs):
 
         # generates signal from the beam
-        parameters, signal = beam.signal(self.pickup_variable)
-
+        parameters, signal = self.beam.signal('x')
         empty_signal = np.zeros(len(signal))
 
-        turn_by_turn_impulses = []
 
-        for i in range(self.turns+10):
+        turn_by_turn_impulses = []
             
-            if i == 10:
+
+
+        for i in range(self.impulse_length+self.wait_before):
+            
+            if i == self.wait_before:
                 # processes the signal
                 kick_parameters_x, kick_signal_x = process(parameters, signal, self.processors,
-                                                           slice_sets=beam.slice_sets, **kwargs)
+                                                           slice_sets=self.beam.slice_sets, **kwargs)
             else:
                 # processes the signal
                 kick_parameters_x, kick_signal_x = process(parameters, empty_signal, self.processors,
-                                                           slice_sets=beam.slice_sets, **kwargs)
-            if i >= 10:    
-                if kick_signal_x is not None:
-                    print('Non empty kick: ' + str(np.max(kick_signal_x)))
-    #                print('Non empty kick!!')
-                    turn_by_turn_impulses.append(np.copy(kick_signal_x))
-                else:
-                    print('Empty kick')
-                    turn_by_turn_impulses.append(empty_signal)
+                                                           slice_sets=self.beam.slice_sets, **kwargs)
+            if i >= self.wait_before:    
+                turn_by_turn_impulses.append(np.copy(kick_signal_x))
         
-        return turn_by_turn_impulses
+        sampling_rate_multiplication = int(len(turn_by_turn_impulses[-1])/len(empty_signal))
+        
+        parsed_turns = []
+        for i, d in enumerate(turn_by_turn_impulses):
+            if i == 0:
+                parsed_turns.append(d[self.impulse_bin*sampling_rate_multiplication:])
+            elif i == len(turn_by_turn_impulses)-1:
+                parsed_turns.append(d[:self.impulse_bin*sampling_rate_multiplication])
+            else:
+                parsed_turns.append(d)
+    
+        parsed_impulse_response = np.concatenate(parsed_turns)
+        samples = np.linspace(0,len(parsed_impulse_response)/float(sampling_rate_multiplication),len(parsed_impulse_response))
+        turns = samples/float(self.h_bunch)
+        time = samples*self.circumference/(float(self.h_bunch)*c*self.beta_beam)
+        
+        
+        return parsed_impulse_response, samples, turns, time
 
 
 
@@ -98,55 +120,15 @@ class SingleBunchTracer(object):
         self.counter += 1
 
 
-def run(argv):
-    job_id = int(argv[0])
-    case_id = 1
-
-    intensity = 6.0e10
-#    intensity = 6.0e11
-    tune_error = 0.
-#    damping_time = 20.
-    damping_time = 50
-
-#    for i, damping_time in enumerate(damping_times):
-    gain = 2./damping_time
-#    it = job_id*len(damping_times) + i
-    it = job_id
-
-
-    print(str(datetime.datetime.now()) + ', cycle ' + str(it) + ' -> gain = ' + str(gain) + ', tune_error = ' + str(tune_error))
-
-    # SIMULATION PARAMETERS
-    # ---------------------
-    n_turns = 1
+def run():
 
     # MACHINE PARAMETERS
     #-------------------
     
-
-#    h_bunch = 3564
-
-#    accQ_x = 20.13
-    accQ_x = 20.18
-    Q=accQ_x
-    
-    
+    Q=20.28
     circumference = 26658.883
-    
-    beta_x = circumference / (2.*np.pi*accQ_x)
+    beta_beam = 1.
     n_bunches=3564
-
-    # FILLING SCHEME
-    # --------------
-    filling_scheme = np.arange(n_bunches)
-
-    # GENERATES BEAM
-    # --------------
-    beam = CircularPointBeam(filling_scheme, circumference, n_bunches, intensity,
-                             circular_overlapping=0, n_segments = 1, beta_x = beta_x)
-
-    impulse_idx = 1700
-    beam.x[impulse_idx] =+ 1e-3
 
     # DAMPER SETTINGS
     # ---------------
@@ -154,8 +136,7 @@ def run(argv):
     taps = np.linspace(1,64,64)
     FIR_gain_filter_gaussian = np.exp(-0.5*(taps-32.5)**2/8**2)
     FIR_gain_filter_gaussian = FIR_gain_filter_gaussian/np.sum(FIR_gain_filter_gaussian)
-    
-    ADC_range = (-3e-3, 3e-3)
+
     
     lowpass100kHz = [1703, 1169, 1550, 1998, 2517, 3108, 3773, 4513, 5328, 6217, 7174, 8198, 9282, 10417, 11598, 12813, 14052, 15304, 16555, 17793, 19005, 20176, 21294, 22345, 23315, 24193, 24969, 25631, 26171, 26583, 26860, 27000, 27000, 26860, 26583, 26171, 25631, 24969, 24193, 23315, 22345, 21294, 20176, 19005, 17793, 16555, 15304, 14052, 12813, 11598, 10417, 9282, 8198, 7174, 6217, 5328, 4513, 3773, 3108, 2517, 1998, 1550, 1169, 1703]
     
@@ -173,60 +154,69 @@ def run(argv):
     FIR_gain_filter = np.array(lowpass20MHz)
     FIR_gain_filter = FIR_gain_filter/float(np.sum(lowpass20MHz))/3.5
 
-    fc=1e6 # The cut off frequency of the power amplifier
-    ADC_bits = 16
+
+     # Cut-off frequency of the kicker system
+    fc=1e6
+    ADC_bits = 16 
+    ADC_range = (-1., 1.)
     
-    DAC_bits = 14
-    DAC_range = ADC_range
-    
+    # signal processing delay in turns before the first measurements is applied
     delay = 1
+    
+    # betatron phase advance between the pickup and the kicker. The value 0.25 
+    # corresponds to the 90 deg phase change from from the pickup measurements
+    # in x-plane to correction kicks in xp-plane.
     additional_phase = 0.25
 
 #    turn_phase_filter_x = calculate_coefficients_3_tap(Q, delay, additional_phase)
     turn_phase_filter_x = calculate_hilbert_notch_coefficients(Q, delay, additional_phase)
 
-
+    
+    # The LHC ADT model
+    # NOTE: correct timing of the system depends on the used filters
+    #       * correct timing means that the peak of the impulse response is exactly 1, 2, etc turns after the impulse
+    #       * coarse timing can be adjusted with zero_tap parameter of the FIR_gain_filter
+    #       * fine timing can be adjusted with weigth list of the Upsampler (the sum of the weights must be)
+    
     processors = [
-#            HarmonicADC(f_RF, ADC_bits, ADC_range,
-#                        n_extras=extra_adc_bins),
-#            NoiseGenerator(input_noise),
-            Quantizer(ADC_bits, ADC_range, debug=True),
-            TurnFIRFilter(turn_phase_filter_x, Q, delay=1, debug=True),
-#            FIRFilter(FIR_phase_filter, zero_tap = 21),
-            FIRFilter(FIR_phase_filter, zero_tap = 40, debug=True),
-#            Upsampler(3, [0,3,0], debug=True),
-#            FIRFilter(FIR_gain_filter, zero_tap = 16),
-            Upsampler(3, [0,3,0], debug=True),
-#            FIRFilter(FIR_gain_filter_gaussian, zero_tap = 31),
-            FIRFilter(FIR_gain_filter, zero_tap = 33, debug=True),
-#            DAC(DAC_bits, DAC_range, method = ('upsampling', 1)),
-            Quantizer(DAC_bits, DAC_range, debug=True),
-            Lowpass(fc, f_cutoff_2nd=20*fc, debug=True),
-#            BackToOriginalBins(),
-#            NoiseGenerator(output_noise),
+            Quantizer(ADC_bits, ADC_range),
+            TurnFIRFilter(turn_phase_filter_x, Q, delay=1),
+            FIRFilter(FIR_phase_filter, zero_tap=40),
+            Upsampler(3, [1.5,1.5,0]),
+            FIRFilter(FIR_gain_filter, zero_tap=34),
+            Quantizer(ADC_bits, ADC_range),
+            # Adds more samples before the low pass filter in order to get better output sampling
+            Upsampler(5, [1,1,1,1,1]), 
+            Lowpass(fc, f_cutoff_2nd=20*fc),
     ]
     
+    impulse_length = 10
+    response_calculator = DamperImpulseResponse(processors, circumference, n_bunches, beta_beam, impulse_length, wait_before=10)
+    parsed_impulse_response, samples, turns, time = response_calculator.get_impulse_response()
+        
+    fig, ax1 = plt.subplots(1,1, figsize=(6,4))
+    ax1.plot(time,parsed_impulse_response)
+    ax1.set_xlabel('Time [s]')
+    ax1.set_ylabel('Normalized impulse response')
     
-    response_calculator = DamperImpulseResponse(10, gain,processors)
-    impulse_response = response_calculator.get_impulse_response(beam)
+    ax2 = ax1.twiny()
+    ax3 = ax1.twiny()
+    ax1.set_xlim(np.min(time), np.max(time))
+    ax2.set_xlim(np.min(turns), np.max(turns))
+    ax3.set_xlim(np.min(samples), np.max(samples))
+    ax2.set_xlabel('Turn')
+    ax3.set_xlabel('Bucket')
+
+
+    ax3.xaxis.set_ticks_position('top')
+    ax3.xaxis.set_label_position('top')
     
-    
-    parsed_turns = []
-    for i, d in enumerate(impulse_response):
-        if i == 0:
-            parsed_turns.append(d[impulse_idx*3:])
-        else:
-            parsed_turns.append(d)
-    
-    parsed_impulse_response = np.concatenate(parsed_turns)
-    parsed_bins = np.linspace(0,len(parsed_impulse_response)/3.-1,len(parsed_impulse_response))
-    parsed_time = parsed_bins*circumference/(float(n_bunches*3)*c)
-    
-    fig, (ax1, ax2) = plt.subplots(2,1, figsize=(10,4))
-    
-    ax1.plot(parsed_bins,parsed_impulse_response)
-    ax2.plot(parsed_time,parsed_impulse_response)
+    ax2.xaxis.set_ticks_position('top')
+    ax2.xaxis.set_label_position('top')
+    ax2.spines['top'].set_position(('outward', 36))
+
+    plt.tight_layout()
     plt.show()
 
 if __name__=="__main__":
-	run(sys.argv[1:])
+	run()

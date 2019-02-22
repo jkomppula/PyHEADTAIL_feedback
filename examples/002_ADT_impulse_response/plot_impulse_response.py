@@ -1,6 +1,6 @@
 from __future__ import division
 import sys, os
-BIN = os.path.expanduser("../../../../")
+BIN = os.path.expanduser("../../../")
 sys.path.append(BIN)
 import sys
 import copy
