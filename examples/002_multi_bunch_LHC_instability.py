@@ -10,7 +10,7 @@ range = xrange
 
 import sys
 # PyHEADTAIL location if it's not already in the PYTHONPATH environment variable
-sys.path.append('../../../')
+sys.path.append('../../')
 
 
 
@@ -171,11 +171,11 @@ def run(intensity, chroma=0, i_oct=0):
         'epsn_y'   : bunch.epsn_y(),
         'sigma_z'  : bunch.sigma_z(),
     }
-#    bunchmonitor = BunchMonitor(
-#        outputpath+'/bunchmonitor_{:04d}_chroma={:g}'.format(it, chroma),
-#        n_turns, simulation_parameters_dict,
-#        write_buffer_to_file_every=512,
-#        buffer_size=4096, mpi=True, filling_scheme=filling_scheme)
+    bunchmonitor = BunchMonitor(
+        outputpath+'/bunchmonitor_{:04d}_chroma={:g}'.format(it, chroma),
+        n_turns, simulation_parameters_dict,
+        write_buffer_to_file_every=512,
+        buffer_size=4096, mpi=True, filling_scheme=filling_scheme)
     slicemonitor = SliceMonitor(
         outputpath+'/slicemonitor_{:04d}_chroma={:g}_bunch_{:04d}'.format(it, chroma, bunch.bucket_id[0]),
         n_turns_slicemon,
@@ -210,7 +210,7 @@ def run(intensity, chroma=0, i_oct=0):
         mx, my, mz = bunch.mean_x(), bunch.mean_y(), bunch.mean_z()
 
         # monitor the bunch statistics (once per turn):
-#        bunchmonitor.dump(beam)
+        bunchmonitor.dump(beam)
 
         # if the centroid becomes unstable (>1cm motion)
         # then monitor the slice statistics:

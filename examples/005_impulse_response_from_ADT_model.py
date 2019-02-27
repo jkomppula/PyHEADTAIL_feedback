@@ -64,7 +64,7 @@ def run():
     FIR_phase_filter = FIR_phase_filter/float(np.sum(FIR_phase_filter))
 
     FIR_gain_filter = np.array(lowpass20MHz)
-    FIR_gain_filter = FIR_gain_filter/float(np.sum(lowpass20MHz))/3.5
+    FIR_gain_filter = FIR_gain_filter/float(np.sum(lowpass20MHz))
 
 
      # Cut-off frequency of the kicker system

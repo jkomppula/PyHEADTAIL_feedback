@@ -56,6 +56,9 @@ class LHC(Synchrotron):
 
         self.h_RF = h_RF
         self.h_bunch = int(self.h_RF/10.)
+        self.beta_x = beta_x
+        self.beta_y = beta_y
+        
         # detunings
         Qp_x = 0
         Qp_y = 0

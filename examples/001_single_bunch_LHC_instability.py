@@ -10,7 +10,7 @@ range = xrange
 
 import sys
 # PyHEADTAIL location if it's not already in the PYTHONPATH environment variable
-sys.path.append('../../../')
+sys.path.append('../../')
 
 
 
