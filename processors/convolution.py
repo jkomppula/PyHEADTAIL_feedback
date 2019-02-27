@@ -515,7 +515,7 @@ class Lowpass(ConvolutionFilter):
     """ A classical lowpass filter, which is also known as a RC-filter or one
         poll roll off.
     """
-    def __init__(self,f_cutoff, normalization=None, max_impulse_length = 5., **kwargs):
+    def __init__(self,f_cutoff, normalization=None, max_impulse_length = 10., **kwargs):
         scaling = 2. * pi * f_cutoff
 
         if normalization is None:
@@ -533,7 +533,7 @@ class Highpass(ConvolutionFilter):
         multiplying the lowpass filter by a factor of -1 and adding to the first
         bin 1
     """
-    def __init__(self,f_cutoff, normalization=None, max_impulse_length = 5., **kwargs):
+    def __init__(self,f_cutoff, normalization=None, max_impulse_length = 10., **kwargs):
         scaling = 2. * pi * f_cutoff
 
         if normalization is None:
@@ -553,7 +553,7 @@ class PhaseLinearizedLowpass(ConvolutionFilter):
         frequency, which smooths the impulse response by using a Gaussian filter.
     """
 
-    def __init__(self,f_cutoff, normalization=None, max_impulse_length = 5., **kwargs):
+    def __init__(self,f_cutoff, normalization=None, max_impulse_length = 10., **kwargs):
         scaling = 2. * pi * f_cutoff
 
         if normalization is None:
@@ -569,7 +569,7 @@ class PhaseLinearizedLowpass(ConvolutionFilter):
 class Gaussian(ConvolutionFilter):
     """ A Gaussian low pass filter, which impulse response is a Gaussian function.
     """
-    def __init__(self,f_cutoff, normalization=None, max_impulse_length = 5., **kwargs):
+    def __init__(self,f_cutoff, normalization=None, max_impulse_length = 10., **kwargs):
         scaling = 2. * pi * f_cutoff
 
         if normalization is None:

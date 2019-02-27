@@ -6,7 +6,7 @@ from ..core import Parameters, bin_mids
 
 class SignalObject(object):
     def __init__(self, bin_edges, intensity, ref_point = None, location_x=0., location_y=0., beta_x=1., beta_y=1.,
-                 x=None, xp=None, y=None, yp=None, dp=None,
+                 Q_x=None, Q_y=None, x=None, xp=None, y=None, yp=None, dp=None,
                  bunch_id=None, circumference=None, h_RF=None, circular_overlapping = 0, n_segments = 1):
 
         self._bunch_id = bunch_id
@@ -22,6 +22,9 @@ class SignalObject(object):
         self._location_y = location_y
         self._beta_x = beta_x
         self._beta_y = beta_y
+        
+        self._Q_x = Q_x
+        self._Q_y = Q_y
 
         self._bin_edges = bin_edges
         self._z = (self._bin_edges[:, 0]+self._bin_edges[:, 1])/2.*c
@@ -121,6 +124,14 @@ class SignalObject(object):
         return self._z/c
 
     @property
+    def Q_x(self):
+        return self._Q_x
+
+    @property
+    def Q_y(self):
+        return self._Q_y
+
+    @property
     def real_z(self):
         return self._z + self._bunch_id * self._circumference/float(self._h_RF)
 
@@ -180,6 +191,14 @@ class SignalObject(object):
     @property
     def mean_y(self):
         return np.mean(self.y)
+
+    @property
+    def beta_x(self):
+        return self._beta_x
+
+    @property
+    def beta_y(self):
+        return self._beta_y
 
 
 #    def __getattr__(self,attr):

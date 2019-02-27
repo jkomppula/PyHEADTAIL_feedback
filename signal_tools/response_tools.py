@@ -5,7 +5,7 @@ from scipy import interpolate
 from signal_generators import sine_wave
 from signal_generators import binary_impulse, sine_impulse, triangle_impulse, square_impulse
 import copy
-import time
+from signal_generators import CircularPointBeam
 
 from ..core import process
 
@@ -229,4 +229,88 @@ def impulse_response(processors, time_range, n_points=501, impulse_type = 'binar
     return t, z, impulse, response
 
 
+
+class DamperImpulseResponse(object):
+    """ A tracer which damps beam oscillations as a trasverse damper.
+    """
+    def __init__(self, processors, circumference, h_bunch, beta_beam, impulse_length, wait_before=10):
+        """
+        Parameters
+        ----------
+        processors : list
+            A list of signal processors
+        circumference : float
+            Accelerator circumference in meters
+        h_bunch: int 
+            harmonic bunch or sampling number of the accelerator    
+        beta_beam: float
+            relativistic beta of the beam
+        impulse_length : int
+            Maximum length of the impulse response in turns
+        wait_before : int
+            Number of turns waited before the impulse is sent to system. This is
+            required by some signal processors, which do not return signal before
+            their internal buffer is filled
+        """
+        
+        self.processors = processors
+        self.circumference = circumference
+        self.h_bunch = h_bunch
+        self.beta_beam = beta_beam
+        self.impulse_length = impulse_length
+        self.wait_before = wait_before
+        
+        
+        # this tools uses a point like beam object as a signal generator
+        filling_scheme = np.arange(self.h_bunch)
+        self.beam = CircularPointBeam(filling_scheme, circumference, self.h_bunch, 1.,
+                             circular_overlapping=0, n_segments = 1, beta_x = 1.)
+        
+        self.impulse_bin = int(self.h_bunch/2)
+        self.beam.x[self.impulse_bin] =+ 1.
+
+
+
+    def get_impulse_response(self, **kwargs):
+
+        # generates signal from the beam
+        parameters, signal = self.beam.signal('x')
+        empty_signal = np.zeros(len(signal))
+
+
+        turn_by_turn_impulses = []
+            
+
+
+        for i in range(self.impulse_length+self.wait_before):
+            
+            if i == self.wait_before:
+                # processes the signal
+                kick_parameters_x, kick_signal_x = process(parameters, signal, self.processors,
+                                                           slice_sets=self.beam.slice_sets, **kwargs)
+            else:
+                # processes the signal
+                kick_parameters_x, kick_signal_x = process(parameters, empty_signal, self.processors,
+                                                           slice_sets=self.beam.slice_sets, **kwargs)
+            if i >= self.wait_before:    
+                turn_by_turn_impulses.append(np.copy(kick_signal_x))
+        
+        sampling_rate_multiplication = int(len(turn_by_turn_impulses[-1])/len(empty_signal))
+        
+        parsed_turns = []
+        for i, d in enumerate(turn_by_turn_impulses):
+            if i == 0:
+                parsed_turns.append(d[self.impulse_bin*sampling_rate_multiplication:])
+            elif i == len(turn_by_turn_impulses)-1:
+                parsed_turns.append(d[:self.impulse_bin*sampling_rate_multiplication])
+            else:
+                parsed_turns.append(d)
+    
+        parsed_impulse_response = np.concatenate(parsed_turns)
+        samples = np.linspace(0,len(parsed_impulse_response)/float(sampling_rate_multiplication),len(parsed_impulse_response))
+        turns = samples/float(self.h_bunch)
+        time = samples*self.circumference/(float(self.h_bunch)*c*self.beta_beam)
+        
+        
+        return parsed_impulse_response, samples, turns, time
 
