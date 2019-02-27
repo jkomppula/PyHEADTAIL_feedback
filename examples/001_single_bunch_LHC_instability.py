@@ -133,7 +133,7 @@ def run(intensity, chroma=0, i_oct=0):
     # CREATE DAMPER
     # =============
     dampingtime = 50.
-    gain = 1./dampingtime
+    gain = 2./dampingtime
     damper = IdealBunchFeedback(gain)
 
 

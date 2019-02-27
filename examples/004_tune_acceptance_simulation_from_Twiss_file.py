@@ -1,7 +1,7 @@
 from __future__ import division
 
 import sys, os
-BIN = os.path.expanduser("../../../")
+BIN = os.path.expanduser("../../")
 sys.path.append(BIN)
 
 #import sys
@@ -342,7 +342,7 @@ def run(job_id, accQ_y, accQ_x, phase_filter_x, phase_filter_y, damping_time,
 ## READS PHASE ADVANCE FROM A TWISS FILE ##
 ###########################################
 
-twiss_file = 'example_twiss.dat'
+twiss_file = 'dummy_example_twiss.dat'
 pickup_element = 'R4VM1'
 kicker_element = 'R6VM1'
 
@@ -407,7 +407,7 @@ for job_id, accQ_y in enumerate(tunes):
     damping_times[job_id,0] = accQ_y
     damping_times[job_id,1] = t_d
 
-np.savetxt('FIR_filter_tune_acceptance.txt', damping_times)
+#np.savetxt('FIR_filter_tune_acceptance.txt', damping_times)
 
 #########################
 ## PLOTS DAMPING TIMES ##

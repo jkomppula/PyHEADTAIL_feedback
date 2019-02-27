@@ -165,7 +165,7 @@ def run(intensity, chroma=0, i_oct=0):
 #    from PyHEADTAIL_feedback.processors.addition import NoiseGenerator
     
     dampingtime = 20.
-    gain = 1./dampingtime
+    gain = 2./dampingtime
     
     lowpass100kHz = [1703, 1169, 1550, 1998, 2517, 3108, 3773, 4513, 5328, 6217, 7174, 8198, 9282, 10417, 11598, 12813, 14052, 15304, 16555, 17793, 19005, 20176, 21294, 22345, 23315, 24193, 24969, 25631, 26171, 26583, 26860, 27000, 27000, 26860, 26583, 26171, 25631, 24969, 24193, 23315, 22345, 21294, 20176, 19005, 17793, 16555, 15304, 14052, 12813, 11598, 10417, 9282, 8198, 7174, 6217, 5328, 4513, 3773, 3108, 2517, 1998, 1550, 1169, 1703]
     
@@ -185,7 +185,7 @@ def run(intensity, chroma=0, i_oct=0):
 
 
      # Cut-off frequency of the kicker system
-    fc=1e6
+    fc=1.0e6
     ADC_bits = 16 
     ADC_range = (-1e-3, 1e-3)
     
@@ -195,8 +195,11 @@ def run(intensity, chroma=0, i_oct=0):
     # betatron phase advance between the pickup and the kicker. The value 0.25 
     # corresponds to the 90 deg phase change from from the pickup measurements
     # in x-plane to correction kicks in xp-plane.
-#    additional_phase = 0.25
-    additional_phase = 0.
+    
+    additional_phase = 0.25 # Kicker-to-pickup phase advance 0 deg
+#    additional_phase = 0. # Kicker-to-pickup phase advance 90 deg
+    
+    
     f_RF = 1./(machine.circumference/c/(float(machine.h_RF)))
 #    turn_phase_filter_x = calculate_hilbert_notch_coefficients(machine.Q_x, delay, additional_phase)
 #    turn_phase_filter_y = calculate_hilbert_notch_coefficients(machine.Q_y, delay, additional_phase)
@@ -230,21 +233,23 @@ def run(intensity, chroma=0, i_oct=0):
                         n_extras=extra_adc_bins),
             TurnFIRFilter(turn_phase_filter_y, machine.Q_y, delay = delay),
             FIRFilter(FIR_phase_filter, zero_tap = 40),
-            Upsampler(3, [1,1,1]),
+            Upsampler(3, [1.5,1.5,0]),
             FIRFilter(FIR_gain_filter, zero_tap = 34),
             DAC(ADC_bits, ADC_range),
             Lowpass(fc, f_cutoff_2nd=10*fc),
             BackToOriginalBins(),
     ]
+    
+    # Kicker-to-pickup phase advance 0 deg
+    damper = OneboxFeedback(gain,slicer_for_wakefields, processors_detailed_x,
+                            processors_detailed_y, pickup_axis='displacement',
+                            kicker_axis='divergence', mpi=True,
+                            beta_x=machine.beta_x, beta_y=machine.beta_y)
 
-
-    damper = OneboxFeedback(gain,slicer_for_wakefields, 
-                                  processors_detailed_x,processors_detailed_y, mpi=True,
-                            pickup_axis='displacement', kicker_axis='displacement')
-#    damper = OneboxFeedback(gain,slicer_for_wakefields, processors_detailed_x,
-#                            processors_detailed_y, pickup_axis='displacement',
-#                            kicker_axis='divergence', mpi=True,
-#                            beta_x=machine.beta_x, beta_y=machine.beta_y)
+#    # Kicker-to-pickup phase advance 90 deg
+#    damper = OneboxFeedback(gain,slicer_for_wakefields, 
+#                                  processors_detailed_x,processors_detailed_y, mpi=True,
+#                            pickup_axis='displacement', kicker_axis='displacement')
 
     # CREATE MONITORS
     # ===============
@@ -353,7 +358,6 @@ if __name__ == '__main__':
     from PyHEADTAIL.mpi.mpi_data import my_rank
     import matplotlib.pyplot as plt
     
-    os.remove(outputpath+'/bunchmonitor_{:04d}_chroma={:g}.h5'.format(it, chroma))
 
     if my_rank() == 0:
     
@@ -408,12 +412,56 @@ if __name__ == '__main__':
         plt.tight_layout()
         plt.show()
         
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
-        ax1.plot(data_mean_x[:,0]*1e3)
-        ax1.plot(data_mean_x[:,10]*1e3)
-        ax1.plot(data_mean_x[:,20]*1e3)
-        ax2.plot(data_mean_y[:,0]*1e3)
-        ax2.plot(data_mean_y[:,10]*1e3)
-        ax2.plot(data_mean_y[:,20]*1e3)
+        from scipy.signal import hilbert
+        def damping_time(data, start_turn=10, fit_turns=50):
         
+            # calculates an envelope of turn-by-turn oscillations with Hilbert transform
+            analytic_signal = hilbert(data)
+            amplitude_envelope = np.abs(analytic_signal)
+        
+            # calculates singal frequency from the Hilbert transform. Tune can be extracted from here
+            instantaneous_phase = np.unwrap(np.angle(analytic_signal))
+            instantaneous_frequency = (np.diff(instantaneous_phase)/(2.0*np.pi) * 1.) # for tune
+        
+            turns = np.linspace(1,len(data),len(data))
+        
+            coeffs = np.polyfit(turns[start_turn:(start_turn+fit_turns)], np.log(amplitude_envelope[start_turn:(start_turn+fit_turns)]),1)
+            fit = np.exp(coeffs[0]*turns+coeffs[1])
+        
+            return coeffs, turns, fit
+        
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
+        
+        coeffs, turns, fit = damping_time(data_mean_x[:,0])
+        ax1.plot(data_mean_x[:,0]*1e3, 'C0', label='Bucket 0, t_d='+str(int(-1./coeffs[0])) + ' turns')
+        ax1.plot(turns,fit*1e3, 'C0')
+        
+        coeffs, turns, fit = damping_time(data_mean_x[:,10])
+        ax1.plot(data_mean_x[:,10]*1e3, 'C1', label='Bucket 10, t_d='+str(int(-1./coeffs[0])) + ' turns')
+        ax1.plot(turns,fit*1e3, 'C1')
+        
+        coeffs, turns, fit = damping_time(data_mean_x[:,20])
+        ax1.plot(data_mean_x[:,20]*1e3, 'C2', label='Bucket 20, t_d='+str(int(-1./coeffs[0])) + ' turns')
+        ax1.plot(turns,fit*1e3, 'C2')
+        
+        coeffs, turns, fit = damping_time(data_mean_x[:,0])
+        ax2.plot(data_mean_y[:,0]*1e3, 'C0', label='Bucket 0, t_d='+str(int(-1./coeffs[0])) + ' turns')
+        ax2.plot(turns,fit*1e3, 'C0')
+        
+        coeffs, turns, fit = damping_time(data_mean_x[:,10])
+        ax2.plot(data_mean_y[:,10]*1e3, 'C1', label='Bucket 10, t_d='+str(int(-1./coeffs[0])) + ' turns')
+        ax2.plot(turns,fit*1e3, 'C1')
+        
+        coeffs, turns, fit = damping_time(data_mean_x[:,20])
+        ax2.plot(data_mean_y[:,20]*1e3, 'C2', label='Bucket 20, t_d='+str(int(-1./coeffs[0])) + ' turns')
+        ax2.plot(turns,fit*1e3, 'C2')
+        
+        
+        
+        ax1.set_xlabel('Turn')
+        ax2.set_xlabel('Turn')
+        
+        ax1.set_ylabel('Bunch mean_x [mm]')
+        ax2.set_ylabel('Bunch mean_y [mm]')
+        ax1.legend()
         plt.show()

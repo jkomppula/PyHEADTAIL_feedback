@@ -14,24 +14,33 @@ sys.path.append('../../')
 
 
 
-import time
+import time, os
 
 import numpy as np
-np.random.seed(10000042)
 import h5py
 from scipy.constants import e, m_p, c
 
 from PyHEADTAIL.particles.slicing import UniformBinSlicer
 from PyHEADTAIL.impedances.wakes import WakeTable, WakeField
 from PyHEADTAIL.feedback.feedback import IdealBunchFeedback
+from PyHEADTAIL.mpi.mpi_data import my_rank
 from PyHEADTAIL.monitors.monitors import (
     BunchMonitor, ParticleMonitor, SliceMonitor)
+np.random.seed(my_rank())
 
 
-n_macroparticles = 10000 # number of macro-particles to resolve the beam
-n_turns = 6000 # simulation time
+n_macroparticles = 1000 # number of macro-particles to resolve the beam
+n_turns = 1000 # simulation time
 n_turns_slicemon = 64 # recording span of the slice statistics monitor
 
+filling_scheme = []
+n_batches = 4
+batch_length = 72
+gap = 8
+
+for i in range(n_batches):
+    for j in range(batch_length):
+        filling_scheme.append(i*(batch_length+gap)+j)
 
 # COMMENT THE NON-WANTED SET-UP:
 
@@ -95,14 +104,6 @@ def run(intensity, chroma=0, i_oct=0):
 
     # BEAM
     # ====
-    filling_scheme = []
-    n_batches = 1
-    batch_length = 20
-    gap = 8
-    
-    for i in range(n_batches):
-        for j in range(batch_length):
-            filling_scheme.append(i*(batch_length+gap)+j)
     
     #print(filling_scheme)
     
@@ -176,11 +177,11 @@ def run(intensity, chroma=0, i_oct=0):
         n_turns, simulation_parameters_dict,
         write_buffer_to_file_every=512,
         buffer_size=4096, mpi=True, filling_scheme=filling_scheme)
-    slicemonitor = SliceMonitor(
-        outputpath+'/slicemonitor_{:04d}_chroma={:g}_bunch_{:04d}'.format(it, chroma, bunch.bucket_id[0]),
-        n_turns_slicemon,
-        slicer_for_slicemonitor, simulation_parameters_dict,
-        write_buffer_to_file_every=1, buffer_size=n_turns_slicemon)
+#    slicemonitor = SliceMonitor(
+#        outputpath+'/slicemonitor_{:04d}_chroma={:g}_bunch_{:04d}'.format(it, chroma, bunch.bucket_id[0]),
+#        n_turns_slicemon,
+#        slicer_for_slicemonitor, simulation_parameters_dict,
+#        write_buffer_to_file_every=1, buffer_size=n_turns_slicemon)
 
 
     # TRACKING LOOP
@@ -220,7 +221,7 @@ def run(intensity, chroma=0, i_oct=0):
                 monitorswitch = True
         else:
             if s_cnt < n_turns_slicemon:
-                slicemonitor.dump(bunch)
+#                slicemonitor.dump(bunch)
                 s_cnt += 1
 
         # stop the tracking as soon as we have not-a-number values:
@@ -248,4 +249,62 @@ if __name__ == '__main__':
     outputpath = './'
 
     # run the simulation:
-    run(intensity=1.1e11, chroma=0., i_oct=0)
+    chroma =0.
+    intensity=1.1e11
+    run(intensity=intensity, chroma=chroma, i_oct=0)
+    
+    import matplotlib.pyplot as plt
+    
+
+    if my_rank() == 0:
+    
+        h5f = h5py.File(outputpath+'/bunchmonitor_{:04d}_chroma={:g}.h5'.format(it, chroma),'r')
+        
+        data_mean_x = None
+        data_mean_y = None
+        data_mean_z = None
+            
+        
+        for i, bunch_id in enumerate(filling_scheme):
+            t_mean_x = h5f['Bunches'][str(bunch_id)]['mean_x'][:]
+            t_epsn_x = h5f['Bunches'][str(bunch_id)]['epsn_x'][:]
+            t_mean_y = h5f['Bunches'][str(bunch_id)]['mean_y'][:]
+            t_mean_z = h5f['Bunches'][str(bunch_id)]['mean_z'][:]
+        
+            if data_mean_x is None:
+                valid_map = (t_epsn_x > 0)
+        
+                turns = np.linspace(1,np.sum(valid_map),np.sum(valid_map))
+
+        
+                data_mean_x = np.zeros((np.sum(valid_map),len(filling_scheme)))
+                data_mean_y = np.zeros((np.sum(valid_map),len(filling_scheme)))
+                data_mean_z = np.zeros((np.sum(valid_map),len(filling_scheme)))
+        
+        
+            np.copyto(data_mean_x[:,i],t_mean_x[valid_map])
+            np.copyto(data_mean_y[:,i],t_mean_y[valid_map])
+            np.copyto(data_mean_z[:,i],t_mean_z[valid_map]+-bunch_id)
+        
+        os.remove(outputpath+'/bunchmonitor_{:04d}_chroma={:g}.h5'.format(it, chroma))
+        
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
+
+        plot_n_turns = 50
+        
+        ax1.set_color_cycle([plt.cm.viridis(i) for i in np.linspace(0, 1, plot_n_turns)])
+        ax2.set_color_cycle([plt.cm.viridis(i) for i in np.linspace(0, 1, plot_n_turns)])
+        
+        for i in range(plot_n_turns):
+        
+            ax1.plot(filling_scheme, data_mean_x[-(i+1),:]*1e3, '.')
+            ax2.plot(filling_scheme, data_mean_y[-(i+1),:]*1e3, '.')
+        
+        
+        ax1.set_xlabel('Bucket #')
+        ax2.set_xlabel('Bucket #')
+        
+        ax1.set_ylabel('Bunch mean_x [mm]')
+        ax2.set_ylabel('Bunch mean_y [mm]')
+        plt.tight_layout()
+        plt.show()

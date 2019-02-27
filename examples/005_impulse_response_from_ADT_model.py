@@ -1,6 +1,6 @@
 from __future__ import division
 import sys, os
-BIN = os.path.expanduser("../../../")
+BIN = os.path.expanduser("../../")
 sys.path.append(BIN)
 import sys
 import numpy as np
@@ -37,7 +37,7 @@ def run():
     # MACHINE PARAMETERS
     #-------------------
     
-    Q=20.28
+    Q=59.31
     circumference = 26658.883
     beta_beam = 1.
     n_bunches=3564
@@ -70,7 +70,7 @@ def run():
      # Cut-off frequency of the kicker system
     fc=1e6
     ADC_bits = 16 
-    ADC_range = (-1., 1.)
+    ADC_range = (-1e-3, 1e-3)
     
     # signal processing delay in turns before the first measurements is applied
     delay = 1
@@ -105,6 +105,7 @@ def run():
     impulse_length = 10
     response_calculator = DamperImpulseResponse(processors, circumference, n_bunches, beta_beam, impulse_length, wait_before=10)
     parsed_impulse_response, samples, turns, time = response_calculator.get_impulse_response()
+    
         
     fig, ax1 = plt.subplots(1,1, figsize=(6,4))
     ax1.plot(time,parsed_impulse_response)
