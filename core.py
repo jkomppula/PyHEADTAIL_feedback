@@ -1,7 +1,7 @@
 import numpy as np
 import types
 import copy
-version = '0.2.1.1'
+version = '0.2.1.1_dev'
 
 """
 @author Jani Komppula
